@@ -42,7 +42,7 @@ def decide(st, now=None):
     trading = clock.is_trading_day(ny.date())
     hm = (ny.hour, ny.minute)
     last_us = clock.last_closed(ny)
-    do = {"opt": False, "archive": None, "daily": None}
+    do = {"opt": False, "archive": None, "daily": None, "cal": time.time() - st.get("cal_ts", 0) >= 6 * 3600}
     if trading and (9, 30) <= hm < (16, 15):
         do["opt"] = time.time() - st.get("opt_ts", 0) >= 28 * 60
     if trading and hm >= (16, 45) and st.get("chain_day") != today_ny:
@@ -127,8 +127,10 @@ def auto():
     do, last_us, today_ny = decide(st)
     log(f"这次：{json.dumps(do, ensure_ascii=False)}；最近收盘的美股交易日 {last_us}")
     archive_dir = os.path.join(CHAINS, do["archive"]) if do["archive"] else None
-    fetch.quick(log=log, opt=do["opt"], archive_dir=archive_dir)
+    fetch.quick(log=log, opt=do["opt"], archive_dir=archive_dir, cal=do["cal"])
     st = fetch.read_state()
+    if do["cal"]:
+        st["cal_ts"] = time.time()
     if do["opt"]:
         st["opt_ts"] = time.time()
     if do["archive"]:

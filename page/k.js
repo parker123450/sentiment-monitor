@@ -93,6 +93,23 @@
         return `<tr><td>${esc(k)}</td><td class="r num">${v.now}</td><td class="r num" style="color:${ch >= 30 ? tok("--alert") : tok("--ink-2")}">${sgn(ch, 0)}</td><td><div class="bar" title="三年最低 ${v.lo}，最高 ${v.hi}"><i style="width:${Math.max(3, p).toFixed(0)}%"></i></div></td></tr>`; }).join("");
   })();
 
+  // ---------- 今天要知道的（规则在 口径.md 第三节；文字在 qx/watch.py 写好，这里只排版）
+  (function today() {
+    const T = RAW.today, el = $("today"); if (!T || !el) return;
+    const wk = d => "周" + "日一二三四五六"[new Date(d + "T12:00:00").getDay()];
+    const card = x => `<div class="it${x.us ? " us" : ""}"><div class="it-h"><span>过去 10 年 ${x.n10 < 1 ? "不到 1" : Math.round(x.n10)} 次</span>${x.live ? `<span class="it-tag">${esc(x.state || "盘中")}</span>` : ""}<span>${md(x.date)}</span></div>
+      <div class="it-t">${esc(x.title)}</div>${(x.facts || []).length ? `<ul>${x.facts.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}${x.mean ? `<p class="it-m"><b>说明什么：</b>${esc(x.mean)}</p>` : ""}</div>`;
+    let html = `<h2>今天要知道的<small>${md(T.asof)} 收盘${T.items.some(x => x.live) ? " · 含盘中" : ""}，越少见越靠前</small></h2>`;
+    html += T.items.length ? T.items.map(card).join("") : `<div class="quiet">今天没有值得看的变化。</div>`;
+    if ((T.upcoming || []).length) html += `<ul class="up"><b>接下来两个交易日</b>${T.upcoming.map(e => `<li>${md(e.date)}（${wk(e.date)}）${esc(e.time || "")} · ${esc(e.kind === "earnings" ? (e.name || e.sym) + " 财报" : e.title)}${e.note && e.kind === "macro" ? "" : ""}</li>`).join("")}</ul>`;
+    if ((T.recent || []).length) html += `<details><summary>前几天说过的（${T.recent.length} 条）</summary>${T.recent.map(card).join("")}</details>`;
+    if ((T.trends || []).length) {
+      const c = (w, n, u) => w ? `<td class="${w === "上行" ? "s-up" : w === "下行" ? "s-dn" : ""}">${w} ${n} ${u}</td>` : "<td>—</td>";
+      html += `<details><summary>所有品种的趋势状态（日 / 周 / 月）</summary><p>上行 = 收盘在均线上方、均线在升；下行反过来；其他是震荡。日线 20 日均线，周线 10 周，月线 10 个月；数字是这个状态持续了多久。</p><table class="tbl tr"><tr><th>品种</th><th>日线</th><th>周线</th><th>月线</th></tr>${T.trends.map(r => `<tr><td>${esc(r.name)}</td>${c(r.d, r.dn, "天")}${c(r.w, r.wn, "周")}${c(r.m, r.mn, "个月")}</tr>`).join("")}</table></details>`;
+    }
+    el.innerHTML = html;
+  })();
+
   // ---------- 最近一年：阶段一条 + 四行热度（和 K 线副图同一套颜色）
   function drawYear() {
     const cv = $("yr"); if (!cv || !cv.getContext) return;

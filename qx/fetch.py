@@ -452,7 +452,7 @@ def options(log=print, archive_dir=None):
     return snaps
 
 
-def quick(log=print, opt=False, archive_dir=None):
+def quick(log=print, opt=False, archive_dir=None, cal=False):
     """每 15 分钟：要闻、预测市场、CNN、盘中报价；opt=True 时加期权链。每样单独兜底。"""
     meta = store.read_meta()
     jobs = [("_news", "要闻", lambda: __import__("qx.news", fromlist=["fetch"]).fetch(log=log)),
@@ -461,6 +461,8 @@ def quick(log=print, opt=False, archive_dir=None):
             ("_intraday", "盘中报价", lambda: intraday(log))]
     if opt:
         jobs.append(("_options", "期权链", lambda: options(log, archive_dir)))
+    if cal:
+        jobs.append(("_calendar", "日历", lambda: __import__("qx.events", fromlist=["fetch"]).fetch(log=log)))
     for key, name, fn in jobs:
         try:
             fn()

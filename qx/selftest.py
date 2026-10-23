@@ -10,7 +10,7 @@ import argparse, sys
 import numpy as np
 import pandas as pd
 
-from qx import sentiment as S
+from qx import sentiment as S, watch as W
 from qx.registry import SERIES
 
 KEYS = ["stage", "sell", "price", "pos", "credit", "credit_n", "dd", "ddv", "m_sell", "m_price", "m_pos", "m_credit", "regime", "vixmax"]
@@ -56,6 +56,8 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
         tp = [x for x in Rt["turns"] if x[2] <= t]
         if tf != tp:
             diff.append("转折标签")
+        if [x["title"] for x in W.close_items(D, R, t)] != [x["title"] for x in W.close_items(Dt, Rt, t)]:
+            diff.append("今天要知道的")
         log(f"  {t.date()}：" + ("一致" if not diff else "不一致 " + "、".join(diff[:8])))
         if diff:
             bad.append((t, diff))
