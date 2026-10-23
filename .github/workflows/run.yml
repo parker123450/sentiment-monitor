@@ -2,7 +2,7 @@
 #
 # 每次：取回行情缓存和 data 分支上加密的小文件 → python run.py auto（自己决定这次抓什么、算不算）→
 #       页面（有 PAGE_PASSWORD 才生成，整页加密）发布到 Pages → 完整期权链存档加密后传到 Releases → 小文件加密存回 data 分支。
-# GitHub 的定时用 UTC，负载高时会晚 5–30 分钟、偶尔跳过一次。
+# GitHub 的定时用 UTC，负载高时会晚 5–30 分钟、偶尔跳过一次。新仓库的定时有时要等一阵才开始触发。
 # Secrets：PAGE_PASSWORD（网页密码，用户自己设）、DATA_KEY（加密数据的钥匙，本机 ~/.config/qx/data_key 有一份）。
 
 name: 每 15 分钟
