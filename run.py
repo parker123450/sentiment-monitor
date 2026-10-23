@@ -42,7 +42,8 @@ def decide(st, now=None):
     trading = clock.is_trading_day(ny.date())
     hm = (ny.hour, ny.minute)
     last_us = clock.last_closed(ny)
-    do = {"opt": False, "archive": None, "daily": None, "cal": time.time() - st.get("cal_ts", 0) >= 6 * 3600}
+    do = {"opt": False, "archive": None, "daily": None, "cal": time.time() - st.get("cal_ts", 0) >= 6 * 3600,
+          "fund": time.time() - st.get("fund_ts", 0) >= 20 * 3600}
     if trading and (9, 30) <= hm < (16, 15):
         do["opt"] = time.time() - st.get("opt_ts", 0) >= 28 * 60
     if trading and hm >= (16, 45) and st.get("chain_day") != today_ny:
@@ -91,7 +92,7 @@ def build(check=False, write=False):
     if check:
         log("自检（截断重算必须和全量一致）：")
         ok = selftest.run(D, aaii, R=R, n=3, log=log)
-    data = export.build(D, aaii, R)
+    data = export.build(D, aaii, R, write=write and ok)
     if write and ok:
         write_log(R, data.get("cnn"))
     pw = os.environ.get("PAGE_PASSWORD", "").strip()
@@ -127,10 +128,12 @@ def auto():
     do, last_us, today_ny = decide(st)
     log(f"这次：{json.dumps(do, ensure_ascii=False)}；最近收盘的美股交易日 {last_us}")
     archive_dir = os.path.join(CHAINS, do["archive"]) if do["archive"] else None
-    fetch.quick(log=log, opt=do["opt"], archive_dir=archive_dir, cal=do["cal"])
+    fetch.quick(log=log, opt=do["opt"], archive_dir=archive_dir, cal=do["cal"], fund=do["fund"])
     st = fetch.read_state()
     if do["cal"]:
         st["cal_ts"] = time.time()
+    if do["fund"]:
+        st["fund_ts"] = time.time()
     if do["opt"]:
         st["opt_ts"] = time.time()
     if do["archive"]:
@@ -173,6 +176,11 @@ def main():
     elif cmd == "daily":
         fetch.daily(log=log)
         ok = build(check=True, write=True)
+    elif cmd == "seal":                              # 本机 ../判断/*.json → 加密的 cards/*.enc（进仓库）
+        from qx import judge
+        for p in judge.seal():
+            log("加密：" + os.path.relpath(p, ROOT))
+        ok = True
     elif cmd == "uploaded":                          # 工作流上传完期权链存档后调用：记下来、删掉本地目录
         st = fetch.read_state()
         for f in sys.argv[2:]:

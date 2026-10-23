@@ -122,6 +122,22 @@
       <p class="knote">期权链是 CBOE 延迟 15 分钟的报价，从 2026-10-19 起每天攒，现在 ${O.days} 天；攒满 250 个交易日以后才和历史比"少见不少见"。K 线上 SMH、英伟达、美光、台积电标了做市商 gamma 转负 / 转正的日子。</p>`;
   })();
 
+  // ---------- 我的判断（第 3 块；规则在 口径.md 第六节，卡片原文加密存放）
+  (function judge() {
+    const J = RAW.judge || [], el = $("judge"); if (!el) return;
+    if (!J.length) { el.innerHTML = ""; return; }
+    const cls = s => s === "支持" ? "s-for" : s === "反对" ? "s-against" : "s-mid";
+    el.innerHTML = `<h2>我的判断</h2>` + J.map(e => `<div class="jc">
+      <div class="jt">${esc(e.title)}</div>
+      <div class="jm">${md(e.made)} 提出 · ${e.expired ? "已到期，待复盘" : "还剩 " + e.left + " 天（到 " + md(e.end) + "）"} · ${esc(e.ref_name)}自那以来 ${sgn(e.chg, 1)}%（最多 ${sgn(e.mdd, 1)}%）</div>
+      <p style="margin:0 0 6px;font-size:14px"><b>最弱的一环：</b>${e.weakest.length ? e.weakest.map(esc).join("、") : "现在没有反对的"}</p>
+      ${e.links.map(L => `<div class="jl"><span>${esc(L.name)}</span><span class="st ${cls(L.status)}">${L.status}</span><span class="fx">程序今天读到：${esc(L.fact)}</span>
+        <details><summary>证据和反证</summary>${L.con.length ? `<b>反对的：</b><ul>${L.con.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}${L.pro.length ? `<b>支持的：</b><ul>${L.pro.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}${L.note ? `<p style="margin:2px 0">${esc(L.note)}</p>` : ""}</details></div>`).join("")}
+      <div style="border-top:1px solid var(--line);margin-top:6px;padding-top:6px"><b style="font-size:14px">什么情况算你错了</b>${e.wrong.map(w => `<div class="jw"><b style="color:${w.state === "出现了" ? "var(--alert)" : "var(--ink-3)"}">${esc(w.state)}</b> · ${esc(w.text)}<span style="color:var(--ink-3)">（${esc(w.detail || "")}）</span></div>`).join("")}</div>
+      ${e.why ? `<p class="knote" style="margin-top:6px">当时的想法：${esc(e.why)}</p>` : ""}${e.review ? `<p class="kpins"><b>复盘：</b>${esc(e.review)}</p>` : ""}
+    </div>`).join("") + `<p class="knote">支持 / 中性 / 反对是程序每天按事先写好的规则读的；证据和反证是 AI 在对话里写的，反证放在前面。某一环变了、错的条件出现了，会进"今天要知道的"。K 线上标了提出判断的那天。</p>`;
+  })();
+
   // ---------- 预测市场（第 5 块）、新闻和日历（第 6 块）；规则在 口径.md 第五节
   (function happen() {
     const H = RAW.happen; if (!H) return;
@@ -243,6 +259,7 @@
       const TK = { peak: [{ t: "恐慌高峰", side: "turn", col: "fear" }], ebb: [{ t: "恐慌退潮", side: "risk", st: 4 }], retest: [{ t: "二次探底", side: "turn", col: "violet", ol: 1 }], lead: [{ t: "参与度先走", side: "risk", col: "watch", ol: 1 }] };
       if (cfg.mk) for (const [d, k] of RAW.turns || []) for (const m of TK[k] || []) add(barDate(d), Object.assign({}, m));
       if (cfg.smk) for (const [d, w] of cur.opt || []) add(barDate(d), { t: "gamma " + w, side: w === "转负" ? "turn" : "risk", col: w === "转负" ? "alert" : "ok", ol: 1 });
+      for (const [d, t] of cur.judge || []) add(barDate(d), { t, side: "risk", col: "accent" });
     }
     const view = { n: 252, end: 0 };
     const G = { W: 300, H: 400, L: 2, R: 240, pH: 280, vTop: 290, vH: 60, sTop: 360, sH: 100, barW: 1, first: 0, i0: 0, i1: 0, lo: 0, hi: 1, sub: null };

@@ -58,7 +58,8 @@ for _s, _n in LINKED:
 for _s, _n in [("BAA10Y", "穆迪 Baa 公司债收益率 − 10 年国债"), ("AAA10Y", "穆迪 Aaa 公司债收益率 − 10 年国债"),
                ("DGS10", "10 年国债收益率"), ("DGS2", "2 年国债收益率"), ("DCPF3M", "3 个月金融商业票据利率"), ("DTB3", "3 个月国库券利率"),
                ("BAMLC0A0CM", "ICE 投资级利差"), ("BAMLC0A4CBBB", "ICE BBB 利差"), ("BAMLH0A1HYBB", "ICE BB 利差"),
-               ("BAMLH0A2HYB", "ICE B 利差"), ("BAMLH0A3HYC", "ICE CCC 及以下利差"), ("BAMLH0A0HYM2", "ICE 高收益整体利差")]:
+               ("BAMLH0A2HYB", "ICE B 利差"), ("BAMLH0A3HYC", "ICE CCC 及以下利差"), ("BAMLH0A0HYM2", "ICE 高收益整体利差"),
+               ("DFII10", "10 年期实际利率（TIPS）")]:                    # DFII10：第 5 步判断卡"利率"那一环用
     _add(_s, "FRED", "FRED 最早起", 1, "%", kind="value", group="信用", note=_n)
 
 # ---------------------------------------------------------------- CBOE 认沽认购比

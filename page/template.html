@@ -101,6 +101,18 @@ h2 { font-size: 18px; margin: 30px 0 6px; }
 .pmt h4 { margin: 0 0 4px; font-size: 14px; }
 .pme { font-size: 13.5px; padding: 5px 0; border-top: 1px dashed var(--line); }
 .pme .m { color: var(--ink-2); }
+.jg h2 { margin: 28px 0 8px; }
+.jc { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.jc .jt { font-size: 17px; font-weight: 800; }
+.jc .jm { font-size: 13px; color: var(--ink-3); margin: 2px 0 8px; }
+.jl { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 6px 0; border-top: 1px dashed var(--line); font-size: 14px; }
+.jl .st { font-weight: 800; white-space: nowrap; }
+.jl .st.s-for { color: var(--ok); } .jl .st.s-against { color: var(--alert); } .jl .st.s-mid { color: var(--ink-3); }
+.jl .fx { grid-column: 1 / -1; font-size: 13px; color: var(--ink-2); }
+.jl details { grid-column: 1 / -1; margin: 2px 0 0; padding: 6px 10px; font-size: 13px; }
+.jl details ul { margin: 2px 0 4px; padding-left: 18px; }
+.jw { font-size: 13.5px; padding: 4px 0; }
+.jw b { white-space: nowrap; }
 .warn { background: color-mix(in srgb, var(--watch) 14%, var(--panel)); border: 1px solid var(--watch); border-radius: 10px; padding: 8px 12px; font-size: 13.5px; color: var(--ink); margin: 8px 0 0; }
 .gauge { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 10px; margin: 0 0 12px; }
 .gbox { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; min-width: 0; }
@@ -216,6 +228,7 @@ footer { color: var(--ink-3); font-size: 12.5px; margin-top: 24px; }
     <div class="kpanel" id="kpanel" aria-live="polite"></div>
   </div>
 
+  <section class="jg" id="judge"></section>
   <details class="opt" id="opt"></details>
   <details class="opt" id="pm"></details>
   <section class="news" id="news"></section>
