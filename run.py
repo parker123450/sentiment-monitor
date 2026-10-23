@@ -19,7 +19,7 @@ from datetime import datetime, timezone, timedelta
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-from qx import clock, crypt, export, fetch, page, selftest, sentiment, store   # noqa: E402
+from qx import clock, crypt, export, fetch, happen, page, selftest, sentiment, store   # noqa: E402
 from qx.registry import LINKED                                                  # noqa: E402
 
 SITE = os.path.join(ROOT, "site")
@@ -136,6 +136,10 @@ def auto():
     if do["archive"]:
         st["chain_day"] = do["archive"]
     fetch.write_state(st)
+    try:
+        happen.archive()                                # 新闻标题、议息会概率存档
+    except Exception as e:
+        log(f"  ! 存档出错：{e}")
     check = write = False
     if do["daily"] in ("us", "us_late"):
         got = fetch.daily(log=log)

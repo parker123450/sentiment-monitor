@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 import numpy as np
 import pandas as pd
 
-from qx import store, watch, events, options
+from qx import store, watch, events, options, happen
 from qx.registry import SMALL, AI, SERIES
 from qx.sentiment import longvol, NAMES, MOM_WORDS
 
@@ -131,7 +131,7 @@ def status(D, aaii, meta):
     return s
 
 
-def today(D, R, opt=None):
+def today(D, R, opt=None, hap=None):
     """第 1 块"今天要知道的"：收盘版 + 盘中版 + 前几天说过的 + 接下来两个交易日 + 趋势状态表（规则在 口径.md 第三节）。"""
     import json
     t = R["P"].index[-1]
@@ -144,7 +144,8 @@ def today(D, R, opt=None):
         q = {}
     have = {(x["group"], x["date"]) for x in items if x["kind"] == "move"}
     live = [x for x in watch.live_items(D, q, t) if (x["group"], x["date"]) not in have]
-    items = sorted(items + live + ((opt or {}).get("items") or []), key=lambda x: (x["n10"] is None, x["n10"] or 0, not x["us"]))
+    items = sorted(items + live + ((opt or {}).get("items") or []) + ((hap or {}).get("items") or []), key=lambda x: (x["n10"] is None, x["n10"] or 0, not x["us"]))
+    items = happen.attach_news(items)
     recent = []
     for d in R["P"].index[-5:-1][::-1]:
         for x in watch.close_items(D, R, d):
@@ -188,8 +189,9 @@ def build(D, aaii, R):
     turns = [[d.strftime("%Y-%m-%d"), k, kn.strftime("%Y-%m-%d")] for d, k, kn in R["turns"] if d >= pd.Timestamp(START)]
     now = datetime.now(BJ)
     opt = options.block(D)
+    hap = happen.block(D)
     ch = chart(D)
     for c in ch:
         c["opt"] = opt["chart"].get(c["k"], [])
-    return dict(asof=days[-1].strftime("%Y-%m-%d"), updated=now.strftime("%Y-%m-%d %H:%M"), today=today(D, R, opt), options=opt, chart=ch, daily=daily, turns=turns,
+    return dict(asof=days[-1].strftime("%Y-%m-%d"), updated=now.strftime("%Y-%m-%d %H:%M"), today=today(D, R, opt, hap), options=opt, happen={k: hap[k] for k in ("news", "pm", "calendar", "day")}, chart=ch, daily=daily, turns=turns,
                 groups=group_facts(D, R), ice=ice(D), cnn=cnn(), status=status(D, aaii, meta), stnames=NAMES, momwords=MOM_WORDS)

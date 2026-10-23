@@ -108,7 +108,7 @@ def econ(tables):
             for cc, rx, nm in ECON:
                 if c == cc and re.search(rx, n) and (d, nm) not in seen:
                     seen.add((d, nm))
-                    out.append({"date": d, "time": (r.get("gmt") or "").strip(), "kind": "macro", "title": nm, "note": n, "src": "纳斯达克"})
+                    out.append({"date": d, "time": ((r.get("gmt") or "").strip() + " 美东").strip(), "kind": "macro", "title": nm, "note": n, "src": "纳斯达克"})
                     break
     return out
 
@@ -147,6 +147,14 @@ def fetch(log=print, today=None):
     ma = econ(mt) if n2 else keep_old({"macro"})
     ok.update(earnings=n1, macro=n2)
     ev = sorted(fe + ea + ma + opex(start, end), key=lambda e: (e["date"], e["kind"] != "fomc", e.get("time") or "", e.get("sym") or ""))
+    # 议息会加 Polymarket 的"不变 / 降 / 加"概率（只显示；取不到就沿用上次的，标 stale）
+    from qx import polymarket
+    pm = polymarket.fetch([e["date"] for e in ev if e["kind"] == "fomc"], get, log)
+    old_pm = {e["date"]: e["pm"] for e in old.get("events", []) if e.get("kind") == "fomc" and e.get("pm")}
+    for e in ev:
+        if e["kind"] == "fomc" and (pm.get(e["date"]) or old_pm.get(e["date"])):
+            e["pm"] = pm.get(e["date"]) or {**old_pm[e["date"]], "stale": True}
+    ok["polymarket"] = bool(pm)
     store.write_atomic(CAL, json.dumps({"fetched": datetime.now(timezone.utc).isoformat(timespec="minutes"), "from": start.isoformat(),
                                         "to": end.isoformat(), "events": ev, "ok": ok}, ensure_ascii=False))
     log(f"日历：{start} → {end}，美联储 {len(fe)} 件、财报 {len(ea)} 家、宏观 {len(ma)} 件（纳斯达克财报 {n1} 天、宏观 {n2} 天取到）")

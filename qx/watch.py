@@ -422,5 +422,5 @@ def upcoming(cal, now=None):
         d += timedelta(days=1)
     keep = set(days)
     ev = [e for e in (cal or {}).get("events", []) if e["date"] in keep]
-    ev = [e for e in ev if e["kind"] != "earnings" or e.get("why") == "关注" or (e.get("cap") or 0) >= 500e9]
+    ev = [e for e in ev if e["kind"] != "earnings" or e.get("why") == "关注" or (e.get("cap") or 0) >= 1e12]
     return ev
