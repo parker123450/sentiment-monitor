@@ -333,7 +333,7 @@ def daily(log=print, only=None, full=None):
                 _record(meta, name, "ok", rows, warn)
                 log(f"  {name:<14} {len(rows):>6} 天  → {rows[-1][0]}")
             except Exception as e:
-                dead = dead or isinstance(getattr(e, "__cause__", None) or e, (urllib.error.URLError, OSError)) or "urlopen" in str(e) or "timed out" in str(e)
+                dead = dead or any(w in str(e) for w in ("urlopen error", "timed out", "Name or service", "Connection refused", "Network is unreachable"))
                 old = store.read_rows(name)
                 _record(meta, name, "cached" if old else "missing", old, err=e)
                 log(f"  ! {name} {str(e)[:80]}；" + (f"沿用存下的（截至 {old[-1][0]}）" if old else "也没有存过的"))
@@ -360,7 +360,7 @@ def daily(log=print, only=None, full=None):
             meta["_aaii"] = {"status": "cached", "error": str(e)[:200], "tried": now_iso()}
             log(f"  ! AAII {str(e)[:120]}（沿用存下的）")
     store.write_meta(meta)
-    return meta
+    return {"ok": ok_n, "n": len(names)}
 
 
 def aaii(log, meta):

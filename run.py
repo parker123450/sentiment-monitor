@@ -47,7 +47,7 @@ def decide(st, now=None):
         do["opt"] = time.time() - st.get("opt_ts", 0) >= 28 * 60
     if trading and hm >= (16, 45) and st.get("chain_day") != today_ny:
         do["opt"], do["archive"] = True, today_ny
-    if st.get("us_done") != last_us:
+    if st.get("us_done") != last_us or not os.path.exists(store.path("^SOX")):     # 行情缓存丢了也重新下载
         do["daily"] = "us"
     elif st.get("us_late") != last_us and (hm >= (20, 30) or ny.date().isoformat() > last_us):
         do["daily"] = "us_late"
@@ -83,6 +83,9 @@ def write_log(R, cnn):
 def build(check=False, write=False):
     """算情绪、（可选）自检、（可选）记日志、生成页面。返回自检是否通过。"""
     D, aaii = store.load_all()
+    if "^SOX" not in D:
+        log("还没有费城半导体的日线，这次不算、不生成页面")
+        return False
     R = sentiment.compute_all(D, aaii)
     ok = True
     if check:
@@ -133,15 +136,17 @@ def auto():
     fetch.write_state(st)
     check = write = False
     if do["daily"] in ("us", "us_late"):
-        fetch.daily(log=log)
+        got = fetch.daily(log=log)
         st = fetch.read_state()
-        st["us_late" if do["daily"] == "us_late" else "us_done"] = last_us
+        if got["ok"] >= 0.8 * got["n"]:                  # 大部分没取到就不算做完，下次再来
+            st["us_late" if do["daily"] == "us_late" else "us_done"] = last_us
         fetch.write_state(st)
         check = write = True
     elif do["daily"] == "asia":
-        fetch.daily(log=log, only=ASIA)
+        got = fetch.daily(log=log, only=ASIA)
         st = fetch.read_state()
-        st["asia_done"] = datetime.now(timezone.utc).date().isoformat()
+        if got["ok"] >= 0.8 * got["n"]:
+            st["asia_done"] = datetime.now(timezone.utc).date().isoformat()
         fetch.write_state(st)
     if do["daily"]:
         os.makedirs(os.path.join(ROOT, "data", "out"), exist_ok=True)

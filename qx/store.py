@@ -21,6 +21,7 @@ def path(name):
 
 
 def write_atomic(p, text):
+    os.makedirs(os.path.dirname(p), exist_ok=True)       # 云端第一次跑时 data/raw 还没有
     tmp = p + ".tmp"
     with open(tmp, "w", encoding="utf-8", newline="") as f:
         f.write(text)
