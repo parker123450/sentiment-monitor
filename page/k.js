@@ -138,6 +138,27 @@
     </div>`).join("") + `<p class="knote">支持 / 中性 / 反对是程序每天按事先写好的规则读的；证据和反证是 AI 在对话里写的，反证放在前面。某一环变了、错的条件出现了，会进"今天要知道的"。K 线上标了提出判断的那天。</p>`;
   })();
 
+  // ---------- 试用记录（两周）：看了哪几块、帮上没有；发到 ntfy 的另一个频道，云端取回来加密存（qx/notify.py）
+  (function trial() {
+    const el = $("trial"); if (!el || !RAW.fb) return;
+    const day = new Date().toISOString().slice(0, 10), K = "qx-trial-" + day;
+    let done = false; try { done = !!localStorage.getItem(K); } catch (e) {}
+    const blocks = ["今天要知道的", "情绪阶段", "K 线", "我的判断", "期权", "预测市场", "新闻和日历"];
+    el.hidden = false;
+    el.innerHTML = `<h3>试用记录（每天点一下，两周后看哪块真有用）</h3><p style="margin:0;color:var(--ink-2);font-size:13px">${done ? "今天已经记过了，再记一次也行。" : "今天看了哪几块？帮上了吗？"}</p>
+      <div class="row">${blocks.map(b => `<label><input type="checkbox" value="${b}">${b}</label>`).join("")}</div>
+      <div class="row">${["帮上了", "有一点", "没帮上"].map(u => `<label><input type="radio" name="tu" value="${u}">${u}</label>`).join("")}</div>
+      <textarea id="tnote" placeholder="一句话（可以不写）：比如哪条提醒让你做了什么，或者哪里没用"></textarea>
+      <button type="button" id="tsend">记下</button> <span id="tmsg" style="font-size:13px;color:var(--ink-3)"></span>`;
+    $("tsend").addEventListener("click", async () => {
+      const seen = [...el.querySelectorAll("input[type=checkbox]:checked")].map(x => x.value), u = el.querySelector("input[name=tu]:checked");
+      const body = JSON.stringify({ day, seen, useful: u ? u.value : "", note: $("tnote").value.trim() });
+      $("tmsg").textContent = "正在记…";
+      try { const r = await fetch("https://ntfy.sh/" + RAW.fb, { method: "POST", body }); if (!r.ok) throw 0; try { localStorage.setItem(K, "1"); } catch (e) {} $("tmsg").textContent = "记下了，云端下一次运行会取回去。"; }
+      catch (e) { $("tmsg").textContent = "没发出去，过一会再试。"; }
+    });
+  })();
+
   // ---------- 预测市场（第 5 块）、新闻和日历（第 6 块）；规则在 口径.md 第五节
   (function happen() {
     const H = RAW.happen; if (!H) return;

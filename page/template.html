@@ -113,6 +113,12 @@ h2 { font-size: 18px; margin: 30px 0 6px; }
 .jl details ul { margin: 2px 0 4px; padding-left: 18px; }
 .jw { font-size: 13.5px; padding: 4px 0; }
 .jw b { white-space: nowrap; }
+.trial { margin-top: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+.trial h3 { margin: 0 0 4px; font-size: 15px; }
+.trial .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.trial label { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 99px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
+.trial textarea { width: 100%; font: inherit; font-size: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--bg); color: var(--ink); min-height: 3em; }
+.trial button { font: inherit; font-weight: 700; padding: 8px 16px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; cursor: pointer; margin-top: 8px; }
 .warn { background: color-mix(in srgb, var(--watch) 14%, var(--panel)); border: 1px solid var(--watch); border-radius: 10px; padding: 8px 12px; font-size: 13.5px; color: var(--ink); margin: 8px 0 0; }
 .gauge { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 10px; margin: 0 0 12px; }
 .gbox { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; min-width: 0; }
@@ -246,6 +252,7 @@ footer { color: var(--ink-3); font-size: 12.5px; margin-top: 24px; }
     <p><b>CNN 恐慌贪婪</b>：CNN 公布的数，只作参考，不进阶段。它用的都是大盘读数，板块自己跌的时候常常看不出来。</p>
     <p><b>抛售</b>标签：成交量是 50 日均量 2 倍以上、当天跌 2% 以上、RSI 低于 40。<b>涨过头</b>标签：RSI 高于 75、价格比 50 日线高 15% 以上，只说明涨得急。所有读数只和当天以前的历史比。这是描述，不是买卖建议。定义全文在仓库的 口径.md。</p>
   </details>
+  <section class="trial" id="trial" hidden></section>
   <footer>数据：Yahoo（行情、VIX、VXN、成分股、信用 ETF）、CBOE 认沽认购、AAII 散户调查、FRED（Moody's 和 ICE 信用利差）、CNN 恐慌贪婪。<span id="upd"></span></footer>
 </main>
 <script src="k.js"></script>

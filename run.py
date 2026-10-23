@@ -19,7 +19,7 @@ from datetime import datetime, timezone, timedelta
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-from qx import clock, crypt, export, fetch, happen, page, selftest, sentiment, store   # noqa: E402
+from qx import clock, crypt, export, fetch, happen, notify, page, selftest, sentiment, store   # noqa: E402
 from qx.registry import LINKED                                                  # noqa: E402
 
 SITE = os.path.join(ROOT, "site")
@@ -86,7 +86,7 @@ def build(check=False, write=False):
     D, aaii = store.load_all()
     if "^SOX" not in D:
         log("还没有费城半导体的日线，这次不算、不生成页面")
-        return False
+        return False, None
     R = sentiment.compute_all(D, aaii)
     ok = True
     if check:
@@ -102,8 +102,8 @@ def build(check=False, write=False):
         else:
             log("页面：没有 PAGE_PASSWORD，不生成要发布的页面" + ("" if os.environ.get("CI") else f"；本机预览 {os.path.relpath(PREVIEW, ROOT)}"))
     st = R["stage"].iloc[-1]
-    log(f"现在：{sentiment.NAMES[int(st)]}（{R['P'].index[-1].date()}）")
-    return ok
+    log(f"现在：{sentiment.NAMES[int(st)]}（{R['P'].index[-1].date()}）；今天要知道的 {len(data['today']['items'])} 条；判断卡 {len(data.get('judge') or [])} 张")
+    return ok, data
 
 
 def archive_chains(st):
@@ -160,7 +160,15 @@ def auto():
     if do["daily"]:
         os.makedirs(os.path.join(ROOT, "data", "out"), exist_ok=True)
         open(os.path.join(ROOT, "data", "out", "raw_changed"), "w").close()     # 工作流看到它才存行情缓存
-    ok = build(check=check, write=write)
+    try:
+        notify.pull_feedback(log=log)                   # 页面发来的试用记录
+    except Exception as e:
+        log(f"  ! 试用记录没取到：{e}")
+    ok, data = build(check=check, write=write)
+    try:
+        notify.push(data, ok, log=log)
+    except Exception as e:
+        log(f"  ! 推送出错：{e}")
     files = archive_chains(fetch.read_state())
     with open(os.path.join(ROOT, "data", "out", "upload.txt") if files else os.devnull, "w") as f:
         f.write("\n".join(files))
@@ -172,10 +180,10 @@ def main():
     if cmd == "auto":
         ok = auto()
     elif cmd == "page":
-        ok = build()
+        ok, _ = build()
     elif cmd == "daily":
         fetch.daily(log=log)
-        ok = build(check=True, write=True)
+        ok, _ = build(check=True, write=True)
     elif cmd == "seal":                              # 本机 ../判断/*.json → 加密的 cards/*.enc（进仓库）
         from qx import judge
         for p in judge.seal():

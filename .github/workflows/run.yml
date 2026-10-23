@@ -3,7 +3,8 @@
 # 每次：取回行情缓存和 data 分支上加密的小文件 → python run.py auto（自己决定这次抓什么、算不算）→
 #       页面（有 PAGE_PASSWORD 才生成，整页加密）发布到 Pages → 完整期权链存档加密后传到 Releases → 小文件加密存回 data 分支。
 # GitHub 的定时用 UTC，负载高时会晚 5–30 分钟、偶尔跳过一次。新仓库的定时有时要等一阵才开始触发。
-# Secrets：PAGE_PASSWORD（网页密码，用户自己设）、DATA_KEY（加密数据的钥匙，本机 ~/.config/qx/data_key 有一份）。
+# Secrets：PAGE_PASSWORD（网页密码，用户自己设）、DATA_KEY（加密数据的钥匙，本机 ~/.config/qx/data_key 有一份）、
+#          NTFY_TOPIC（推送频道，本机 ~/.config/qx/ntfy_topic）、FEEDBACK_TOPIC（页面发试用记录的频道，本机 ~/.config/qx/feedback_topic）。
 
 name: 每 15 分钟
 
@@ -31,6 +32,8 @@ jobs:
     env:
       PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
       DATA_KEY: ${{ secrets.DATA_KEY }}
+      NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+      FEEDBACK_TOPIC: ${{ secrets.FEEDBACK_TOPIC }}
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
@@ -126,3 +129,27 @@ jobs:
     steps:
       - id: deploy
         uses: actions/deploy-pages@v4
+
+  # GitHub 的定时没触发时接力：上一次定时触发在 40 分钟以前（或从来没有），就等到这次开始后 15 分钟，自己再叫一次。
+  # 定时恢复正常以后这一步自动不做。要停掉整个面板：gh workflow disable run.yml
+  next:
+    needs: [run, deploy]
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      actions: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: 定时不触发时接力
+        run: |
+          last=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?event=schedule&per_page=1" --jq '.workflow_runs[0].created_at // ""')
+          if [ -n "$last" ] && [ $(( $(date +%s) - $(date -d "$last" +%s) )) -lt 2400 ]; then echo "定时在正常触发（上一次 $last），不接力"; exit 0; fi
+          started=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .run_started_at)
+          wait=$(( 900 - ( $(date +%s) - $(date -d "$started" +%s) ) ))
+          if [ "$wait" -gt 0 ]; then echo "等 $wait 秒"; sleep "$wait"; fi
+          q=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?status=queued&per_page=1" --jq '.total_count')
+          if [ "$q" -gt 0 ]; then echo "已经有排队的，不接力"; exit 0; fi
+          gh workflow run run.yml -R "$GITHUB_REPOSITORY" && echo "已叫下一次"
