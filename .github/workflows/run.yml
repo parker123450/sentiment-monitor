@@ -1,0 +1,128 @@
+# 情绪面板 · 每 15 分钟跑一次（2026-10-23 用户定的做法 A：公开仓库、网页加密码、数据加密）
+#
+# 每次：取回行情缓存和 data 分支上加密的小文件 → python run.py auto（自己决定这次抓什么、算不算）→
+#       页面（有 PAGE_PASSWORD 才生成，整页加密）发布到 Pages → 完整期权链存档加密后传到 Releases → 小文件加密存回 data 分支。
+# GitHub 的定时用 UTC，负载高时会晚 5–30 分钟、偶尔跳过一次。
+# Secrets：PAGE_PASSWORD（网页密码，用户自己设）、DATA_KEY（加密数据的钥匙，本机 ~/.config/qx/data_key 有一份）。
+
+name: 每 15 分钟
+
+on:
+  schedule:
+    - cron: "4,19,34,49 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write     # data 分支、Releases
+  actions: write      # 清理旧的行情缓存
+  pages: write
+  id-token: write
+
+concurrency:
+  group: run
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    outputs:
+      page: ${{ steps.done.outputs.page }}
+    env:
+      PAGE_PASSWORD: ${{ secrets.PAGE_PASSWORD }}
+      DATA_KEY: ${{ secrets.DATA_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: 取回行情缓存
+        uses: actions/cache/restore@v4
+        with:
+          path: data/raw
+          key: raw-${{ github.run_id }}
+          restore-keys: raw-
+
+      - name: 取回 data 分支上加密的小文件
+        id: restore
+        run: |
+          set -e
+          [ -n "$DATA_KEY" ] || { echo "没有 DATA_KEY，不跑"; exit 1; }
+          mkdir -p data
+          if git fetch -q --depth=1 origin data 2>/dev/null; then
+            git show FETCH_HEAD:data.enc > /tmp/data.enc
+            python run.py unpack /tmp/data.enc
+          else
+            echo "还没有 data 分支，从头攒"
+          fi
+          echo "n=$(find data -type f -not -path 'data/raw/*' | wc -l)" >> "$GITHUB_OUTPUT"
+
+      - name: 跑（抓数据、算、生成页面）
+        id: run
+        run: python run.py auto
+
+      - name: 完整期权链存档（加密）传到 Releases
+        if: always() && hashFiles('data/out/upload.txt') != ''
+        run: |
+          for f in $(cat data/out/upload.txt); do
+            d=$(basename "$f" .enc); day=${d#chains-}; tag="chains-${day:0:7}"
+            gh release view "$tag" >/dev/null 2>&1 || gh release create "$tag" --title "期权链存档 ${day:0:7}" --notes "每个美股交易日收盘后一份完整期权链（CBOE 延迟报价），已加密。"
+            gh release upload "$tag" "$f" --clobber && python run.py uploaded "$f"
+          done
+
+      - name: 小文件加密存回 data 分支
+        if: always() && steps.restore.outcome == 'success'
+        run: |
+          set -e
+          now=$(find data -type f -not -path 'data/raw/*' -not -path 'data/out/*' | wc -l)
+          if [ "$now" -lt "${{ steps.restore.outputs.n }}" ]; then echo "文件比取回来的少（$now < ${{ steps.restore.outputs.n }}），不存，防止把攒下的历史盖掉"; exit 1; fi
+          D=$(mktemp -d)
+          python run.py pack "$D/data.enc"
+          cd "$D"
+          git init -q -b data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          printf '# data 分支\n\n只有一个加密文件 data.enc：面板每 15 分钟攒下来的小文件（日志、认沽认购历史、期权链摘要、CNN、预测市场、要闻）。钥匙不在仓库里。每次覆盖，只留最新一份。\n' > README.md
+          git add -A
+          git commit -q -m "数据 $(date -u '+%F %H:%M') UTC"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data
+
+      - name: 保存行情缓存（这次下载过日线才存）
+        if: always() && hashFiles('data/out/raw_changed') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: data/raw
+          key: raw-${{ github.run_id }}
+
+      - name: 只留最新 3 份行情缓存
+        if: always() && hashFiles('data/out/raw_changed') != ''
+        run: |
+          gh cache list --key raw- --sort created_at --order desc --limit 50 --json id -q '.[3:][].id' | xargs -r -n1 gh cache delete || true
+
+      - name: 网页（加密的）
+        id: done
+        if: always() && hashFiles('site/index.html') != ''
+        run: echo "page=1" >> "$GITHUB_OUTPUT"
+
+      - name: 打包网页
+        if: always() && steps.done.outputs.page == '1'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: run
+    if: always() && needs.run.outputs.page == '1'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

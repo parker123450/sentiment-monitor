@@ -1,0 +1,5 @@
+numpy>=1.26
+pandas>=2.2
+xlrd>=2.0.1
+cryptography>=42
+certifi

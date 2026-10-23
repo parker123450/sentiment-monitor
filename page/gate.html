@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>情绪阶段</title>
+<style>
+:root { color-scheme: light; --bg: #f6f6f3; --panel: #ffffff; --ink: #15181b; --ink-2: #434b50; --ink-3: #6b7277; --line: #dcded9; --accent: #2f6fb5; --alert: #c43a2c;
+  --f-body: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { color-scheme: dark; --bg: #121416; --panel: #1b1f22; --ink: #eef0ee; --ink-2: #bfc5c9; --ink-3: #979fa3; --line: #2e3337; --accent: #5b9be6; --alert: #e5594b; } }
+:root[data-theme="dark"] { color-scheme: dark; --bg: #121416; --panel: #1b1f22; --ink: #eef0ee; --ink-2: #bfc5c9; --ink-3: #979fa3; --line: #2e3337; --accent: #5b9be6; --alert: #e5594b; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 var(--f-body); }
+main { max-width: 380px; margin: 18vh auto 0; padding: 0 16px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+h1 { font-size: 20px; margin: 0 0 4px; }
+p { margin: 0 0 14px; color: var(--ink-2); font-size: 14px; }
+input[type=password] { width: 100%; font: inherit; font-size: 16px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
+label { display: flex; gap: 6px; align-items: center; font-size: 13.5px; color: var(--ink-2); margin: 10px 0 14px; }
+button { width: 100%; font: inherit; font-weight: 700; padding: 10px; border-radius: 10px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
+#msg { margin: 12px 0 0; min-height: 1.6em; font-size: 13.5px; }
+#msg.bad { color: var(--alert); }
+</style>
+</head>
+<body>
+<main id="gate" hidden>
+  <form class="card" id="f">
+    <h1>情绪阶段</h1>
+    <p>输入密码。在这台设备上记住以后，下次直接打开。</p>
+    <input id="pw" type="password" autocomplete="current-password" placeholder="密码" aria-label="密码" required>
+    <label><input id="rem" type="checkbox" checked> 在这台设备上记住</label>
+    <button type="submit">打开</button>
+    <p id="msg" role="status"></p>
+  </form>
+</main>
+<script>
+(function () {
+  const P = __PAYLOAD__, KEY = "qx-page-key", enc = new TextEncoder();
+  const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const tob64 = a => btoa(String.fromCharCode.apply(null, Array.from(a)));
+  async function derive(pw) {
+    const base = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveBits"]);
+    return new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: enc.encode(P.salt), iterations: P.iter }, base, 256));
+  }
+  async function unlock(raw) {
+    const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["decrypt"]);
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(P.iv) }, key, b64(P.ct));
+    return await new Response(new Blob([pt]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  }
+  const show = html => { document.open(); document.write(html); document.close(); };
+  const ask = () => { document.getElementById("gate").hidden = false; document.getElementById("pw").focus(); };
+  let saved = null; try { saved = localStorage.getItem(KEY); } catch (e) {}
+  if (saved) unlock(b64(saved)).then(show).catch(() => { try { localStorage.removeItem(KEY); } catch (e) {} ask(); }); else ask();
+  document.getElementById("f").addEventListener("submit", async ev => {
+    ev.preventDefault();
+    const msg = document.getElementById("msg"); msg.className = ""; msg.textContent = "正在解开…";
+    try {
+      const raw = await derive(document.getElementById("pw").value), html = await unlock(raw);
+      if (document.getElementById("rem").checked) { try { localStorage.setItem(KEY, tob64(raw)); } catch (e) {} }
+      show(html);
+    } catch (e) { msg.className = "bad"; msg.textContent = "密码不对，再试一次。"; }
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.DS_Store
+# 数据不进主分支：行情在 Actions 缓存，小文件加密后在 data 分支，完整期权链加密后在 Releases
+data/
+site/
+本机预览/

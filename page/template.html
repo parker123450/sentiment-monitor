@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>情绪阶段</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f6f3; --panel: #ffffff; --ink: #15181b; --ink-2: #434b50; --ink-3: #6b7277; --line: #dcded9; --grid: #ececea;
+  --fear: #2f6fb5; --greed: #d4562a; --accent: #2f6fb5; --alert: #c43a2c; --watch: #c4860a; --ok: #2e8a62; --violet: #6d4fc2;
+  --up: #16a34a; --down: #dc2626; --pos: var(--up); --neg: var(--down);
+  --s1: #f3e2a6; --s2: #f2bd8a; --s3: #e98f86; --s4: #c6e3cf;
+  --s1i: #7a5d00; --s2i: #9a4710; --s3i: #a32720; --s4i: #1f6b3a;
+  --heat: #c43a2c;
+  --f-body: -apple-system, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  --f-data: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #121416; --panel: #1b1f22; --ink: #eef0ee; --ink-2: #bfc5c9; --ink-3: #979fa3; --line: #2e3337; --grid: #24292c;
+    --fear: #5b9be6; --greed: #f07a4a; --accent: #5b9be6; --alert: #e5594b; --watch: #e0a52a; --ok: #43a87c; --violet: #a58cf0;
+    --up: #22c55e; --down: #ef4444;
+    --s1: #5a4a12; --s2: #6b3a17; --s3: #6e2622; --s4: #1f4a2c;
+    --s1i: #f0d27a; --s2i: #f5b27a; --s3i: #f39a92; --s4i: #8fd6a6;
+    --heat: #ef6b5e;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #121416; --panel: #1b1f22; --ink: #eef0ee; --ink-2: #bfc5c9; --ink-3: #979fa3; --line: #2e3337; --grid: #24292c;
+  --fear: #5b9be6; --greed: #f07a4a; --accent: #5b9be6; --alert: #e5594b; --watch: #e0a52a; --ok: #43a87c; --violet: #a58cf0;
+  --up: #22c55e; --down: #ef4444;
+  --s1: #5a4a12; --s2: #6b3a17; --s3: #6e2622; --s4: #1f4a2c;
+  --s1i: #f0d27a; --s2i: #f5b27a; --s3i: #f39a92; --s4i: #8fd6a6;
+  --heat: #ef6b5e;
+}
+:root[data-updown="red"] { --pos: var(--down); --neg: var(--up); }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.6 var(--f-body); }
+main { max-width: 1120px; margin: 0 auto; padding: 22px 16px 48px; }
+.num { font-family: var(--f-data); font-variant-numeric: tabular-nums; }
+.pos { color: var(--pos); } .neg { color: var(--neg); }
+.top { color: var(--ink-3); font-size: 13px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+h1 { font-size: 28px; line-height: 1.3; margin: 10px 0 6px; }
+h1 .tag { display: inline-block; font-size: 15px; font-weight: 600; padding: 3px 10px; border-radius: 999px; vertical-align: 5px; margin-right: 8px; }
+.lead { color: var(--ink-2); margin: 0 0 16px; max-width: 860px; font-size: 16px; }
+h2 { font-size: 18px; margin: 30px 0 6px; }
+.steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.step { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.step.on { border-width: 2px; }
+.step .no { font-size: 12px; color: var(--ink-3); }
+.step .t { font-size: 20px; font-weight: 700; }
+.step .st { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.fact { display: flex; gap: 8px; font-size: 14px; padding: 6px 0; border-top: 1px dashed var(--line); }
+.fact .m { flex: 0 0 16px; text-align: center; font-weight: 700; }
+.fact .w { font-size: 12px; white-space: nowrap; }
+.fact .x { flex: 1; }
+.warn { background: color-mix(in srgb, var(--watch) 14%, var(--panel)); border: 1px solid var(--watch); border-radius: 10px; padding: 8px 12px; font-size: 13.5px; color: var(--ink); margin: 8px 0 0; }
+.gauge { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 10px; margin: 0 0 12px; }
+.gbox { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; min-width: 0; }
+.gbox h3 { margin: 0 0 6px; font-size: 13px; color: var(--ink-3); font-weight: 500; }
+.ln { display: grid; grid-template-columns: 3.2em 1fr auto; gap: 8px; align-items: baseline; padding: 5px 0; border-top: 1px dashed var(--line); font-size: 14px; }
+.ln:first-of-type { border-top: 0; }
+.ln .k { font-weight: 700; }
+.ln .w { font-size: 12.5px; white-space: nowrap; }
+.ln .mv { font-size: 12.5px; color: var(--ink-2); white-space: nowrap; }
+.ln.cnn { grid-template-columns: 3.2em 1fr; color: var(--ink-2); font-size: 13px; }
+#yr { display: block; width: 100%; height: 132px; }
+.next { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; color: var(--ink-2); font-size: 14.5px; margin-top: 10px; }
+.next b { color: var(--ink); }
+.two { display: grid; grid-template-columns: 1.3fr 1fr; gap: 10px; margin-top: 10px; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; min-width: 0; overflow-x: auto; }
+.card h3 { margin: 0 0 4px; font-size: 15px; }
+.card p { margin: 0 0 8px; color: var(--ink-2); font-size: 13.5px; }
+.tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+.tbl th { text-align: left; color: var(--ink-3); font-weight: 500; font-size: 12.5px; padding: 4px 6px 4px 0; border-bottom: 1px solid var(--line); }
+.tbl td { padding: 5px 6px 5px 0; border-bottom: 1px solid var(--grid); }
+.tbl td.r, .tbl th.r { text-align: right; }
+.tbl .nm small { color: var(--ink-3); display: block; font-size: 11.5px; }
+.bar { height: 8px; border-radius: 4px; background: var(--grid); position: relative; min-width: 60px; }
+.bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; background: var(--heat); }
+/* —— K 线（照「科技情绪全景」的版式和交互） */
+.kbox { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.kread { font-size: 13px; color: var(--ink-2); line-height: 1.7; background: var(--bg); border-radius: 10px; padding: 8px 12px; }
+.kread b { color: var(--ink); }
+.ktools { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.kgrp { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.kl { font-size: 12px; color: var(--ink-3); margin-right: 2px; }
+.kbtn { font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); color: var(--ink-2); cursor: pointer; line-height: 1.4; }
+.kbtn:hover { border-color: var(--ink-3); }
+.kbtn.on { border-color: var(--ink); color: var(--ink); font-weight: 700; }
+.mach i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+.mach.off { opacity: .45; }
+.mach span { margin-left: 4px; color: var(--ink-3); }
+.kgrp input[type=number], .kgrp select { font: inherit; font-size: 12.5px; padding: 4px 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg); color: var(--ink); }
+.kgrp input[type=number] { width: 4.5em; }
+.kgrp label { font-size: 12.5px; color: var(--ink-2); display: flex; align-items: center; gap: 4px; }
+.kwrap { position: relative; width: 100%; min-width: 0; }
+.kwrap canvas { display: block; width: 100%; height: 560px; touch-action: pan-y; cursor: crosshair; outline: none; border-radius: 6px; }
+.klegend { position: absolute; left: 6px; top: 4px; right: 70px; pointer-events: none; font-size: 12px; line-height: 1.55; color: var(--ink-2); text-shadow: 0 0 3px var(--panel), 0 0 3px var(--panel); }
+.klegend .l1, .klegend .l2 { display: flex; flex-wrap: wrap; gap: 0 10px; }
+.klegend b { color: var(--ink); }
+.klegend i { font-style: normal; font-family: var(--f-data); }
+.kpl { position: absolute; left: 6px; pointer-events: none; font-size: 12px; color: var(--ink-2); text-shadow: 0 0 3px var(--panel), 0 0 3px var(--panel); }
+.kpl b { font-family: var(--f-data); color: var(--ink); }
+.khint { position: absolute; right: 72px; bottom: 30px; font-size: 12px; background: var(--ink); color: var(--panel); padding: 3px 9px; border-radius: 6px; pointer-events: none; }
+.kpan { width: 100%; margin: -4px 0 0; accent-color: var(--accent); }
+.kkey { font-size: 12px; color: var(--ink-2); line-height: 1.9; }
+.kkey b { font-weight: 700; }
+.kma { font-size: 12.5px; color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.kpanel { border-top: 1px solid var(--line); padding-top: 12px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.kph { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.kph b { font-size: 16px; font-weight: 900; }
+.kph .sp { flex: 1; }
+.kpg { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 10px; }
+.kpc { background: var(--bg); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.kpc h4 { margin: 0 0 6px; font-size: 12.5px; color: var(--ink-3); font-weight: 500; letter-spacing: .04em; }
+.kpc table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.kpc td { padding: 3px 0; white-space: nowrap; }
+.kpc td + td { text-align: right; padding-left: 8px; }
+.kpc .sw { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
+.kpc .big { font-size: 20px; font-weight: 700; line-height: 1.3; }
+.kpc p { margin: 4px 0 0; font-size: 12.5px; color: var(--ink-2); }
+.kpc .fact { font-size: 12.5px; padding: 4px 0; }
+.kpc .three { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.kpins { font-size: 13.5px; color: var(--ink); margin: 0; max-width: 74ch; }
+.knote { font-size: 12px; color: var(--ink-3); margin: 0; max-width: 80ch; }
+.chip { font-size: 12px; font-weight: 700; padding: 1px 7px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.jd { font: inherit; background: none; border: 0; padding: 0; color: var(--accent); text-decoration: underline dotted; text-underline-offset: 3px; cursor: pointer; }
+details { margin-top: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 14px; color: var(--ink-2); }
+details summary { cursor: pointer; color: var(--ink); font-weight: 600; }
+details p { margin: 8px 0; }
+footer { color: var(--ink-3); font-size: 12.5px; margin-top: 24px; }
+@media (max-width: 760px) {
+  h1 { font-size: 23px; }
+  .steps, .two, .kpc .three, .gauge { grid-template-columns: 1fr; }
+  .kwrap canvas { height: 500px; }
+  .klegend .l2 { display: none; } .klegend { right: 58px; }
+  .kbtn { padding: 6px 11px; font-size: 13px; }
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><span>情绪阶段 · 费城半导体</span><span id="asof"></span></div>
+  <div class="warn" id="warn" hidden></div>
+  <h1 id="hero"></h1>
+  <p class="lead" id="lead"></p>
+  <div class="gauge">
+    <div class="gbox"><h3>四条恐慌读数，今天</h3><div id="lines"></div></div>
+    <div class="gbox"><h3>最近一年：上面一条是阶段，下面四行越深越恐慌</h3><canvas id="yr" role="img" aria-label="最近一年的阶段和四条恐慌读数"></canvas></div>
+  </div>
+  <div class="steps" id="steps"></div>
+  <div class="next" id="next"></div>
+  <div class="two">
+    <div class="card"><h3>这次谁跌得最深</h3><p>按产业链分组：几只跌破 20 日线、几只今天创 20 天新低、10 天跌了多少、离一年高点跌了多少（都是中位数）。</p><table class="tbl" id="groups"></table></div>
+    <div class="card"><h3>信用压力在哪一层</h3><p>公司债比国债多要的利息（利差，基点），按评级分，越往下评级越差。看压力是不是从最差的公司往上扩散。</p><table class="tbl" id="ice"></table></div>
+  </div>
+
+  <h2>K 线</h2>
+  <div class="kbox" id="kline">
+    <div class="kread"><b>怎么看</b>：价格区最下面的色带是每天在哪一段（<b style="color:var(--s1i)">在卖</b> → <b style="color:var(--s2i)">在怕</b> → <b style="color:var(--s3i)">投降</b> → <b style="color:var(--s4i)">在出清</b>），标签是进入某一段的那天，和恐慌高峰、恐慌退潮、二次探底、参与度先走这几个转折。副图默认是<b>恐慌热度</b>：抛售、定价、仓位、信用四行，颜色越深越恐慌，最深的是历史上最恐慌的 10%；在"副图"里可以单独看一条。鼠标移到某一天，下面的面板列出那天的事实和之后怎么走。拖动平移，Ctrl＋滚轮或双指缩放；可以自己画水平线和趋势线。</div>
+    <div class="ktools" id="ktools"></div>
+    <div class="kwrap"><canvas id="kc" tabindex="0" role="img" aria-label="K 线、均线、成交量和副图，可点选和画线"></canvas><div class="klegend" id="klegend"></div><div class="kpl" id="kvl"></div><div class="kpl" id="ksl"></div><div class="khint" id="khint" hidden></div></div>
+    <input type="range" class="kpan" id="kpan" step="1" aria-label="左右移动 K 线（不用拖图）">
+    <div class="kkey" id="kkey"></div>
+    <div class="kma" id="kma"></div>
+    <div class="kpanel" id="kpanel" aria-live="polite"></div>
+  </div>
+
+  <details>
+    <summary>四条恐慌读数是怎么算的</summary>
+    <p><b>抛售恐慌</b>：28 只半导体股里，最近 5 天平均每天有几只创 20 天新低，和历史比排第几。股票池扩大到 63 只（加小盘、次新）结论一样。历次大跌的最低点前后，费城半导体、纳指、标普 84% 到 100% 的次数都到了历史上最高的 10%，2015 年前后都成立。</p>
+    <p><b>定价恐慌</b>：科技股保险（VXN）比它自己最近 3 个月的平常水平贵多少。和"自己最近"比，不和 2001、2008 年比。</p>
+    <p><b>仓位恐慌</b>：两样取较高的：股票期权里买跌和买涨的比例比平时高多少；散户看多减看空一周里掉了多少。</p>
+    <p><b>信用压力</b>：7 只信用 ETF（高收益债、贷款、堕落天使、投资级、新兴市场债）里，有几只 20 天跑输国债到了历史最差的 10%。历次底部亮 82% 到 90%，随机日子只有三成。</p>
+    <p><b>三段</b>：历次底部都是先在卖（成分股普跌、放量），再在怕（保险变贵、散户转空），最后投降（抢买保护、信用利差走阔、VIX 冲高）。按这个顺序算，价格回升就重新开始；某一段 10 天没再亮就退回去。半导体 21 次大跌全都到了"在怕"，19 次到了"投降"。进入"投降"不等于到底，只有约两成在 3 周内见底。</p>
+    <p><b>在加速 / 在减速</b>：每条读数 5 天里升了多少、比 5 天前升得快还是慢。研究里加速度最先到顶，所以"还在升，但在减速"多半在第一、二段之间，不是最后。</p>
+    <p><b>哪一型</b>：这一段下跌以来 VIX 到过 30，是<b>宏观冲击型</b>，大盘读数都会亮；没到过，是<b>板块自己跌型</b>（像 2026 年 7 月、10 月），大盘读数看不出来，要看"比自己最近"的读数和成分股。</p>
+    <p><b>转折标签</b>：<b>恐慌高峰</b> = 一段下跌里三条读数平均最高的那天（要等恐慌退了才标出来）；<b>恐慌退潮</b> = 怕过以后各项读数都退了的第一天；<b>二次探底</b> = 退潮以后价格回到这一段最低点 3% 以内，但恐慌比高峰低很多；<b>参与度先走</b> = 指数离一年高点不到 3%，站上 50 日线的成分股却比最近少了 20 个百分点以上（顶部历史上测不出来，只是描述）。</p>
+    <p><b>CNN 恐慌贪婪</b>：CNN 公布的数，只作参考，不进阶段。它用的都是大盘读数，板块自己跌的时候常常看不出来。</p>
+    <p><b>抛售</b>标签：成交量是 50 日均量 2 倍以上、当天跌 2% 以上、RSI 低于 40。<b>涨过头</b>标签：RSI 高于 75、价格比 50 日线高 15% 以上，只说明涨得急。所有读数只和当天以前的历史比。这是描述，不是买卖建议。定义全文在仓库的 口径.md。</p>
+  </details>
+  <footer>数据：Yahoo（行情、VIX、VXN、成分股、信用 ETF）、CBOE 认沽认购、AAII 散户调查、FRED（Moody's 和 ICE 信用利差）、CNN 恐慌贪婪。<span id="upd"></span></footer>
+</main>
+<script src="k.js"></script>
+</body>
+</html>
