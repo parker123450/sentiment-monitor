@@ -412,7 +412,7 @@
         else if (cfg.sub === "vix") val = fmt(dv(i, "vix"), 1);
         else if (cfg.sub === "t3") val = fmt(dv(i, "t3"), 3);
         else if (cfg.sub === "breadth") val = `${fmt(dv(i, "pct50"), 0)}% / ${fmt(dv(i, "pct200"), 0)}%`;
-        ks.innerHTML = `${esc(G.sub.lab)}：<b>${val}</b>`; } else ks.hidden = true;
+        ks.innerHTML = cfg.sub === "heat" && G.W < 560 ? `<b>${val}</b>` : `${esc(G.sub.lab)}：<b>${val}</b>`; } else ks.hidden = true;
     }
     function maState(i) {
       const ps = DEF_MA.filter(p => isFinite((MA[p] || XMA[p] || [])[i])), v = ps.map(p => (MA[p] || XMA[p])[i]);
