@@ -184,6 +184,49 @@ def probs(opts_by_exp, spot):
     return out
 
 
+def _gamma(S, K, T, iv):
+    import numpy as np
+    d1 = (np.log(S / K) + 0.5 * iv * iv * T) / (iv * np.sqrt(T))
+    return np.exp(-0.5 * d1 * d1) / np.sqrt(2 * np.pi) / (S * iv * np.sqrt(T))
+
+
+def positioning(rows, spot):
+    """口径.md 四.3、四.4：45 天内的上方 / 下方最大押注和磁铁；总 gamma 敞口（每 1% 涨跌，美元）和翻转价。
+    rows：[(认购 / 认沽, 行权价, 剩几天, 隐含波动, 持仓)]。做市商假设持有认购、卖出认沽（业界常用近似）。"""
+    import numpy as np
+    if not rows or not spot:
+        return {}
+    cp = np.array([r[0] == "C" for r in rows]); K = np.array([r[1] for r in rows], float)
+    dte = np.array([r[2] for r in rows], float); iv = np.array([r[3] for r in rows], float); oi = np.array([r[4] for r in rows], float)
+    out = {}
+    near = (dte <= 45) & (np.abs(K / spot - 1) <= 0.15)
+    def top(mask):
+        if not mask.any():
+            return None, None
+        ks, inv = np.unique(K[mask], return_inverse=True)
+        tot = np.bincount(inv, weights=oi[mask])
+        i = int(np.argmax(tot))
+        return float(ks[i]), int(tot[i])
+    out["cwall"], out["cwall_oi"] = top(near & cp & (K > spot))
+    out["pwall"], out["pwall_oi"] = top(near & ~cp & (K < spot))
+    out["magnet"], out["magnet_oi"] = top(near)
+    ok = (iv > 0.01) & (iv < 5) & (oi > 0)
+    T = np.maximum(dte[ok], 0.5) / 365
+    sign = np.where(cp[ok], 1.0, -1.0)
+    g = lambda S: float(np.sum(sign * _gamma(S, K[ok], T, iv[ok]) * oi[ok] * 100 * S * S * 0.01))
+    out["gex"] = g(spot)
+    grid = spot * np.linspace(0.85, 1.15, 61)
+    vals = np.array([g(x) for x in grid])
+    ch = np.where(np.sign(vals[1:]) != np.sign(vals[:-1]))[0]
+    if len(ch):
+        i = ch[np.argmin(np.abs(grid[ch] - spot))]
+        a, b = vals[i], vals[i + 1]
+        out["flip"] = float(grid[i] + (grid[i + 1] - grid[i]) * (-a / (b - a) if b != a else 0.5))
+    else:
+        out["flip"] = None
+    return out
+
+
 def chain_metrics(sym, j=None):
     j = j or fetch_chain(sym)
     D = j["data"]
@@ -192,6 +235,7 @@ def chain_metrics(sym, j=None):
     by_exp = {}
     cv = pv = coi = poi = 0.0
     unusual = []
+    pos_rows = []
     for o in D["options"]:
         try:
             exp, cp, k = _parse(o["option"])
@@ -209,6 +253,8 @@ def chain_metrics(sym, j=None):
         else:
             pv += vol; poi += oi
         iv = o.get("iv") or 0
+        if dte >= 0 and oi:
+            pos_rows.append((cp, k, dte, iv, oi))
         if dte < 2 or iv <= 0.01 or iv > 5:
             continue
         by_exp.setdefault(dte, []).append((cp, k, iv, o.get("delta") or 0))
@@ -231,10 +277,11 @@ def chain_metrics(sym, j=None):
             "term": (iv_near / iv_3m) if iv_near and iv_3m else None,      # > 1 = 近月比 3 个月贵
             "skew25": _interp(skew, 30),                                     # 25 delta 认沽 IV − 认购 IV，波动率点
             "pc_vol": pv / cv if cv else None, "pc_oi": poi / coi if coi else None, "vol": cv + pv,
-            "prob": probs(by_exp, spot), "unusual": sorted(unusual, key=lambda u: -u["usd"])[:UNUSUAL_TOP]}
+            "prob": probs(by_exp, spot), "unusual": sorted(unusual, key=lambda u: -u["usd"])[:UNUSUAL_TOP], **positioning(pos_rows, spot)}
 
 
-HIST_COLS = ["date", "symbol", "spot", "iv30", "term", "skew25", "pc_vol", "pc_oi", "vol", "p_dn20", "p_dn10", "p_up10", "p_up20", "p_dte", "p_sd"]
+HIST_COLS = ["date", "symbol", "spot", "iv30", "term", "skew25", "pc_vol", "pc_oi", "vol", "p_dn20", "p_dn10", "p_up10", "p_up20", "p_dte", "p_sd",
+             "gex", "flip", "cwall", "pwall", "magnet"]                     # 后五列 2026-10-23 加（口径.md 四）
 
 
 def read_history(hist_path):
@@ -287,7 +334,8 @@ def option_snapshots(symbols, hist_path, log=print, latest_path=None, archive_di
             latest = {}
         for m in out:
             if m.get("curve"):
-                latest[m["symbol"]] = {k: m.get(k) for k in ("date", "asof", "spot", "iv30", "curve", "prob", "unusual")}
+                latest[m["symbol"]] = {k: m.get(k) for k in ("date", "asof", "spot", "iv30", "term", "skew25", "pc_vol", "pc_oi", "curve", "prob", "unusual",
+                                                             "gex", "flip", "cwall", "cwall_oi", "pwall", "pwall_oi", "magnet", "magnet_oi", "name")}
         with open(latest_path + ".tmp", "w", encoding="utf-8") as f:
             json.dump(latest, f, ensure_ascii=False)
         os.replace(latest_path + ".tmp", latest_path)

@@ -97,7 +97,7 @@
   (function today() {
     const T = RAW.today, el = $("today"); if (!T || !el) return;
     const wk = d => "周" + "日一二三四五六"[new Date(d + "T12:00:00").getDay()];
-    const card = x => `<div class="it${x.us ? " us" : ""}"><div class="it-h"><span>过去 10 年 ${x.n10 < 1 ? "不到 1" : Math.round(x.n10)} 次</span>${x.live ? `<span class="it-tag">${esc(x.state || "盘中")}</span>` : ""}<span>${md(x.date)}</span></div>
+    const card = x => `<div class="it${x.us ? " us" : ""}"><div class="it-h"><span>${x.n10 == null ? esc(x.hist || "") : `过去 10 年 ${x.n10 < 1 ? "不到 1" : Math.round(x.n10)} 次`}</span>${x.live ? `<span class="it-tag">${esc(x.state || "盘中")}</span>` : ""}<span>${md(x.date)}</span></div>
       <div class="it-t">${esc(x.title)}</div>${(x.facts || []).length ? `<ul>${x.facts.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}${x.mean ? `<p class="it-m"><b>说明什么：</b>${esc(x.mean)}</p>` : ""}</div>`;
     let html = `<h2>今天要知道的<small>${md(T.asof)} 收盘${T.items.some(x => x.live) ? " · 含盘中" : ""}，越少见越靠前</small></h2>`;
     html += T.items.length ? T.items.map(card).join("") : `<div class="quiet">今天没有值得看的变化。</div>`;
@@ -108,6 +108,17 @@
       html += `<details><summary>所有品种的趋势状态（日 / 周 / 月）</summary><p>上行 = 收盘在均线上方、均线在升；下行反过来；其他是震荡。日线 20 日均线，周线 10 周，月线 10 个月；数字是这个状态持续了多久。</p><table class="tbl tr"><tr><th>品种</th><th>日线</th><th>周线</th><th>月线</th></tr>${T.trends.map(r => `<tr><td>${esc(r.name)}</td>${c(r.d, r.dn, "天")}${c(r.w, r.wn, "周")}${c(r.m, r.mn, "个月")}</tr>`).join("")}</table></details>`;
     }
     el.innerHTML = html;
+  })();
+
+  // ---------- 期权：五个问题（规则在 口径.md 第四节；白话在 qx/options.py 写好）
+  (function opt() {
+    const O = RAW.options, el = $("opt"); if (!O || !el || !(O.rows || []).length) return;
+    const Q = [["保险贵不贵", "q1"], ["更怕跌还是更想涨", "q2"], ["大家押在哪个价位", "q3"], ["做市商对冲会放大还是压住波动", "q4"], ["定价了多大的涨跌", "q5"]];
+    el.innerHTML = `<summary>期权：五个问题<small>${esc(O.summary || "")}</small></summary>
+      <p>大盘：${esc(O.market)}</p>
+      <div class="oq">${O.rows.map(r => `<div class="oc"><h4>${esc(r.name)}<small>${r.live ? "盘中 · 延迟 15 分钟" : md(r.date || RAW.asof) + " 收盘"}</small></h4>${r.ans.map(a => `<div class="oa${a.warn ? " w" : ""}"><b>${esc(a.q)}</b>：${esc(a.a)}</div>`).join("")}</div>`).join("")}</div>
+      <details><summary>这五个问题是什么意思</summary><dl class="ox">${Q.map(([q, k]) => `<dt>${q}</dt><dd>${esc(O.explain[k])}</dd>`).join("")}</dl></details>
+      <p class="knote">期权链是 CBOE 延迟 15 分钟的报价，从 2026-10-19 起每天攒，现在 ${O.days} 天；攒满 250 个交易日以后才和历史比"少见不少见"。K 线上 SMH、英伟达、美光、台积电标了做市商 gamma 转负 / 转正的日子。</p>`;
   })();
 
   // ---------- 最近一年：阶段一条 + 四行热度（和 K 线副图同一套颜色）
@@ -193,6 +204,7 @@
       // 转折标签（口径.md 二.2；整个半导体市场的，和阶段一样按同一天对照）
       const TK = { peak: [{ t: "恐慌高峰", side: "turn", col: "fear" }], ebb: [{ t: "恐慌退潮", side: "risk", st: 4 }], retest: [{ t: "二次探底", side: "turn", col: "violet", ol: 1 }], lead: [{ t: "参与度先走", side: "risk", col: "watch", ol: 1 }] };
       if (cfg.mk) for (const [d, k] of RAW.turns || []) for (const m of TK[k] || []) add(barDate(d), Object.assign({}, m));
+      if (cfg.smk) for (const [d, w] of cur.opt || []) add(barDate(d), { t: "gamma " + w, side: w === "转负" ? "turn" : "risk", col: w === "转负" ? "alert" : "ok", ol: 1 });
     }
     const view = { n: 252, end: 0 };
     const G = { W: 300, H: 400, L: 2, R: 240, pH: 280, vTop: 290, vH: 60, sTop: 360, sH: 100, barW: 1, first: 0, i0: 0, i1: 0, lo: 0, hi: 1, sub: null };

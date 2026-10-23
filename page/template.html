@@ -75,6 +75,19 @@ h2 { font-size: 18px; margin: 30px 0 6px; }
 .up li { margin: 2px 0; }
 .today details { margin-top: 10px; }
 .tr td.s-up { color: var(--pos); } .tr td.s-dn { color: var(--neg); }
+.opt { margin-top: 24px; }
+.opt > summary { font-size: 17px; }
+.opt > summary small { font-weight: 500; color: var(--ink-3); font-size: 13px; margin-left: 6px; }
+.oq { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 330px), 1fr)); gap: 10px; margin-top: 10px; }
+.oc { background: var(--bg); border-radius: 10px; padding: 10px 12px; }
+.oc h4 { margin: 0 0 4px; font-size: 14px; }
+.oc h4 small { color: var(--ink-3); font-weight: 500; margin-left: 6px; }
+.oa { font-size: 13.5px; padding: 4px 0; border-top: 1px dashed var(--line); color: var(--ink-2); }
+.oa b { color: var(--ink); }
+.oa.w b { color: var(--alert); }
+.ox { font-size: 13px; color: var(--ink-2); }
+.ox dt { font-weight: 700; color: var(--ink); margin-top: 6px; }
+.ox dd { margin: 0; }
 .warn { background: color-mix(in srgb, var(--watch) 14%, var(--panel)); border: 1px solid var(--watch); border-radius: 10px; padding: 8px 12px; font-size: 13.5px; color: var(--ink); margin: 8px 0 0; }
 .gauge { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); gap: 10px; margin: 0 0 12px; }
 .gbox { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; min-width: 0; }
@@ -189,6 +202,8 @@ footer { color: var(--ink-3); font-size: 12.5px; margin-top: 24px; }
     <div class="kma" id="kma"></div>
     <div class="kpanel" id="kpanel" aria-live="polite"></div>
   </div>
+
+  <details class="opt" id="opt"></details>
 
   <details>
     <summary>四条恐慌读数是怎么算的</summary>
