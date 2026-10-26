@@ -48,12 +48,14 @@ test("推送的一天从北京 08:00 算", () => {
   assert.equal(pushDay(Date.parse("2026-10-27T00:00:00Z")), "2026-10-27");   // 北京 08:00
 });
 
-test("少见查表", () => {
-  const tb = { up: [[0.03, 40], [0.05, 8], [0.08, 2]], down: [[0.03, 50], [0.06, 5]] };
-  assert.equal(rarity(tb, 0.02), null);
-  assert.equal(rarity(tb, 0.06), 8);
-  assert.equal(rarity(tb, 0.09), 2);
-  assert.equal(rarity(tb, -0.07), 5);
+test("少见查表（同方向至少这么极端的天数，按 2520 天折算）", () => {
+  const tb = { n: 2520, up: [[0.03, 4], [0.05, 3], [0.08, 2], [0.1, 1]], down: [[0.03, 2], [0.06, 1]] };
+  assert.equal(rarity(tb, 0.02), null);       // 不到第 4 名
+  assert.equal(rarity(tb, 0.06), 2);          // 0.08、0.1 两天比它更极端
+  assert.equal(rarity(tb, 0.08), 2);          // 一样极端也算
+  assert.equal(rarity(tb, 0.2), 0);
+  assert.equal(rarity(tb, -0.07), 0);
+  assert.equal(rarity({ ...tb, n: 1260 }, 0.06), 4);
 });
 
 test("解析：TradingView 路透频道", () => {

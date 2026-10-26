@@ -3,3 +3,4 @@ pandas>=2.2
 xlrd>=2.0.1
 cryptography>=42
 certifi
+exchange_calendars==4.13.2

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>情绪阶段</title>
+<title>交易员雷达</title>
 <meta name="robots" content="noindex, nofollow">
 <style>
 :root {
@@ -94,6 +94,28 @@ h2 { font-size: 18px; margin: 30px 0 6px; }
 .nw small { color: var(--ink-3); margin-left: 6px; }
 .nwh { font-size: 12px; color: var(--ink-3); margin-top: 6px; }
 .news h2 { margin: 28px 0 8px; }
+.times { font-size: 12px; color: var(--ink-3); margin: 2px 0 0; line-height: 1.5; }
+.times b { color: var(--ink-2); font-weight: 600; }
+.times .stale { color: var(--alert); }
+h2 small { font-size: 12.5px; color: var(--ink-3); font-weight: 500; margin-left: 6px; }
+.narr { margin: 10px 0 4px; }
+.narr h2 { margin: 10px 0 6px; font-size: 20px; }
+.nr { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 6px 0; font-size: 14px; }
+.nr .nh { font-weight: 800; font-size: 15.5px; }
+.nr .ns { color: var(--ink-3); font-size: 12.5px; margin-top: 2px; }
+.nbk { width: 100%; border-collapse: collapse; font-size: 13px; }
+.nbk td { padding: 3px 4px; border-top: 1px dashed var(--line); vertical-align: top; }
+.nbk td.z { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nbk small { color: var(--ink-3); display: block; }
+.mk .mr { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; margin: 6px 0; font-size: 13.5px; }
+.mk .mh { display: flex; justify-content: space-between; gap: 8px; font-weight: 700; }
+.mk .mh small { font-weight: 500; color: var(--ink-3); }
+.mk .mi { display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 4px; color: var(--ink-2); }
+.mk .mi span { white-space: nowrap; }
+.mk .mi .big { font-weight: 700; color: var(--ink); }
+.mk .miss { color: var(--alert); }
+.screen2 { margin-top: 40px; padding-top: 16px; border-top: 2px solid var(--line); }
+.kmore { font: inherit; font-size: 13px; padding: 3px 6px; border-radius: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); max-width: 100%; }
 .fl h2 { margin: 22px 0 6px; font-size: 18px; }
 .fl h2 small, .fl .fh small { font-weight: 500; color: var(--ink-3); font-size: 12.5px; margin-left: 6px; }
 .fli { padding: 7px 0; border-top: 1px dashed var(--line); font-size: 14px; }
@@ -217,22 +239,13 @@ footer { color: var(--ink-3); font-size: 12.5px; margin-top: 24px; }
 </head>
 <body>
 <main>
-  <div class="top"><span>情绪阶段 · 费城半导体</span><span id="asof"></span></div>
+  <div class="top"><span>交易员雷达</span><span id="clock"></span></div>
+  <div class="times" id="times"></div>
   <div class="warn" id="warn" hidden></div>
+  <section class="narr" id="narr" hidden></section>
   <section class="today" id="today"></section>
-  <section class="fl" id="flash" hidden></section>
-  <h1 id="hero"></h1>
-  <p class="lead" id="lead"></p>
-  <div class="gauge">
-    <div class="gbox"><h3>四条恐慌读数，今天</h3><div id="lines"></div></div>
-    <div class="gbox"><h3>最近一年：上面一条是阶段，下面四行越深越恐慌</h3><canvas id="yr" role="img" aria-label="最近一年的阶段和四条恐慌读数"></canvas></div>
-  </div>
-  <div class="steps" id="steps"></div>
-  <div class="next" id="next"></div>
-  <div class="two">
-    <div class="card"><h3>这次谁跌得最深</h3><p>按产业链分组：几只跌破 20 日线、几只今天创 20 天新低、10 天跌了多少、离一年高点跌了多少（都是中位数）。</p><table class="tbl" id="groups"></table></div>
-    <div class="card"><h3>信用压力在哪一层</h3><p>公司债比国债多要的利息（利差，基点），按评级分，越往下评级越差。看压力是不是从最差的公司往上扩散。</p><table class="tbl" id="ice"></table></div>
-  </div>
+  <section class="sig" id="sig" hidden></section>
+  <section class="cards" id="cards" hidden></section>
 
   <h2>K 线</h2>
   <div class="kbox" id="kline">
@@ -245,10 +258,31 @@ footer { color: var(--ink-3); font-size: 12.5px; margin-top: 24px; }
     <div class="kpanel" id="kpanel" aria-live="polite"></div>
   </div>
 
-  <section class="jg" id="judge"></section>
+  <section class="fl" id="flash" hidden></section>
+
+  <h2 class="screen2">各市场</h2>
+  <section class="mk" id="mkts" hidden></section>
+
+  <h2>情绪 · 费城半导体<small id="asof"></small></h2>
+  <h1 id="hero"></h1>
+  <p class="lead" id="lead"></p>
+  <div class="gauge">
+    <div class="gbox"><h3>四条恐慌读数，今天</h3><div id="lines"></div></div>
+    <div class="gbox"><h3>最近一年：上面一条是阶段，下面四行越深越恐慌</h3><canvas id="yr" role="img" aria-label="最近一年的阶段和四条恐慌读数"></canvas></div>
+  </div>
+  <div class="steps" id="steps"></div>
+  <div class="next" id="next"></div>
+  <div class="two">
+    <div class="card"><h3>这次谁跌得最深</h3><p>按产业链分组：几只跌破 20 日线、几只今天创 20 天新低、10 天跌了多少、离一年高点跌了多少（都是中位数）。</p><table class="tbl" id="groups"></table></div>
+    <div class="card"><h3>信用压力在哪一层</h3><p>公司债比国债多要的利息（利差，基点），按评级分，越往下评级越差。看压力是不是从最差的公司往上扩散。</p><table class="tbl" id="ice"></table></div>
+  </div>
+  <section class="fwd" id="fwd" hidden></section>
+
   <details class="opt" id="opt"></details>
   <details class="opt" id="pm"></details>
+  <section class="ledger" id="ledger" hidden></section>
   <section class="news" id="news"></section>
+  <section class="jg" id="judge"></section>
 
   <details>
     <summary>四条恐慌读数是怎么算的</summary>

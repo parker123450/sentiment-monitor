@@ -100,8 +100,9 @@
     const wk = d => "周" + "日一二三四五六"[new Date(d + "T12:00:00").getDay()];
     const card = x => `<div class="it${x.us ? " us" : ""}"><div class="it-h"><span>${x.n10 == null ? esc(x.hist || "") : `过去 10 年 ${x.n10 < 1 ? "不到 1" : Math.round(x.n10)} 次`}</span>${x.live ? `<span class="it-tag">${esc(x.state || "盘中")}</span>` : ""}<span>${md(x.date)}</span></div>
       <div class="it-t">${esc(x.title)}</div>${(x.facts || []).length ? `<ul>${x.facts.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}${x.mean ? `<p class="it-m"><b>说明什么：</b>${esc(x.mean)}</p>` : ""}${(x.news || []).length ? `<div class="nwh">同一时间的新闻（程序按关键词配的，可能不是原因）</div><ul class="nw">${x.news.map(n => `<li><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.t)}</a><small>${esc(n.src)} · ${esc(n.ago)}</small></li>`).join("")}</ul>` : ""}</div>`;
-    let html = `<h2>今天要知道的<small>${md(T.asof)} 收盘${T.items.some(x => x.live) ? " · 含盘中" : ""}，越少见越靠前</small></h2>`;
-    html += T.items.length ? T.items.map(card).join("") : `<div class="quiet">今天没有值得看的变化。</div>`;
+    let html = `<h2>今天变了什么<small>${md(T.asof)} 收盘${T.items.some(x => x.live) ? " · 含盘中" : ""}，越少见越靠前</small></h2>`;
+    const TOP3 = 3;                                   // 第四轮第 2 步：首屏只放最少见的 3 条（规则不变，只改显示）
+    html += T.items.length ? T.items.slice(0, TOP3).map(card).join("") + (T.items.length > TOP3 ? `<details><summary>再看 ${T.items.length - TOP3} 条</summary>${T.items.slice(TOP3).map(card).join("")}</details>` : "") : `<div class="quiet">今天没有值得看的变化。</div>`;
     if ((T.upcoming || []).length) html += `<ul class="up"><b>接下来两个交易日</b>${T.upcoming.map(e => `<li>${md(e.date)}（${wk(e.date)}）${esc(e.time || "")} · ${esc(e.kind === "earnings" ? (e.name || e.sym) + " 财报" : e.title)}${e.note && e.kind === "macro" ? "" : ""}</li>`).join("")}</ul>`;
     if ((T.recent || []).length) html += `<details><summary>前几天说过的（${T.recent.length} 条）</summary>${T.recent.map(card).join("")}</details>`;
     if ((T.trends || []).length) {
@@ -195,6 +196,61 @@
       ((N.more || []).length ? `<details><summary>更多新闻（按话题）</summary>${N.more.map(g => `<p style="margin:10px 0 2px"><b>${esc(g.topic)}</b></p><ul class="nw">${g.items.map(li).join("")}</ul>`).join("")}</details>` : "") +
       `<p class="knote">新闻只从路透、彭博、华尔街日报、金融时报、CNBC、日经亚洲、美联储、韩联社、CoinDesk 和华尔街见闻"重要"快讯里取。期权定价包含到期前的正常波动，偏大一点。</p>`;
   })();
+
+  // ---------- 雷达（第四轮第 2 步）：顶栏时点、市场在交易什么、各市场一行；有 Worker 时每 60 秒现取价格（/live）
+  const RD = RAW.radar || {};
+  const bj = ms => new Date(ms + 8 * 3600e3).toISOString().slice(11, 16);
+  const bjd = ms => { const s = new Date(ms + 8 * 3600e3).toISOString(); return `${+s.slice(5, 7)}/${+s.slice(8, 10)} ${s.slice(11, 16)}`; };
+  let LIVE = null, LIVE_ERR = null;
+  function zword(z) { const a = Math.abs(z); return z == null ? "—" : (z < 0 ? "−" : "+") + a.toFixed(1); }
+  function times() {
+    const el = $("times"), ck = $("clock"); if (!el) return;
+    if (ck) ck.textContent = "北京 " + bjd(Date.now());
+    const parts = [`状态 <b>${bjd(RD.built || Date.now())}</b>（GitHub，约 15 分钟一次）`];
+    if (LIVE && LIVE.prices) {
+      const P = LIVE.prices.p || {}, by = {};
+      for (const r of RD.mkts || []) for (const x of r.items) { const q = P[x.s]; if (q && q.at && r.open) by[r.market] = Math.max(by[r.market] || 0, q.at * 1000); }
+      const ps = Object.entries(by).map(([m, t]) => `${esc(m)} 截至 ${bj(t)}${Date.now() - t > 30 * 60e3 ? "" : `，延迟约 ${Math.max(0, Math.round((Date.now() - t) / 60e3))} 分钟`}`);
+      if (ps.length) parts.unshift("价格 " + ps.join("；"));
+    } else parts.push(RD.live ? `<span class="stale">实时部分取不到${LIVE_ERR ? "（" + esc(LIVE_ERR) + "）" : ""}，显示的是 15 分钟一次的状态</span>` : "实时部分还没接（Cloudflare 建好以后有）");
+    el.innerHTML = parts.join(" · ");
+  }
+  (function narr() {
+    const N = RD.narr, el = $("narr"); if (!N || !el) return;
+    el.hidden = false;
+    const B = N.baskets || [];
+    const pairTxt = p => `${esc(p.name)} 20 日${p.bp ? (p.chg >= 0 ? "升了 " : "降了 ") + Math.abs(p.chg).toFixed(0) + " 个基点" : (p.chg >= 0 ? "涨了 " : "跌了 ") + Math.abs((Math.exp(p.chg) - 1) * 100).toFixed(1) + "%"}，历史上 ${Math.max(0.1, p.frac * 100).toFixed(p.frac < 0.1 ? 1 : 0)}% 的日子更极端（${p.level}）`;
+    let h = `<h2>市场在交易什么<small>截至 ${md(N.asof)} 收盘 · 规则算出来的，不是人定的</small></h2>`;
+    if (N.main) h += `<div class="nr"><div class="nh">主线：${esc(N.main.name)} ↓</div><div>领跌，20 日按长期波动折算 ${zword(N.main.z)}；${pairTxt(N.main.pair)}</div><div class="ns">结束信号（登记时写好）：${esc(N.main.end)}</div></div>`;
+    else { const L = B.find(b => b.id === N.lead); h += `<div class="nr"><div class="nh">没有认出主线</div><div>${L ? `领跌的是${esc(L.name)}（${zword(L.z)}），但配对的读数${L.pairs.length ? L.pairs.map(p => esc(p.name) + "是" + p.level).join("、") : "取不到"}，不够两样都满足。` : "数据不够。"}</div></div>`; }
+    h += `<details><summary>哪个篮子在带着跌（20 日涨跌按各自长期波动折算，${B.length} 个篮子）</summary><table class="nbk">${B.map(b => `<tr><td>${esc(b.name)}<small>${Object.entries(b.members).map(([m, z]) => esc(m) + " " + zword(z)).join(" · ")}${b.n < b.of ? ` · 缺 ${b.of - b.n} 只` : ""}</small>${b.pairs.map(p => `<small>${pairTxt(p)}</small>`).join("")}</td><td class="z">${zword(b.z)}${b.same == null ? "" : `<small>${b.same ? "和" : "和"}${b.vs === "^SOX" ? "费城半导体" : "标普"}${b.same ? "同向" : "反向"}</small>`}</td></tr>`).join("")}</table></details>`;
+    const H = N.heat || {};
+    h += `<details><summary>主题热度（只作描述）</summary>${(H.rows || []).length ? `<table class="nbk">${H.rows.map(r => `<tr><td>${esc(r.topic)}<small>最近 5 天 ${r.n5} 条，前 60 天日均 ${r.base}${r.capped ? `，${r.capped} 天封顶不算` : ""}</small></td><td class="z">${r.ratio.toFixed(2)} 倍</td></tr>`).join("")}</table>` : `<p class="knote">${esc(H.note || "")}</p>`}<p class="knote">${esc(H.note && (H.rows || []).length ? H.note : "")}</p></details>`;
+    el.innerHTML = h;
+  })();
+  function mkts() {
+    const M = RD.mkts, el = $("mkts"); if (!M || !el) return;
+    el.hidden = false;
+    const P = (LIVE && LIVE.prices && LIVE.prices.p) || {};
+    el.innerHTML = M.map(r => `<div class="mr"><div class="mh"><span>${esc(r.cls)}</span><small>${r.open ? "开盘中" : r.today === false ? "今天休市" : r.note ? esc(r.note) : "已收盘"}</small></div><div class="mi">${r.items.slice(0, 8).map(x => {
+        const q = P[x.s], ch = q && q.pc ? (x.bp ? (q.p - q.pc) * 100 : Math.log(q.p / q.pc)) : x.chg;
+        const txt = ch == null ? "—" : x.bp ? (ch >= 0 ? "+" : "−") + Math.abs(ch).toFixed(0) + "bp" : pctP((Math.exp(ch) - 1) * 100);
+        return `<span class="${Math.abs(x.z || 0) >= 2 ? "big" : ""}">${esc(x.n)} <b${cP(ch)}>${txt}</b></span>`; }).join("")}${r.items.length > 8 ? `<span>…共 ${r.items.length} 个</span>` : ""}${(r.miss || []).length ? `<span class="miss">缺：${r.miss.map(esc).join("、")}</span>` : ""}</div></div>`).join("") +
+      `<p class="knote">每行按"今天涨跌 ÷ 长期日波动"从大到小排，加粗的是 2 倍以上。${Object.keys(P).length ? "盘中价格来自 Worker（Yahoo）。" : "没有现取价格时是最近一个收盘。"}</p>`;
+  }
+  async function live() {
+    if (!RD.live || document.hidden) return;
+    try {
+      const r = await fetch(RD.live.url.replace(/\/$/, "") + "/live", { headers: { authorization: "Bearer " + RD.live.token }, cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      LIVE = await r.json(); LIVE_ERR = null;
+    } catch (e) { LIVE_ERR = String(e.message || e).slice(0, 40); }
+    times(); mkts();
+  }
+  times(); mkts(); live();
+  setInterval(() => { times(); }, 30e3);
+  setInterval(live, 60e3);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) live(); });
 
   // ---------- 快讯（第四轮第 1 步，qx/flash.py；口径.md 第九节）
   (function () {
@@ -624,7 +680,7 @@
     function toolbar() {
       const on = c => c ? " on" : "";
       $("ktools").innerHTML = `
-        <div class="kgrp" role="group" aria-label="品种">${SYMS.map(s => `<button type="button" class="kbtn${on(s.k === cfg.sym)}" data-sym="${esc(s.k)}">${esc(s.n)}</button>`).join("")}</div>
+        <div class="kgrp" role="group" aria-label="品种">${SYMS.filter(s => !s.more).map(s => `<button type="button" class="kbtn${on(s.k === cfg.sym)}" data-sym="${esc(s.k)}">${esc(s.n)}</button>`).join("")}${(RAW.kmore || []).length ? `<select class="kmore" id="kmore" aria-label="扫描范围里的其他标的"><option value="">更多（${RAW.kmore.length} 个）…</option>${RAW.kmore.map(x => `<option value="${esc(x.k)}"${x.k === cfg.sym ? " selected" : ""}>${esc(x.cls ? x.cls + " · " : "")}${esc(x.n)}</option>`).join("")}</select>` : ""}</div>
         <div class="kgrp" role="group" aria-label="时间范围">${[[63, "3月"], [126, "6月"], [252, "1年"], [756, "3年"], [0, "全部"]].map(([n, t]) => `<button type="button" class="kbtn${on(cfg.n === n)}" data-rng="${n}">${t}</button>`).join("")}<button type="button" class="kbtn" data-zoom="0.8" aria-label="放大">＋</button><button type="button" class="kbtn" data-zoom="1.25" aria-label="缩小">－</button></div>
         <div class="kgrp" role="group" aria-label="画线工具"><span class="kl">画线</span>${[["pick", "点选"], ["h", "水平线"], ["t", "趋势线"]].map(([k, t]) => `<button type="button" class="kbtn${on(tool === k)}" data-tool="${k}">${t}</button>`).join("")}<button type="button" class="kbtn" data-act="clear">${clearArm ? "再点一次确认" : "清除画线"}</button></div>
         <div class="kgrp" role="group" aria-label="均线"><span class="kl">均线</span>${cfg.mas.map(p => `<button type="button" class="kbtn mach${cfg.on[p] ? "" : " off"}" data-ma="${p}"><i style="background:${maCol(p)}"></i>MA${p}${DEF_MA.includes(p) ? "" : ' <span data-rm="' + p + '" aria-label="删除">×</span>'}</button>`).join("")}<input id="k-maadd" type="number" min="2" max="400" step="1" placeholder="周期" aria-label="添加均线周期"><button type="button" class="kbtn" data-act="addma">添加</button></div>
@@ -641,6 +697,25 @@
     function addMA() { const el = $("k-maadd"), p = Math.round(+el.value); if (!(p >= 2 && p <= 400)) { el.value = ""; el.placeholder = "2–400"; return; }
       if (!cfg.mas.includes(p)) { cfg.mas.push(p); cfg.mas.sort((a, b) => a - b); } cfg.on[p] = 1; saveCfg(); build(); toolbar(); panel(); schedule(); }
     function setTool(t) { tool = t; pend = null; $("khint").hidden = t === "pick"; $("khint").textContent = t === "h" ? "在价格区点一下，放一条水平线" : t === "t" ? "点第一个点" : ""; toolbar(); schedule(); }
+    // 点了才去取 k/<代码>.enc，用解锁时留下的钥匙（window.QX_KEY）解开；本机预览是明文 JSON
+    async function loadMore(k) {
+      const x = (RAW.kmore || []).find(y => y.k === k); if (!x) return null;
+      const have = SYMS.find(s => s.k === k); if (have) return have;
+      const r = await fetch("k/" + x.f, { cache: "force-cache" }); if (!r.ok) throw new Error("HTTP " + r.status);
+      let txt;
+      if (window.QX_KEY) {
+        const b = new Uint8Array(await r.arrayBuffer()), key = await crypto.subtle.importKey("raw", window.QX_KEY, "AES-GCM", false, ["decrypt"]);
+        const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b.slice(0, 12) }, key, b.slice(12));
+        txt = await new Response(new Blob([pt]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+      } else txt = await r.text();
+      const s = Object.assign(JSON.parse(txt), { more: true }); SYMS.push(s); return s;
+    }
+    $("ktools").addEventListener("change", async e => {
+      if (e.target.id !== "kmore" || !e.target.value) return;
+      const k = e.target.value; e.target.disabled = true;
+      try { await loadMore(k); cfg.sym = k; saveCfg(); sel = null; pend = null; build(); buildMarkers(); setRange(cfg.n); toolbar(); panel(); renderMA(); schedule(); }
+      catch (err) { e.target.disabled = false; e.target.insertAdjacentHTML("afterend", `<small style="color:var(--alert)"> 没取到（${esc(String(err.message || err))}）</small>`); }
+    });
     $("ktools").addEventListener("click", e => {
       const t = e.target.closest("button"), rm = e.target.closest("[data-rm]");
       if (rm) { const p = +rm.dataset.rm; cfg.mas = cfg.mas.filter(x => x !== p); delete cfg.on[p]; saveCfg(); build(); toolbar(); panel(); schedule(); return; }

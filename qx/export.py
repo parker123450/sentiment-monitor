@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 import numpy as np
 import pandas as pd
 
-from qx import store, watch, events, options, happen, judge, notify, flash
+from qx import store, watch, events, options, happen, judge, notify, flash, narrative, markets
 from qx.registry import SMALL, AI, SERIES
 from qx.sentiment import longvol, NAMES, MOM_WORDS
 
@@ -48,27 +48,57 @@ def _num(x, dg):
 
 
 def chart(D):
+    return [x for x in (chart_one(D, src, name, volsrc) for src, name, volsrc in SYMS) if x]
+
+
+def kfile(sym):
+    """按需加载的文件名（代码里的 ^ = . 换掉）。"""
+    return "".join(ch if ch.isalnum() or ch == "-" else "_" for ch in sym) + ".enc"
+
+
+def write_k(D, site_dir=None, password=None, preview_dir=None):
+    """扫描范围里不在页面里的标的，每个写一个 K 线文件：发布用的加密（site/k/），本机预览用明文（本机预览/k/）。返回清单。"""
+    import json
+    from qx import coverage, crypt
+    have = {s for s, _, _ in SYMS}
     out = []
-    for src, name, volsrc in SYMS:
-        if src not in D:
+    for s in coverage.SCAN:
+        if s in have or s not in D or len(D[s]) < 60:
             continue
-        d = D[src][["o", "h", "l", "c", "v"]].copy()
-        if volsrc and volsrc in D:
-            d["v"] = D[volsrc]["v"].reindex(d.index)
-        c = d.c
-        R = rsi(c)
-        v50 = d.v.rolling(50).mean()
-        ret = c.pct_change()
-        climax = d.index[(d.v >= 2 * v50) & (ret <= -0.02) & (R <= 40)]
-        hot = d.index[(R >= 75) & (c >= 1.15 * c.rolling(50).mean())]
-        dd_ = d[d.index >= START]
-        rows = [[t.strftime("%Y-%m-%d")] + [_num(x, 2) for x in r[:4]] + [_num(r[4], 0)] for t, r in zip(dd_.index, dd_[["o", "h", "l", "c", "v"]].values)]
-        out.append(dict(k=src.replace("^", ""), n=name, vnote="SMH 成交量" if volsrc else "成交量", rows=rows,
-                        rsi=[_num(x, 1) for x in R.reindex(dd_.index).values],
-                        climax=[t.strftime("%Y-%m-%d") for t in climax if t >= pd.Timestamp(START)],
-                        hot=[t.strftime("%Y-%m-%d") for t in hot if t >= pd.Timestamp(START)],
-                        pivots=[p for p in pivots(c) if p[0] >= START]))
+        x = chart_one(D, s, coverage.NAME.get(s, s), None)
+        if not x:
+            continue
+        txt = json.dumps(x, ensure_ascii=False, separators=(",", ":"))
+        f = kfile(s)
+        if site_dir and password:
+            os.makedirs(os.path.join(site_dir, "k"), exist_ok=True)
+            open(os.path.join(site_dir, "k", f), "wb").write(crypt.encrypt_blob(txt, password))
+        if preview_dir:
+            os.makedirs(os.path.join(preview_dir, "k"), exist_ok=True)
+            open(os.path.join(preview_dir, "k", f), "w", encoding="utf-8").write(txt)
+        out.append({"k": x["k"], "n": x["n"], "f": f, "cls": coverage.CLASS.get(s, "")})
     return out
+
+
+def chart_one(D, src, name, volsrc=None):
+    if src not in D:
+        return None
+    d = D[src][["o", "h", "l", "c", "v"]].copy()
+    if volsrc and volsrc in D:
+        d["v"] = D[volsrc]["v"].reindex(d.index)
+    c = d.c
+    R = rsi(c)
+    v50 = d.v.rolling(50).mean()
+    ret = c.pct_change()
+    climax = d.index[(d.v >= 2 * v50) & (ret <= -0.02) & (R <= 40)]
+    hot = d.index[(R >= 75) & (c >= 1.15 * c.rolling(50).mean())]
+    dd_ = d[d.index >= START]
+    rows = [[t.strftime("%Y-%m-%d")] + [_num(x, 2) for x in r[:4]] + [_num(r[4], 0)] for t, r in zip(dd_.index, dd_[["o", "h", "l", "c", "v"]].values)]
+    return dict(k=src.replace("^", ""), n=name, vnote="SMH 成交量" if volsrc else "成交量", rows=rows,
+                rsi=[_num(x, 1) for x in R.reindex(dd_.index).values],
+                climax=[t.strftime("%Y-%m-%d") for t in climax if t >= pd.Timestamp(START)],
+                hot=[t.strftime("%Y-%m-%d") for t in hot if t >= pd.Timestamp(START)],
+                pivots=[p for p in pivots(c) if p[0] >= START])
 
 
 def group_facts(D, R):
@@ -200,5 +230,15 @@ def build(D, aaii, R, write=False):
         fl = flash.block()
     except Exception:
         fl = None
-    return dict(flash=fl, asof=days[-1].strftime("%Y-%m-%d"), updated=now.strftime("%Y-%m-%d %H:%M"), today=today(D, R, opt, hap, jud), judge=jud["cards"], fb=notify.feedback_topic() or None, options=opt, happen={k: hap[k] for k in ("news", "pm", "calendar", "day")}, chart=ch, daily=daily, turns=turns,
+    radar = {}
+    for k, f in (("narr", lambda: narrative.block(D)), ("mkts", lambda: markets.rows(D))):
+        try:
+            radar[k] = f()
+        except Exception as e:
+            radar[k] = None
+            radar[k + "_err"] = type(e).__name__
+    wu, wt = os.environ.get("WORKER_URL", "").strip(), os.environ.get("WORKER_READ_TOKEN", "").strip()
+    radar["live"] = {"url": wu, "token": wt} if wu and wt else None          # 只读令牌，放在加密页里（口径.md 第十节）
+    radar["built"] = int(datetime.now(timezone.utc).timestamp() * 1000)
+    return dict(flash=fl, radar=radar, asof=days[-1].strftime("%Y-%m-%d"), updated=now.strftime("%Y-%m-%d %H:%M"), today=today(D, R, opt, hap, jud), judge=jud["cards"], fb=notify.feedback_topic() or None, options=opt, happen={k: hap[k] for k in ("news", "pm", "calendar", "day")}, chart=ch, daily=daily, turns=turns,
                 groups=group_facts(D, R), ice=ice(D), cnn=cnn(), status=status(D, aaii, meta), stnames=NAMES, momwords=MOM_WORDS)

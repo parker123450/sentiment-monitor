@@ -99,6 +99,11 @@ def build(check=False, write=False):
     if write and ok:
         write_log(R, data.get("cnn"))
     pw = os.environ.get("PAGE_PASSWORD", "").strip()
+    try:                                                # 扫描范围里其余标的的 K 线，点了才加载（发布的加密，本机预览明文）
+        data["kmore"] = export.write_k(D, SITE if pw and ok else None, pw or None, None if os.environ.get("CI") else os.path.dirname(PREVIEW))
+    except Exception as e:
+        log(f"  ! K 线文件没写出来：{type(e).__name__}")
+        data["kmore"] = []
     if ok:
         if page.write(data, SITE, password=pw or None, preview=None if os.environ.get("CI") else PREVIEW):
             log(f"页面：site/index.html（加密，{os.path.getsize(os.path.join(SITE, 'index.html')) / 1e6:.2f} MB）")
@@ -149,7 +154,6 @@ def auto():
     cands = []
     try:
         cands = flash.run(log=log)                      # 快讯：取、去重、打标签、"第一次"；回补跑完以后才给推送候选
-        flash.sync(log=log)                             # 有 Worker 时：推规则、取回它每 5 分钟攒的快讯
     except Exception as e:
         log(f"  ! 快讯出错：{type(e).__name__}")
     check = write = False
@@ -174,6 +178,12 @@ def auto():
     except Exception as e:
         log(f"  ! 试用记录没取到：{e}")
     ok, data = build(check=check, write=write)
+    if os.environ.get("WORKER_URL"):                    # 有 Worker 时：推规则、各市场时刻和少见表，取回它每 5 分钟攒的快讯
+        try:
+            from qx import markets
+            flash.sync(log=log, extra_state={"markets": markets.state(store.load_all()[0])})
+        except Exception as e:
+            log(f"  ! Worker 同步出错：{type(e).__name__}")
     try:
         notify.push(data, ok, log=log, flash=cands)
     except Exception as e:

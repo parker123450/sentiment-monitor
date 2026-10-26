@@ -28,6 +28,7 @@
 ## 第四轮：交易员雷达（radar 分支，2026-10-27 起，验收通过、用户同意后才合进 main）
 
 - **快讯**（第 1 步，`qx/flash.py`，口径第九节）："今天要知道的"下面。路透经 TradingView 和谷歌新闻取，加 CNBC、MarketWatch、金融时报、Seeking Alpha、日经亚洲、美联储、韩联社、华尔街见闻；按 `登记/entities.toml` 打公司和六条线的标签，观察名单的"第一次"和多家同时报道会推送。
+- **市场在交易什么、各市场一行**（第 2 步，`qx/narrative.py`、`qx/markets.py`、`qx/coverage.py`，口径第十节）：页面第一屏；扫描范围约 190 个标的，K 线里其余的标的点了才加载。
 - **Worker**（`worker/`）：Cloudflare 上每 5 分钟取快讯和开盘中市场的价格，页面打开时现取。要用户注册 Cloudflare、加 Secret 以后才部署（`worker-setup.yml` 建库，`worker.yml` 测试和部署）。
 - **数据源实测**（第 0 步）：`tools/probe.py`、`docs/数据源实测.md`。
 

@@ -58,6 +58,11 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
             diff.append("转折标签")
         if [x["title"] for x in W.close_items(D, R, t)] != [x["title"] for x in W.close_items(Dt, Rt, t)]:
             diff.append("今天要知道的")
+        if t >= pd.Timestamp("2010-01-01"):                  # 市场在交易什么（第四轮第 2 步）：篮子的成员多数 2010 年以后才有
+            from qx import narrative as NR
+            a, b = NR.values(NR.compute(D, t)), NR.values(NR.compute(Dt, t))
+            eq = lambda x, y: x == y if isinstance(x, str) or isinstance(y, str) else same(x, y)
+            diff += ["在交易什么 " + k for k in a if not eq(a[k], b.get(k, np.nan))]
         log(f"  {t.date()}：" + ("一致" if not diff else "不一致 " + "、".join(diff[:8])))
         if diff:
             bad.append((t, diff))

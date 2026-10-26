@@ -84,11 +84,12 @@ export function digest(st, now, startH = 8) {
   return out;
 }
 
-// 少见查表：Actions 给的每个标的"1 日对数涨跌 → 过去 10 年同方向几次"的分段表 [[阈值, 次数], ...]（阈值从小到大）
+// 少见查表：Actions 给的每个标的两个方向最极端的 40 个历史涨跌 [[值, 名次], ...]（值从小到大）和窗口长度 n。
+// 返回"过去 10 年同方向至少这么极端的天数"（按 2520 天折算，和 qx/watch.py 的 n10 一样）；不到第 40 名那么极端的返回 null。
 export function rarity(table, r) {
-  if (!table || r == null) return null;
-  const side = r >= 0 ? table.up : table.down, a = Math.abs(r);
-  let n = null;
-  for (const [th, cnt] of side || []) if (a >= th) n = cnt;
-  return n;
+  if (!table || r == null || r === 0) return null;
+  const side = (r > 0 ? table.up : table.down) || [], a = Math.abs(r);
+  if (!side.length || a < side[0][0]) return null;
+  const cnt = side.filter(([v]) => v >= a).length;
+  return cnt * 2520 / (table.n || 2520);
 }

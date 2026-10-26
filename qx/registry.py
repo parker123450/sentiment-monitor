@@ -70,6 +70,14 @@ CHAIN_SYMBOLS = [("SPY", "标普 500 ETF"), ("QQQ", "纳指 100 ETF"), ("SMH", "
                  ("AVGO", "博通"), ("AMD", "AMD"), ("TSM", "台积电"), ("MU", "美光"), ("EWY", "韩国 ETF")]
 OPTIONS_FILE = "options_history.csv"
 
+# ---------------------------------------------------------------- 第四轮第 2 步：扫描范围（qx/coverage.py）里还没登记的标的
+from qx import coverage as _cov                                     # noqa: E402（coverage 要用上面的 SEMIS、AI 等）
+for _s in _cov.SCAN:
+    if _s not in SERIES:
+        _add(_s, "Yahoo", "Yahoo 最早起", 0, "", group="扫描", note=_cov.NAME.get(_s, _s))
+for _s in ("DGS30",):                                               # 30 年美债收益率（FRED），利率一行用
+    _add(_s, "FRED", "FRED 最早起", 1, "%", kind="value", group="扫描", note="30 年国债收益率")
+
 YAHOO = [k for k, v in SERIES.items() if v["source"] == "Yahoo"]
 FRED = [k for k, v in SERIES.items() if v["source"] == "FRED"]
 assert len({v["file"] for v in SERIES.values()}) == len(SERIES), "文件名重复"

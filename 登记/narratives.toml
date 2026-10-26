@@ -1,0 +1,97 @@
+# "市场在交易什么"的登记表（第四轮第 2 步，2026-10-27 登记 v1）。规则在 口径.md 第十节，代码 qx/narrative.py。
+# 只增不改：改一个篮子、换配对的读数、改结束信号，都加新版本（version 加 1、since），旧的写 until。回放只用当天在用的版本。
+# 哪条是主线由算出来的数认，不由人定。
+
+version = 1
+since = "2026-10-27"
+
+# 规则（两样都满足才算主线，这是一层合成）：
+#   1. 这个篮子是"领跌的篮子"：20 日涨跌按各成员自己的长期日波动折算（÷ 日波动 × √20）后取中位数，在所有篮子里最低，而且 ≤ lead_max。
+#   2. 配对的信用（或宏观）读数"偏高以上"：读数的 20 日变化，在当天以前的全部历史里，同方向比它更极端的不超过 5%（不超过 1% 写"少见"）。
+lead_max = -1.0
+high_pct = 0.05
+rare_pct = 0.01
+
+# ---------------------------------------------------------------- 篮子（AI 链的和费城半导体比方向；其余和标普比）
+[[basket]]
+id = "ai_fin"
+name = "AI 融资"
+members = ["CRWV", "NBIS", "IREN", "ORCL"]
+vs = "^SOX"
+ai = true
+pair = [{ id = "BAMLH0A2HYB", name = "单 B 利差", up_is_stress = true }, { id = "BAMLH0A1HYBB", name = "BB 利差", up_is_stress = true }, { id = "HYG/IEF", name = "高收益债 ÷ 中期国债", up_is_stress = false }]
+end = "配对的信用读数回到平常（20 日变化不在历史最极端的 5% 里），而且这个篮子 20 日折算涨跌转正"
+
+[[basket]]
+id = "cloud"
+name = "云大厂"
+members = ["MSFT", "GOOGL", "AMZN", "META"]
+vs = "^SOX"
+ai = true
+pair = [{ id = "BAMLC0A0CM", name = "投资级利差", up_is_stress = true }]
+end = "投资级利差 20 日变化回到平常，而且这个篮子 20 日折算涨跌转正"
+
+[[basket]]
+id = "memory_kr"
+name = "存储和韩国"
+members = ["MU", "000660.KS", "005930.KS", "^KS11"]
+vs = "^SOX"
+ai = true
+pair = [{ id = "KRW=X", name = "美元兑韩元", up_is_stress = true }]
+end = "美元兑韩元 20 日变化回到平常，而且这个篮子 20 日折算涨跌转正"
+
+[[basket]]
+id = "oil_geo"
+name = "原油和地缘"
+members = ["XLE", "XOP", "CL=F"]
+vs = "^GSPC"
+control = ["JETS"]
+pair = [{ id = "^OVX", name = "原油波动", up_is_stress = true }]
+end = "原油波动 20 日变化回到平常，而且这个篮子 20 日折算涨跌转正"
+
+[[basket]]
+id = "rates"
+name = "利率"
+members = ["TLT", "KRE", "ITB"]
+vs = "^GSPC"
+pair = [{ id = "^TNX", name = "10 年美债收益率", up_is_stress = true }, { id = "^MOVE", name = "美债波动", up_is_stress = true }]
+end = "10 年美债收益率和美债波动的 20 日变化回到平常，而且这个篮子 20 日折算涨跌转正"
+
+[[basket]]
+id = "yen"
+name = "美元和日元"
+members = ["^N225"]
+vs = "^GSPC"
+control = ["JPY=X"]
+pair = [{ id = "JPY=X", name = "美元兑日元", up_is_stress = false }]
+end = "美元兑日元 20 日变化回到平常，而且日经 20 日折算涨跌转正"
+
+[[basket]]
+id = "china"
+name = "中国"
+members = ["510300.SS", "3033.HK", "KWEB"]   # 指数代码在 Yahoo 只回 1 天（10-27 实测），用 ETF
+vs = "^GSPC"
+pair = [{ id = "CNH=X", name = "美元兑离岸人民币", up_is_stress = true }]
+end = "离岸人民币 20 日变化回到平常，而且这个篮子 20 日折算涨跌转正"
+
+[[basket]]
+id = "crypto"
+name = "加密"
+members = ["BTC-USD", "COIN", "MSTR"]
+vs = "^GSPC"
+pair = [{ id = "HYG/IEF", name = "高收益债 ÷ 中期国债", up_is_stress = false }]
+end = "高收益债相对国债 20 日变化回到平常，而且这个篮子 20 日折算涨跌转正"
+
+[[basket]]
+id = "gold"
+name = "黄金"
+members = ["GDX", "GC=F"]
+vs = "^GSPC"
+pair = [{ id = "^GVZ", name = "黄金波动", up_is_stress = true }]
+end = "黄金波动 20 日变化回到平常，而且这个篮子 20 日折算涨跌转正"
+
+# 对照组（不当主线，只放在排名里对照）
+[[control]]
+id = "ctrl"
+name = "对照：软件、小盘、苹果"
+members = ["IGV", "IWM", "AAPL"]

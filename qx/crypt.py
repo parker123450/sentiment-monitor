@@ -7,7 +7,7 @@
                  data 分支上的 data.enc（data/ 下所有攒下来的小文件，包括 private/ 里的 AAII 和以后的判断），和完整期权链存档。
                  钥匙丢了，攒下来的历史就打不开了：本机那份要留好。
 """
-import base64, gzip, io, json, os, tarfile
+import base64, functools, gzip, io, json, os, tarfile
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -18,6 +18,7 @@ PAGE_ITER = 600_000
 KEY_FILE = os.path.expanduser("~/.config/qx/data_key")
 
 
+@functools.lru_cache(maxsize=4)
 def page_key(password):
     return PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=PAGE_SALT, iterations=PAGE_ITER).derive(password.encode("utf-8"))
 
@@ -27,6 +28,13 @@ def encrypt_page(html, password):
     iv = os.urandom(12)
     ct = AESGCM(page_key(password)).encrypt(iv, gzip.compress(html.encode("utf-8"), 9), None)
     return {"iv": base64.b64encode(iv).decode(), "ct": base64.b64encode(ct).decode(), "salt": PAGE_SALT.decode(), "iter": PAGE_ITER}
+
+
+def encrypt_blob(text, password):
+    """按需加载的小文件（第四轮第 2 步：每个标的的 K 线 site/k/*.enc）：iv(12 字节) + AES-GCM(gzip(明文))，
+    和整页同一把钥匙（页面解锁后留在 window.QX_KEY），浏览器用 WebCrypto 解。"""
+    iv = os.urandom(12)
+    return iv + AESGCM(page_key(password)).encrypt(iv, gzip.compress(text.encode("utf-8"), 9), None)
 
 
 def data_key():
