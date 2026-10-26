@@ -66,7 +66,10 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
         if t >= pd.Timestamp("2024-01-01"):                  # 小信号和仓位（第四轮第 3 步）：ICE 利差 FRED 只给最近 3 年
             from qx import smallsignal as SS, positioning as PS
             pa, pb = PS.compute(D, t), PS.compute(Dt, t)
-            a, b = {**PS.values(pa), **SS.values(SS.compute(D, t, pa))}, {**PS.values(pb), **SS.values(SS.compute(Dt, t, pb))}
+            sa, sb = SS.compute(D, t, pa), SS.compute(Dt, t, pb)
+            from qx import radar as RA                        # 机会和风险卡（第四轮第 4 步）
+            a = {**PS.values(pa), **SS.values(sa), **{"卡:" + k: v for k, v in RA.values(RA.compute(D, t, pa, sa)).items()}}
+            b = {**PS.values(pb), **SS.values(sb), **{"卡:" + k: v for k, v in RA.values(RA.compute(Dt, t, pb, sb)).items()}}
             diff += ["小信号/仓位 " + k for k in set(a) | set(b) if not eq(a.get(k, np.nan), b.get(k, np.nan))]
         log(f"  {t.date()}：" + ("一致" if not diff else "不一致 " + "、".join(diff[:8])))
         if diff:

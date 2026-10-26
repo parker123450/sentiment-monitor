@@ -148,6 +148,11 @@ def auto():
             positioning.fetch_all(log=log)
         except Exception as e:
             log(f"  ! 仓位数据出错：{type(e).__name__}")
+        try:                                            # 财报反应（第四轮第 4 步第 4 类卡）：补最近 5 天
+            from qx import earn
+            earn.fetch(datetime.now(timezone.utc).date() - timedelta(days=5), log=log)
+        except Exception as e:
+            log(f"  ! 财报反应出错：{type(e).__name__}")
     if do["opt"]:
         st["opt_ts"] = time.time()
     if do["archive"]:

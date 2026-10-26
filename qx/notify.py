@@ -177,6 +177,9 @@ def push(data, ok, log=print, flash=None):
                          n10=min((x["n10"] for x in new if x.get("n10") is not None), default=None)))
     for x in flash or []:
         msgs.append(dict(key=x["key"], title=x["title"], body=f"{x['body']}\n（{x['src']}）", pri=4 if x["kind"] == "first" else 3))
+    for c in (((data or {}).get("radar") or {}).get("cards") or {}).get("cards") or []:      # 新满足的机会和风险卡（第四轮第 4 步）
+        msgs.append(dict(key=c["key"], title=f"{c['cls_name']}：{c['title']}", body=f"{c['why']}\n哪里算错：{c['wrong']}", pri=3,
+                         rare=c["rank"] is not None and c["rank"] <= 2 / 2520))
     if not ok and st.get("selftest_fail") != today:
         st["selftest_fail"] = today
         msgs.append(dict(key=f"selftest|{today}", title="雷达 · 自检没过", body="截断重算和全量不一致，网页这次没有发布。看 GitHub Actions 的日志。", pri=4, cap=False))

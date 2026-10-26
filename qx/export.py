@@ -244,6 +244,11 @@ def build(D, aaii, R, write=False):
         except Exception as e:
             radar[k] = None
             radar[k + "_err"] = type(e).__name__
+    try:
+        from qx import radar as RA
+        radar["cards"] = RA.compute(D, t_last, radar.get("pos"), radar.get("sig"), (hap or {}).get("items"))
+    except Exception as e:
+        radar["cards"], radar["cards_err"] = None, type(e).__name__
     wu, wt = os.environ.get("WORKER_URL", "").strip(), os.environ.get("WORKER_READ_TOKEN", "").strip()
     radar["live"] = {"url": wu, "token": wt} if wu and wt else None          # 只读令牌，放在加密页里（口径.md 第十节）
     radar["built"] = int(datetime.now(timezone.utc).timestamp() * 1000)
