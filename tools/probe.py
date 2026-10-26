@@ -35,7 +35,8 @@ UA_PANEL = fetch.UA                                                          # �
 JSON_UA = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}          # 面板给纳斯达克用的（qx/events.py）
 GAP_NEWS, GAP_DATA = 60, 1.0
 NEWS_HOSTS = {"news.google.com", "www.reuters.com", "www.reutersagency.com", "api-one-wscn.awtmt.com", "insight.factset.com",
-              "lipperalpha.refinitiv.com", "api.gdeltproject.org", "www.jin10.com", "www.cls.cn", "www.sec.gov", "efts.sec.gov"}
+              "lipperalpha.refinitiv.com", "api.gdeltproject.org", "www.tradingview.com", "feeds.a.dj.com", "feeds.content.dowjones.io",
+              "www.cnbc.com", "asia.nikkei.com", "www.ft.com", "finance.yahoo.com", "seekingalpha.com", "feeds.bbci.co.uk", "www.jin10.com", "www.cls.cn", "www.sec.gov", "efts.sec.gov"}
 TERMS_RE = re.compile(r"[^.;:!?。]*\b(robot|robots|crawl\w*|scrap\w*|spider\w*|automat\w*|data[- ]mining|harvest\w*|bots?)\b[^.;!?。]*[.;!?。]", re.I)
 
 # ---------------------------------------------------------------- 扫描范围（第四轮规划第五节第 2 步；代码以这里实测为准）
@@ -66,6 +67,15 @@ R4_URLS = {"全部精选": "https://www.reutersagency.com/feed/?post_type=best",
            "商业财经": "https://www.reutersagency.com/feed/?best-topics=business-finance&post_type=best",
            "科技": "https://www.reutersagency.com/feed/?best-topics=tech&post_type=best"}
 R5_CHANNELS = ["global", "us-stock"]
+# R6：TradingView 的路透频道（TradingView 是路透的授权转载方；公开网页，robots.txt 不挡 /news/，页面里带每条的发布时间）。10-27 加。
+R6_URL = "https://www.tradingview.com/news/top-providers/reuters/"
+R6_RE = re.compile(r'\{"id":"(tag:reuters\.com[^"]+)","title":"((?:[^"\\]|\\.)*)","storyPath":"([^"]*)","published":(\d+),"urgency":(\d)')
+# 几家媒体自己正式发布的 RSS（给阅读器订阅用的），10-27 加进候选
+FEEDS = {"WSJ 市场": "https://feeds.a.dj.com/rss/RSSMarketsMain.xml", "WSJ 国际": "https://feeds.a.dj.com/rss/RSSWorldNews.xml",
+         "MarketWatch": "https://feeds.content.dowjones.io/public/rss/mw_topstories", "CNBC 头条": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+         "CNBC 市场": "https://www.cnbc.com/id/20910258/device/rss/rss.html", "日经亚洲": "https://asia.nikkei.com/rss/feed/nar",
+         "FT": "https://www.ft.com/rss/home", "雅虎财经": "https://finance.yahoo.com/news/rssindex",
+         "Seeking Alpha 快讯": "https://seekingalpha.com/market_currents.xml", "BBC 商业": "https://feeds.bbci.co.uk/news/business/rss.xml"}
 GDELT_URL = ("https://api.gdeltproject.org/api/v2/doc/doc?query=domain:reuters.com&mode=artlist&format=json&maxrecords=75"
              "&timespan={span}&sort=datedesc")
 
@@ -257,6 +267,14 @@ def wscn_items(text):
     return out
 
 
+def tv_items(text):
+    out = []
+    for i, t, path, pub, urg in R6_RE.findall(text):
+        t = json.loads('"' + t + '"')
+        out.append({"t": t, "link": "https://www.tradingview.com" + path, "pub": int(pub), "id": i, "urgency": int(urg)})
+    return out
+
+
 def gdelt_items(text):
     j = json.loads(text)
     out = []
@@ -365,6 +383,25 @@ def probe_gdelt():
         out["backfill"] = dict(slim(r), n=len(gdelt_items(r["text"])) if r.get("status") == 200 else 0)
     except Exception:
         out["backfill"] = dict(slim(r, 60))
+    return out
+
+
+def probe_r6():
+    out = {"robots": robots("https://www.tradingview.com", ["/news/top-providers/reuters/", "/news/"])}
+    r = req(R6_URL)
+    items = tv_items(r.get("text") or "") if r.get("status") == 200 else []
+    out["page"] = feed_check(r, items)
+    out["page"]["urgent"] = sum(1 for x in items if x["urgency"] == 1)
+    return out
+
+
+def probe_feeds():
+    out = {}
+    for k, u in FEEDS.items():
+        host = urllib.parse.urlsplit(u)
+        out[k] = {"robots": robots(f"{host.scheme}://{host.netloc}", [host.path + ("?" + host.query if host.query else "")])}
+        r = req(u)
+        out[k]["feed"] = feed_check(r, rss_items(r.get("text") or "") if r.get("status") == 200 else [])
     return out
 
 
@@ -622,7 +659,7 @@ def probe_size():
 
 
 GROUPS = {"R1": probe_r1, "R3": probe_r3, "R4": probe_r4, "R5": probe_r5, "FactSet": probe_factset, "Lipper": probe_lipper, "SEC": probe_sec,
-          "谷歌新闻主题": probe_gn_topic, "GDELT": probe_gdelt, "金十财联社": probe_cn, "Yahoo": probe_yahoo, "纳斯达克财报": probe_earnings,
+          "谷歌新闻主题": probe_gn_topic, "GDELT": probe_gdelt, "R6": probe_r6, "正式 RSS": probe_feeds, "金十财联社": probe_cn, "Yahoo": probe_yahoo, "纳斯达克财报": probe_earnings,
           "CFTC": probe_cftc, "Direxion": probe_direxion, "韩国": probe_korea, "空头": probe_short, "TreasuryDirect": probe_treasury,
           "财务省": probe_mof, "交易所日历": probe_calendars, "现有来源请求头": probe_existing, "页面大小": probe_size}
 
@@ -671,6 +708,11 @@ def once(only=None):
             res["groups"][g] = r
     res["secs"] = round(time.time() - t0)
     p = os.path.join(OUT, f"once-{WHERE}.json")
+    if only and os.path.exists(p):                         # 只跑了几组：并进上次的结果，不覆盖别的组
+        old = json.load(open(p, encoding="utf-8"))
+        old["groups"].update(res["groups"])
+        old.setdefault("partial", {}).update({g: res["at"] for g in res["groups"]})
+        res = old
     with open(p, "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False, indent=1)
     print(f"写入 {os.path.relpath(p, ROOT)}，共 {res['secs']} 秒")
@@ -683,6 +725,8 @@ def watch_round(k):
     rec = {"k": k, "at": now, "routes": {}, "mkt": {}}
     jobs = [("R3:" + s, lambda s=s: rss_items(_ok(req(r3_url(s), headers=UA_PANEL)))) for s in R3_SECTIONS]
     jobs += [("R5:" + c, lambda c=c: [x for x in wscn_items(_ok(req(news.WSCN.format(ch=c), headers=UA_PANEL))) if x["reuters"]]) for c in R5_CHANNELS]
+    jobs += [("R6", lambda: tv_items(_ok(req(R6_URL))))]
+    jobs += [("RSS:" + n, lambda u=u: rss_items(_ok(req(u)))) for n, u in FEEDS.items()]
     if k % 3 == 0:
         jobs += [("R4:" + n, lambda u=u: rss_items(_ok(req(u)))) for n, u in R4_URLS.items()]
         jobs += [("GDELT", lambda: gdelt_items(_ok(req(GDELT_URL.format(span="1h")))))]
@@ -696,7 +740,7 @@ def watch_round(k):
         except Exception as e:
             return name, {"ok": False, "err": type(e).__name__ + ": " + str(e)[:80]}
 
-    with ThreadPoolExecutor(max_workers=8) as ex:
+    with ThreadPoolExecutor(max_workers=16) as ex:
         for name, r in ex.map(run, jobs):
             rec["routes"][name] = r
     sp = yahoo_spark(list(MARKET_PICK.values()), "v7")["got"]
