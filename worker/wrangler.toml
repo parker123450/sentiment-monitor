@@ -1,0 +1,14 @@
+# 雷达 Worker（第四轮第 1 步）。account_id 不写在这里：部署时从 GitHub Secret CLOUDFLARE_ACCOUNT_ID 读。
+# database_id 不是凭证，worker-setup.yml 建好 D1 以后写进来。令牌和推送渠道的钥匙用 wrangler secret put 写进 Worker，不在这里。
+name = "qx-radar"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+[triggers]
+crons = ["*/5 * * * *", "2-59/5 * * * *", "0 0 * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "qx-radar"
+database_id = "TO-BE-SET-BY-worker-setup"
+migrations_dir = "migrations"

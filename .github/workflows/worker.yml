@@ -1,0 +1,62 @@
+# 雷达 Worker：worker/ 有改动就跑测试（不用 Secret）；部署只在手动触发、而且 CLOUDFLARE_API_TOKEN 已经加了的时候做。
+# 部署：建表（D1 migrations）→ wrangler deploy → 把令牌和推送渠道的钥匙从 GitHub Secrets 写进 Worker（不回显）。
+# Cloudflare 的操作全在这里做，不在用户 Mac 上装 wrangler。
+
+name: 雷达 Worker
+
+on:
+  push:
+    branches: [radar, main]
+    paths: ["worker/**", ".github/workflows/worker.yml"]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "部署（要先加 CLOUDFLARE_API_TOKEN、CLOUDFLARE_ACCOUNT_ID）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: worker } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - run: npm test
+
+  deploy:
+    needs: test
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: worker } }
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: 检查
+        run: |
+          [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "还没加 Cloudflare 的 Secret"; exit 1; }
+          grep -q 'TO-BE-SET' wrangler.toml && { echo "先跑 worker-setup.yml 建 D1"; exit 1; } || true
+      - run: npx --yes wrangler@4 d1 migrations apply qx-radar --remote
+      - run: npx --yes wrangler@4 deploy
+      - name: 写入令牌和推送渠道的钥匙（不回显）
+        env:
+          READ_TOKEN: ${{ secrets.WORKER_READ_TOKEN }}
+          WRITE_TOKEN: ${{ secrets.WORKER_WRITE_TOKEN }}
+          BRIEF_TOKEN: ${{ secrets.WORKER_BRIEF_TOKEN }}
+          INGEST_TOKEN: ${{ secrets.WORKER_INGEST_TOKEN }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          WECOM_KEY: ${{ secrets.WECOM_KEY }}
+          BARK_KEY: ${{ secrets.BARK_KEY }}
+        run: |
+          for k in READ_TOKEN WRITE_TOKEN BRIEF_TOKEN INGEST_TOKEN NTFY_TOPIC WECOM_KEY BARK_KEY; do
+            v="${!k}"; [ -n "$v" ] || continue
+            printf '%s' "$v" | npx --yes wrangler@4 secret put "$k" >/dev/null && echo "写入 $k"
+          done

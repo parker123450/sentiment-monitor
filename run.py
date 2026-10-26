@@ -12,6 +12,9 @@
   python run.py daily           # 马上下载一次日线（不管时间）
   python run.py selftest        # 只跑自检
   python run.py pack <文件> / unpack <文件>   # data/ 下的小文件加密打包 / 解开（data 分支只放这一个加密文件）
+  python run.py backfill        # 快讯回补过去 30 天（谷歌新闻按日期搜，每分钟 1 次，约 3 小时；跑完才开始推"第一次"）
+  python run.py pushtest        # 测试推送：正文写发送时间，看手机上的到达时间
+  python run.py rules           # 导出给 Worker 的规则（data/out/rules.json）
 """
 import csv, json, os, shutil, sys, time
 from datetime import datetime, timezone, timedelta
@@ -19,7 +22,7 @@ from datetime import datetime, timezone, timedelta
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
-from qx import clock, crypt, export, fetch, happen, notify, page, selftest, sentiment, store   # noqa: E402
+from qx import clock, crypt, export, fetch, flash, happen, notify, page, selftest, sentiment, store   # noqa: E402
 from qx.registry import LINKED                                                  # noqa: E402
 
 SITE = os.path.join(ROOT, "site")
@@ -143,6 +146,12 @@ def auto():
         happen.archive()                                # 新闻标题、议息会概率存档
     except Exception as e:
         log(f"  ! 存档出错：{e}")
+    cands = []
+    try:
+        cands = flash.run(log=log)                      # 快讯：取、去重、打标签、"第一次"；回补跑完以后才给推送候选
+        flash.sync(log=log)                             # 有 Worker 时：推规则、取回它每 5 分钟攒的快讯
+    except Exception as e:
+        log(f"  ! 快讯出错：{type(e).__name__}")
     check = write = False
     if do["daily"] in ("us", "us_late"):
         got = fetch.daily(log=log)
@@ -166,7 +175,7 @@ def auto():
         log(f"  ! 试用记录没取到：{e}")
     ok, data = build(check=check, write=write)
     try:
-        notify.push(data, ok, log=log)
+        notify.push(data, ok, log=log, flash=cands)
     except Exception as e:
         log(f"  ! 推送出错：{e}")
     files = archive_chains(fetch.read_state())
@@ -203,6 +212,17 @@ def main():
         ok = True
     elif cmd == "unpack":
         crypt.unpack_dir(sys.argv[2], store.HERE, crypt.data_key())
+        ok = True
+    elif cmd == "backfill":
+        n = flash.backfill(log=log)
+        log(f"回补：{n} 次查询，跑完了，开始推\"第一次\"")
+        ok = True
+    elif cmd == "pushtest":
+        ok = notify.pushtest(log=log) > 0
+    elif cmd == "rules":
+        os.makedirs(os.path.join(ROOT, "data", "out"), exist_ok=True)
+        store.write_atomic(os.path.join(ROOT, "data", "out", "rules.json"), json.dumps({"flash": flash.rules(), "push": notify.rules()}, ensure_ascii=False))
+        log("规则：data/out/rules.json")
         ok = True
     elif cmd == "selftest":
         D, aaii = store.load_all()

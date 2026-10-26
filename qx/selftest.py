@@ -61,7 +61,28 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
         log(f"  {t.date()}：" + ("一致" if not diff else "不一致 " + "、".join(diff[:8])))
         if diff:
             bad.append((t, diff))
+    if not flash_check(rng, log):
+        bad.append(("快讯", ["第一次"]))
     return not bad
+
+
+def flash_check(rng, log=print, n=3):
+    """快讯的"第一次"：按"能看到的时间"截到过去某一刻重算，那一刻以前的标记必须和全量一样（第四轮第 1 步）。"""
+    from qx import flash
+    rows = flash.load_rows()
+    if len(rows) < 20:
+        return True
+    full = flash.firsts(rows)
+    ts = sorted({flash.visible(r) for r in rows})
+    ok = True
+    for t in [ts[-1]] + list(rng.choice(ts[: max(1, len(ts) - 1)], size=min(n, len(ts) - 1), replace=False)):
+        part = [r for r in rows if flash.visible(r) <= t]
+        a = flash.firsts(part)
+        b = {k: v for k, v in full.items() if any(r["route"] == k[0] and r["id"] == k[1] for r in part)}
+        same_ = a == b
+        ok &= same_
+        log(f"  快讯截到 {t[:16]}：" + ("一致" if same_ else f"不一致（{len(set(a.items()) ^ set(b.items()))} 处）"))
+    return ok
 
 
 if __name__ == "__main__":

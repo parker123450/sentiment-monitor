@@ -1,0 +1,313 @@
+# 快讯打标签用的登记表（第四轮第 1 步，2026-10-27 登记 v1）。规则在 口径.md 第九节。
+#
+# 只增不改：要改某一条，就加一条新版本（version 加 1、写 since），旧的写 until（停用日）。
+# 回放和检验只用当天已经登记、还没停用的版本。
+# 公司和机构的别名区分大小写、英文按整词；六条线的关键词不分大小写、英文按整词（允许 s/es/d/ed/ing 词尾），以 * 结尾的按词头；中文按字面。watch = true 的是观察名单（推送"第一次"只看观察名单）。
+
+version = 1
+since = "2026-10-27"
+
+# ---------------------------------------------------------------- 公司和机构
+[[entity]]
+id = "coreweave"
+name = "CoreWeave"
+alias = ["CoreWeave", "CRWV"]
+watch = true
+
+[[entity]]
+id = "nebius"
+name = "Nebius"
+alias = ["Nebius", "NBIS"]
+watch = true
+
+[[entity]]
+id = "oracle"
+name = "甲骨文"
+alias = ["Oracle", "ORCL", "甲骨文"]
+watch = true
+
+[[entity]]
+id = "meta"
+name = "Meta"
+alias = ["Meta Platforms", "Meta", "Facebook"]
+watch = true
+
+[[entity]]
+id = "microsoft"
+name = "微软"
+alias = ["Microsoft", "MSFT", "微软"]
+watch = true
+
+[[entity]]
+id = "google"
+name = "谷歌"
+alias = ["Alphabet", "Google", "GOOGL", "谷歌"]
+watch = true
+
+[[entity]]
+id = "amazon"
+name = "亚马逊"
+alias = ["Amazon", "AWS", "AMZN", "亚马逊"]
+watch = true
+
+[[entity]]
+id = "openai"
+name = "OpenAI"
+alias = ["OpenAI"]
+watch = true
+
+[[entity]]
+id = "anthropic"
+name = "Anthropic"
+alias = ["Anthropic"]
+watch = true
+
+[[entity]]
+id = "xai"
+name = "xAI"
+alias = ["xAI"]
+watch = true
+
+[[entity]]
+id = "nvidia"
+name = "英伟达"
+alias = ["Nvidia", "NVDA", "英伟达"]
+watch = true
+
+[[entity]]
+id = "amd"
+name = "AMD"
+alias = ["AMD", "Advanced Micro Devices", "超威"]
+watch = true
+
+[[entity]]
+id = "broadcom"
+name = "博通"
+alias = ["Broadcom", "AVGO", "博通"]
+watch = true
+
+[[entity]]
+id = "tsmc"
+name = "台积电"
+alias = ["TSMC", "Taiwan Semiconductor", "台积电", "台積電"]
+watch = true
+
+[[entity]]
+id = "hynix"
+name = "SK 海力士"
+alias = ["SK Hynix", "Hynix", "海力士"]
+watch = true
+
+[[entity]]
+id = "samsung"
+name = "三星"
+alias = ["Samsung", "三星"]
+watch = true
+
+[[entity]]
+id = "micron"
+name = "美光"
+alias = ["Micron", "MU", "美光"]
+watch = true
+
+[[entity]]
+id = "asml"
+name = "阿斯麦"
+alias = ["ASML", "阿斯麦"]
+watch = true
+
+[[entity]]
+id = "tel"
+name = "东京电子"
+alias = ["Tokyo Electron", "东京电子", "東京エレクトロン"]
+watch = true
+
+[[entity]]
+id = "advantest"
+name = "爱德万"
+alias = ["Advantest", "爱德万"]
+watch = true
+
+[[entity]]
+id = "softbank"
+name = "软银"
+alias = ["SoftBank", "软银"]
+watch = true
+
+[[entity]]
+id = "foxconn"
+name = "鸿海 / 工业富联"
+alias = ["Foxconn", "Hon Hai", "鸿海", "工业富联", "Foxconn Industrial Internet"]
+watch = true
+
+[[entity]]
+id = "cambricon"
+name = "寒武纪"
+alias = ["Cambricon", "寒武纪"]
+watch = true
+
+[[entity]]
+id = "smic"
+name = "中芯国际"
+alias = ["SMIC", "Semiconductor Manufacturing International", "中芯国际", "中芯"]
+watch = true
+
+[[entity]]
+id = "innolight"
+name = "中际旭创"
+alias = ["Innolight", "Zhongji Innolight", "中际旭创"]
+watch = true
+
+[[entity]]
+id = "kioxia"
+name = "铠侠"
+alias = ["Kioxia", "铠侠"]
+watch = true
+
+[[entity]]
+id = "vertiv"
+name = "Vertiv"
+alias = ["Vertiv", "VRT"]
+watch = true
+
+[[entity]]
+id = "iren"
+name = "IREN"
+alias = ["IREN", "Iris Energy"]
+watch = true
+
+[[entity]]
+id = "apld"
+name = "Applied Digital"
+alias = ["Applied Digital", "APLD"]
+watch = true
+
+[[entity]]
+id = "corz"
+name = "Core Scientific"
+alias = ["Core Scientific", "CORZ"]
+watch = true
+
+[[entity]]
+id = "blackstone"
+name = "黑石"
+alias = ["Blackstone", "黑石"]
+watch = true
+
+[[entity]]
+id = "blueowl"
+name = "Blue Owl"
+alias = ["Blue Owl"]
+watch = true
+
+# AI 链以外：大银行、能源、医药、国防、加密公司（扫描范围里有的），不在观察名单
+[[entity]]
+id = "banks"
+name = "美国大银行"
+alias = ["JPMorgan", "JP Morgan", "Goldman Sachs", "Morgan Stanley", "Bank of America", "Citigroup", "Wells Fargo", "摩根大通", "高盛", "摩根士丹利"]
+watch = false
+
+[[entity]]
+id = "energy"
+name = "石油公司"
+alias = ["Exxon", "ExxonMobil", "Chevron", "Saudi Aramco", "Aramco", "Shell", "BP", "埃克森", "雪佛龙", "沙特阿美"]
+watch = false
+
+[[entity]]
+id = "pharma"
+name = "大药企"
+alias = ["Eli Lilly", "Novo Nordisk", "Pfizer", "Merck", "礼来", "诺和诺德", "辉瑞"]
+watch = false
+
+[[entity]]
+id = "defense"
+name = "国防公司"
+alias = ["Lockheed", "Lockheed Martin", "RTX", "Raytheon", "Northrop", "General Dynamics", "洛克希德"]
+watch = false
+
+[[entity]]
+id = "crypto_co"
+name = "加密公司"
+alias = ["Coinbase", "MicroStrategy", "Strategy Inc", "Tether", "Circle", "稳定币"]
+watch = false
+
+[[entity]]
+id = "fed"
+name = "美联储"
+alias = ["Federal Reserve", "Fed", "FOMC", "Powell", "美联储", "鲍威尔"]
+watch = false
+
+[[entity]]
+id = "boj"
+name = "日本央行"
+alias = ["Bank of Japan", "BOJ", "BoJ", "Ueda", "日本央行", "日银", "植田"]
+watch = false
+
+[[entity]]
+id = "ecb"
+name = "欧洲央行"
+alias = ["European Central Bank", "ECB", "Lagarde", "欧洲央行", "拉加德"]
+watch = false
+
+[[entity]]
+id = "pboc"
+name = "人民银行"
+alias = ["People's Bank of China", "PBOC", "PBoC", "人民银行", "央行"]
+watch = false
+
+[[entity]]
+id = "bok"
+name = "韩国央行"
+alias = ["Bank of Korea", "BOK", "韩国央行"]
+watch = false
+
+# ---------------------------------------------------------------- 关键词组（不是公司，但当成一个"主体"标"第一次"）
+[[group]]
+id = "ai_debt"
+name = "AI 债"
+alias = ["AI debt", "AI bond", "AI bonds", "AI borrowing", "data center financing", "data centre financing", "data center debt", "AI 债", "AI 融资"]
+watch = true
+
+[[group]]
+id = "private_credit"
+name = "私募信贷"
+alias = ["private credit", "私募信贷", "私人信贷"]
+watch = true
+
+# ---------------------------------------------------------------- 六条线
+[[line]]
+id = "credit"
+name = "融资和信用"
+kw = ["bond", "bonds", "notes offering", "loan", "credit facility", "covenant", "downgrade", "downgraded", "default", "CDS", "credit default swap",
+      "spread", "spreads", "private credit", "refinanc*", "convertible", "at-the-market", "share sale", "stock sale", "IPO delay", "IPO postpone",
+      "pulls IPO", "postpones IPO", "writedown", "write-down", "debt", "borrow*", "发债", "债券", "贷款", "降级", "违约", "信用利差", "融资", "增发", "可转债"]
+
+[[line]]
+id = "industry"
+name = "产业进度"
+kw = ["capex", "capital expenditure", "guidance", "orders", "HBM", "CoWoS", "capacity", "price hike", "price cut", "price increase", "contract price",
+      "power", "grid", "data center delay", "data center cancel", "cancels data center", "delays data center", "资本开支", "指引", "订单", "产能",
+      "涨价", "降价", "合约价", "电力", "数据中心"]
+
+[[line]]
+id = "geo"
+name = "地缘和政策"
+kw = ["export control", "export controls", "export curbs", "tariff", "tariffs", "sanction", "sanctions", "entity list", "Hormuz", "strike", "strikes",
+      "ceasefire", "missile", "出口管制", "关税", "制裁", "实体清单", "霍尔木兹", "停火", "空袭"]
+
+[[line]]
+id = "rates"
+name = "利率和流动性"
+kw = ["Powell", "Jefferson", "Waller", "Bowman", "Williams", "Logan", "Goolsbee", "Hammack", "Musalem", "auction", "JGB", "yen", "Treasury",
+      "Treasuries", "yield", "yields", "rate cut", "rate hike", "liquidity", "repo", "拍卖", "日债", "日元", "美债", "收益率", "降息", "加息", "流动性"]
+
+[[line]]
+id = "positioning"
+name = "仓位和资金"
+kw = ["leveraged ETF", "margin", "margin debt", "retail investors", "retail traders", "short interest", "short sellers", "buyback", "inflows",
+      "outflows", "hedge funds", "杠杆 ETF", "融资余额", "散户", "空头", "回购", "资金流入", "资金流出", "对冲基金"]
+
+[[line]]
+id = "narrative"
+name = "情绪和叙事"
+kw = ["bubble", "selloff", "sell-off", "rout", "panic", "mania", "euphoria", "泡沫", "抛售", "暴跌", "恐慌", "狂热"]

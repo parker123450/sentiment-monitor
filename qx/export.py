@@ -11,7 +11,7 @@ from datetime import datetime, timezone, timedelta
 import numpy as np
 import pandas as pd
 
-from qx import store, watch, events, options, happen, judge, notify
+from qx import store, watch, events, options, happen, judge, notify, flash
 from qx.registry import SMALL, AI, SERIES
 from qx.sentiment import longvol, NAMES, MOM_WORDS
 
@@ -196,5 +196,9 @@ def build(D, aaii, R, write=False):
     for c in ch:
         c["opt"] = opt["chart"].get(c["k"], [])
         c["judge"] = jud["marks"].get(c["k"], [])
-    return dict(asof=days[-1].strftime("%Y-%m-%d"), updated=now.strftime("%Y-%m-%d %H:%M"), today=today(D, R, opt, hap, jud), judge=jud["cards"], fb=notify.feedback_topic() or None, options=opt, happen={k: hap[k] for k in ("news", "pm", "calendar", "day")}, chart=ch, daily=daily, turns=turns,
+    try:
+        fl = flash.block()
+    except Exception:
+        fl = None
+    return dict(flash=fl, asof=days[-1].strftime("%Y-%m-%d"), updated=now.strftime("%Y-%m-%d %H:%M"), today=today(D, R, opt, hap, jud), judge=jud["cards"], fb=notify.feedback_topic() or None, options=opt, happen={k: hap[k] for k in ("news", "pm", "calendar", "day")}, chart=ch, daily=daily, turns=turns,
                 groups=group_facts(D, R), ice=ice(D), cnn=cnn(), status=status(D, aaii, meta), stnames=NAMES, momwords=MOM_WORDS)

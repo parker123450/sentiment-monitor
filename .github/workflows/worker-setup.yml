@@ -1,0 +1,29 @@
+# 雷达 Worker · 只跑一次：建 D1 数据库，把 database_id 写进 worker/wrangler.toml 并提交（database_id 不是凭证）。
+name: 雷达 Worker 建库
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: 建 D1，写进 wrangler.toml
+        working-directory: worker
+        run: |
+          [ -n "$CLOUDFLARE_API_TOKEN" ] || { echo "还没加 CLOUDFLARE_API_TOKEN"; exit 1; }
+          id=$(npx --yes wrangler@4 d1 list --json | python3 -c "import json,sys;print(next((d['uuid'] for d in json.load(sys.stdin) if d['name']=='qx-radar'),''))")
+          [ -n "$id" ] || id=$(npx --yes wrangler@4 d1 create qx-radar --json 2>/dev/null | python3 -c "import json,sys;print(json.load(sys.stdin)['uuid'])")
+          sed -i "s/TO-BE-SET-BY-worker-setup/$id/" wrangler.toml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "Worker：写入 D1 的 database_id" && git push

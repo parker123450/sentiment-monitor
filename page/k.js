@@ -196,6 +196,24 @@
       `<p class="knote">新闻只从路透、彭博、华尔街日报、金融时报、CNBC、日经亚洲、美联储、韩联社、CoinDesk 和华尔街见闻"重要"快讯里取。期权定价包含到期前的正常波动，偏大一点。</p>`;
   })();
 
+  // ---------- 快讯（第四轮第 1 步，qx/flash.py；口径.md 第九节）
+  (function () {
+    const F = RAW.flash, el = $("flash"); if (!F || !el) return;
+    el.hidden = false;
+    const it = x => `<div class="fli"><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.t)}</a>` +
+      `<div class="fm">${x.src.map(esc).join("；")} · 发布 ${esc(x.pub)}，看到 ${esc(x.seen)}（北京）${x.n > 1 ? ` · ${x.n} 家` : ""}</div>` +
+      `<div>${x.first.map(f => `<span class="tg first">第一次：${esc(f)}</span>`).join("")}${x.ents.map(e => `<span class="tg">${esc(e)}</span>`).join("")}${x.lines.map(l => `<span class="tg">${esc(l)}</span>`).join("")}</div></div>`;
+    const top = F.items.slice(0, F.top), more = F.items.slice(F.top);
+    const lag = h => h.lag ? `中位 ${h.lag.med} 分钟（90% ${h.lag.p90}，${h.lag.n} 条）` : "还没攒够";
+    const hr = F.health.map(h => `<tr><td>${esc(h.src)}${h.via ? " · 经" + esc(h.via) : ""}<small> ${esc(h.id)}</small></td><td class="${h.ok ? "" : "bad"}">${h.ok ? (h.ago == null ? "—" : h.ago + " 分钟前取到") : "停了 / 没取到"}</td><td>${lag(h)}</td></tr>`).join("");
+    el.innerHTML = `<h2>快讯<small>最近 ${F.hours} 小时，打上标签的 ${F.shown} 件（共看到 ${F.total} 条）</small></h2>` +
+      (top.length ? top.map(it).join("") : `<p class="quiet">最近 ${F.hours} 小时没有打上标签的快讯。</p>`) +
+      (more.length ? `<details><summary>再看 ${more.length} 件</summary>${more.map(it).join("")}</details>` : "") +
+      `<details><summary>各条路的健康和延迟</summary><table class="fh">${hr}</table>` +
+      `<p class="knote">延迟 = 我们看到的时间 − 发布时间，只算每条路开始取以后新出现的条目；云端每 15 分钟取一次，所以含最多 15 分钟的等待。` +
+      `${F.backfill_done ? "" : "过去 30 天还没回补完，\"第一次\"只标不推。"}路透经 TradingView、谷歌新闻取，是用户 10-27 定的（口径.md 第九节）。</p></details>`;
+  })();
+
   // ---------- 最近一年：阶段一条 + 四行热度（和 K 线副图同一套颜色）
   function drawYear() {
     const cv = $("yr"); if (!cv || !cv.getContext) return;

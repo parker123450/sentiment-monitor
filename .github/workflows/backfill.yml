@@ -1,0 +1,43 @@
+# 快讯回补（第四轮第 1 步）：手动触发，只跑一次。谷歌新闻按日期搜过去 30 天白名单来源里观察名单的报道，每分钟 1 次，约 3 小时。
+# 跑完以后 data.enc 里记下 backfill_done，"第一次"才开始推送。合进 main 以后才能跑（数据在 data 分支，和面板共用）。
+name: 快讯回补
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: run
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      DATA_KEY: ${{ secrets.DATA_KEY }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12", cache: pip }
+      - run: pip install -r requirements.txt
+      - name: 取回 data 分支上加密的小文件
+        run: |
+          set -e
+          git fetch -q --depth=1 origin data
+          git show FETCH_HEAD:data.enc > /tmp/data.enc
+          python run.py unpack /tmp/data.enc
+      - run: python run.py backfill
+      - name: 存回 data 分支
+        run: |
+          set -e
+          D=$(mktemp -d); python run.py pack "$D/data.enc"; cd "$D"
+          git init -q -b data
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          printf '# data 分支\n\n只有一个加密文件 data.enc。钥匙不在仓库里。每次覆盖，只留最新一份。\n' > README.md
+          git add -A && git commit -q -m "数据（回补）$(date -u '+%F %H:%M') UTC"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" data

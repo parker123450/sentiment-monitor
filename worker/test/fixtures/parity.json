@@ -1,0 +1,919 @@
+{
+ "rules": {
+  "version": 1,
+  "since": "2026-10-27",
+  "white": [
+   "CNBC",
+   "MarketWatch",
+   "SEC",
+   "华尔街日报",
+   "彭博",
+   "日经",
+   "美联储",
+   "美联储讲话",
+   "路透",
+   "金融时报",
+   "韩联社"
+  ],
+  "first_days": 30,
+  "spread": [
+   1,
+   3
+  ],
+  "entities": [
+   {
+    "id": "coreweave",
+    "name": "CoreWeave",
+    "alias": [
+     "CoreWeave",
+     "CRWV"
+    ],
+    "watch": true
+   },
+   {
+    "id": "nebius",
+    "name": "Nebius",
+    "alias": [
+     "Nebius",
+     "NBIS"
+    ],
+    "watch": true
+   },
+   {
+    "id": "oracle",
+    "name": "甲骨文",
+    "alias": [
+     "Oracle",
+     "ORCL",
+     "甲骨文"
+    ],
+    "watch": true
+   },
+   {
+    "id": "meta",
+    "name": "Meta",
+    "alias": [
+     "Meta Platforms",
+     "Meta",
+     "Facebook"
+    ],
+    "watch": true
+   },
+   {
+    "id": "microsoft",
+    "name": "微软",
+    "alias": [
+     "Microsoft",
+     "MSFT",
+     "微软"
+    ],
+    "watch": true
+   },
+   {
+    "id": "google",
+    "name": "谷歌",
+    "alias": [
+     "Alphabet",
+     "Google",
+     "GOOGL",
+     "谷歌"
+    ],
+    "watch": true
+   },
+   {
+    "id": "amazon",
+    "name": "亚马逊",
+    "alias": [
+     "Amazon",
+     "AWS",
+     "AMZN",
+     "亚马逊"
+    ],
+    "watch": true
+   },
+   {
+    "id": "openai",
+    "name": "OpenAI",
+    "alias": [
+     "OpenAI"
+    ],
+    "watch": true
+   },
+   {
+    "id": "anthropic",
+    "name": "Anthropic",
+    "alias": [
+     "Anthropic"
+    ],
+    "watch": true
+   },
+   {
+    "id": "xai",
+    "name": "xAI",
+    "alias": [
+     "xAI"
+    ],
+    "watch": true
+   },
+   {
+    "id": "nvidia",
+    "name": "英伟达",
+    "alias": [
+     "Nvidia",
+     "NVDA",
+     "英伟达"
+    ],
+    "watch": true
+   },
+   {
+    "id": "amd",
+    "name": "AMD",
+    "alias": [
+     "AMD",
+     "Advanced Micro Devices",
+     "超威"
+    ],
+    "watch": true
+   },
+   {
+    "id": "broadcom",
+    "name": "博通",
+    "alias": [
+     "Broadcom",
+     "AVGO",
+     "博通"
+    ],
+    "watch": true
+   },
+   {
+    "id": "tsmc",
+    "name": "台积电",
+    "alias": [
+     "TSMC",
+     "Taiwan Semiconductor",
+     "台积电",
+     "台積電"
+    ],
+    "watch": true
+   },
+   {
+    "id": "hynix",
+    "name": "SK 海力士",
+    "alias": [
+     "SK Hynix",
+     "Hynix",
+     "海力士"
+    ],
+    "watch": true
+   },
+   {
+    "id": "samsung",
+    "name": "三星",
+    "alias": [
+     "Samsung",
+     "三星"
+    ],
+    "watch": true
+   },
+   {
+    "id": "micron",
+    "name": "美光",
+    "alias": [
+     "Micron",
+     "MU",
+     "美光"
+    ],
+    "watch": true
+   },
+   {
+    "id": "asml",
+    "name": "阿斯麦",
+    "alias": [
+     "ASML",
+     "阿斯麦"
+    ],
+    "watch": true
+   },
+   {
+    "id": "tel",
+    "name": "东京电子",
+    "alias": [
+     "Tokyo Electron",
+     "东京电子",
+     "東京エレクトロン"
+    ],
+    "watch": true
+   },
+   {
+    "id": "advantest",
+    "name": "爱德万",
+    "alias": [
+     "Advantest",
+     "爱德万"
+    ],
+    "watch": true
+   },
+   {
+    "id": "softbank",
+    "name": "软银",
+    "alias": [
+     "SoftBank",
+     "软银"
+    ],
+    "watch": true
+   },
+   {
+    "id": "foxconn",
+    "name": "鸿海 / 工业富联",
+    "alias": [
+     "Foxconn",
+     "Hon Hai",
+     "鸿海",
+     "工业富联",
+     "Foxconn Industrial Internet"
+    ],
+    "watch": true
+   },
+   {
+    "id": "cambricon",
+    "name": "寒武纪",
+    "alias": [
+     "Cambricon",
+     "寒武纪"
+    ],
+    "watch": true
+   },
+   {
+    "id": "smic",
+    "name": "中芯国际",
+    "alias": [
+     "SMIC",
+     "Semiconductor Manufacturing International",
+     "中芯国际",
+     "中芯"
+    ],
+    "watch": true
+   },
+   {
+    "id": "innolight",
+    "name": "中际旭创",
+    "alias": [
+     "Innolight",
+     "Zhongji Innolight",
+     "中际旭创"
+    ],
+    "watch": true
+   },
+   {
+    "id": "kioxia",
+    "name": "铠侠",
+    "alias": [
+     "Kioxia",
+     "铠侠"
+    ],
+    "watch": true
+   },
+   {
+    "id": "vertiv",
+    "name": "Vertiv",
+    "alias": [
+     "Vertiv",
+     "VRT"
+    ],
+    "watch": true
+   },
+   {
+    "id": "iren",
+    "name": "IREN",
+    "alias": [
+     "IREN",
+     "Iris Energy"
+    ],
+    "watch": true
+   },
+   {
+    "id": "apld",
+    "name": "Applied Digital",
+    "alias": [
+     "Applied Digital",
+     "APLD"
+    ],
+    "watch": true
+   },
+   {
+    "id": "corz",
+    "name": "Core Scientific",
+    "alias": [
+     "Core Scientific",
+     "CORZ"
+    ],
+    "watch": true
+   },
+   {
+    "id": "blackstone",
+    "name": "黑石",
+    "alias": [
+     "Blackstone",
+     "黑石"
+    ],
+    "watch": true
+   },
+   {
+    "id": "blueowl",
+    "name": "Blue Owl",
+    "alias": [
+     "Blue Owl"
+    ],
+    "watch": true
+   },
+   {
+    "id": "banks",
+    "name": "美国大银行",
+    "alias": [
+     "JPMorgan",
+     "JP Morgan",
+     "Goldman Sachs",
+     "Morgan Stanley",
+     "Bank of America",
+     "Citigroup",
+     "Wells Fargo",
+     "摩根大通",
+     "高盛",
+     "摩根士丹利"
+    ],
+    "watch": false
+   },
+   {
+    "id": "energy",
+    "name": "石油公司",
+    "alias": [
+     "Exxon",
+     "ExxonMobil",
+     "Chevron",
+     "Saudi Aramco",
+     "Aramco",
+     "Shell",
+     "BP",
+     "埃克森",
+     "雪佛龙",
+     "沙特阿美"
+    ],
+    "watch": false
+   },
+   {
+    "id": "pharma",
+    "name": "大药企",
+    "alias": [
+     "Eli Lilly",
+     "Novo Nordisk",
+     "Pfizer",
+     "Merck",
+     "礼来",
+     "诺和诺德",
+     "辉瑞"
+    ],
+    "watch": false
+   },
+   {
+    "id": "defense",
+    "name": "国防公司",
+    "alias": [
+     "Lockheed",
+     "Lockheed Martin",
+     "RTX",
+     "Raytheon",
+     "Northrop",
+     "General Dynamics",
+     "洛克希德"
+    ],
+    "watch": false
+   },
+   {
+    "id": "crypto_co",
+    "name": "加密公司",
+    "alias": [
+     "Coinbase",
+     "MicroStrategy",
+     "Strategy Inc",
+     "Tether",
+     "Circle",
+     "稳定币"
+    ],
+    "watch": false
+   },
+   {
+    "id": "fed",
+    "name": "美联储",
+    "alias": [
+     "Federal Reserve",
+     "Fed",
+     "FOMC",
+     "Powell",
+     "美联储",
+     "鲍威尔"
+    ],
+    "watch": false
+   },
+   {
+    "id": "boj",
+    "name": "日本央行",
+    "alias": [
+     "Bank of Japan",
+     "BOJ",
+     "BoJ",
+     "Ueda",
+     "日本央行",
+     "日银",
+     "植田"
+    ],
+    "watch": false
+   },
+   {
+    "id": "ecb",
+    "name": "欧洲央行",
+    "alias": [
+     "European Central Bank",
+     "ECB",
+     "Lagarde",
+     "欧洲央行",
+     "拉加德"
+    ],
+    "watch": false
+   },
+   {
+    "id": "pboc",
+    "name": "人民银行",
+    "alias": [
+     "People's Bank of China",
+     "PBOC",
+     "PBoC",
+     "人民银行",
+     "央行"
+    ],
+    "watch": false
+   },
+   {
+    "id": "bok",
+    "name": "韩国央行",
+    "alias": [
+     "Bank of Korea",
+     "BOK",
+     "韩国央行"
+    ],
+    "watch": false
+   },
+   {
+    "id": "ai_debt",
+    "name": "AI 债",
+    "alias": [
+     "AI debt",
+     "AI bond",
+     "AI bonds",
+     "AI borrowing",
+     "data center financing",
+     "data centre financing",
+     "data center debt",
+     "AI 债",
+     "AI 融资"
+    ],
+    "watch": true
+   },
+   {
+    "id": "private_credit",
+    "name": "私募信贷",
+    "alias": [
+     "private credit",
+     "私募信贷",
+     "私人信贷"
+    ],
+    "watch": true
+   }
+  ],
+  "lines": [
+   {
+    "id": "credit",
+    "name": "融资和信用",
+    "kw": [
+     "bond",
+     "bonds",
+     "notes offering",
+     "loan",
+     "credit facility",
+     "covenant",
+     "downgrade",
+     "downgraded",
+     "default",
+     "CDS",
+     "credit default swap",
+     "spread",
+     "spreads",
+     "private credit",
+     "refinanc*",
+     "convertible",
+     "at-the-market",
+     "share sale",
+     "stock sale",
+     "IPO delay",
+     "IPO postpone",
+     "pulls IPO",
+     "postpones IPO",
+     "writedown",
+     "write-down",
+     "debt",
+     "borrow*",
+     "发债",
+     "债券",
+     "贷款",
+     "降级",
+     "违约",
+     "信用利差",
+     "融资",
+     "增发",
+     "可转债"
+    ]
+   },
+   {
+    "id": "industry",
+    "name": "产业进度",
+    "kw": [
+     "capex",
+     "capital expenditure",
+     "guidance",
+     "orders",
+     "HBM",
+     "CoWoS",
+     "capacity",
+     "price hike",
+     "price cut",
+     "price increase",
+     "contract price",
+     "power",
+     "grid",
+     "data center delay",
+     "data center cancel",
+     "cancels data center",
+     "delays data center",
+     "资本开支",
+     "指引",
+     "订单",
+     "产能",
+     "涨价",
+     "降价",
+     "合约价",
+     "电力",
+     "数据中心"
+    ]
+   },
+   {
+    "id": "geo",
+    "name": "地缘和政策",
+    "kw": [
+     "export control",
+     "export controls",
+     "export curbs",
+     "tariff",
+     "tariffs",
+     "sanction",
+     "sanctions",
+     "entity list",
+     "Hormuz",
+     "strike",
+     "strikes",
+     "ceasefire",
+     "missile",
+     "出口管制",
+     "关税",
+     "制裁",
+     "实体清单",
+     "霍尔木兹",
+     "停火",
+     "空袭"
+    ]
+   },
+   {
+    "id": "rates",
+    "name": "利率和流动性",
+    "kw": [
+     "Powell",
+     "Jefferson",
+     "Waller",
+     "Bowman",
+     "Williams",
+     "Logan",
+     "Goolsbee",
+     "Hammack",
+     "Musalem",
+     "auction",
+     "JGB",
+     "yen",
+     "Treasury",
+     "Treasuries",
+     "yield",
+     "yields",
+     "rate cut",
+     "rate hike",
+     "liquidity",
+     "repo",
+     "拍卖",
+     "日债",
+     "日元",
+     "美债",
+     "收益率",
+     "降息",
+     "加息",
+     "流动性"
+    ]
+   },
+   {
+    "id": "positioning",
+    "name": "仓位和资金",
+    "kw": [
+     "leveraged ETF",
+     "margin",
+     "margin debt",
+     "retail investors",
+     "retail traders",
+     "short interest",
+     "short sellers",
+     "buyback",
+     "inflows",
+     "outflows",
+     "hedge funds",
+     "杠杆 ETF",
+     "融资余额",
+     "散户",
+     "空头",
+     "回购",
+     "资金流入",
+     "资金流出",
+     "对冲基金"
+    ]
+   },
+   {
+    "id": "narrative",
+    "name": "情绪和叙事",
+    "kw": [
+     "bubble",
+     "selloff",
+     "sell-off",
+     "rout",
+     "panic",
+     "mania",
+     "euphoria",
+     "泡沫",
+     "抛售",
+     "暴跌",
+     "恐慌",
+     "狂热"
+    ]
+   }
+  ],
+  "push_lines": [
+   "credit",
+   "geo"
+  ]
+ },
+ "cases": [
+  {
+   "t": "CoreWeave prices $2 billion bond sale as AI debt piles up",
+   "ents": [
+    "coreweave",
+    "ai_debt"
+   ],
+   "lines": [
+    "credit"
+   ]
+  },
+  {
+   "t": "Oracle downgraded by Moody's on data center borrowing",
+   "ents": [
+    "oracle"
+   ],
+   "lines": [
+    "credit"
+   ]
+  },
+  {
+   "t": "Nvidia faces new export controls on China chips",
+   "ents": [
+    "nvidia"
+   ],
+   "lines": [
+    "geo"
+   ]
+  },
+  {
+   "t": "Fed's Waller says rate cut possible in December",
+   "ents": [
+    "fed"
+   ],
+   "lines": [
+    "rates"
+   ]
+  },
+  {
+   "t": "Pfizer reports earnings",
+   "ents": [
+    "pharma"
+   ],
+   "lines": []
+  },
+  {
+   "t": "Measles cases: Pennsylvania reports 1,360",
+   "ents": [],
+   "lines": []
+  },
+  {
+   "t": "SK Hynix raises HBM contract price",
+   "ents": [
+    "hynix"
+   ],
+   "lines": [
+    "industry"
+   ]
+  },
+  {
+   "t": "甲骨文发债 180 亿美元",
+   "ents": [
+    "oracle"
+   ],
+   "lines": [
+    "credit"
+   ]
+  },
+  {
+   "t": "Microsoft refinancing talks with banks",
+   "ents": [
+    "microsoft"
+   ],
+   "lines": [
+    "credit"
+   ]
+  },
+  {
+   "t": "Meta-analysis shows nothing",
+   "ents": [
+    "meta"
+   ],
+   "lines": []
+  },
+  {
+   "t": "Strike on Hormuz tanker lifts oil",
+   "ents": [],
+   "lines": [
+    "geo"
+   ]
+  },
+  {
+   "t": "Blue Owl private credit fund limits withdrawals",
+   "ents": [
+    "blueowl",
+    "private_credit"
+   ],
+   "lines": [
+    "credit"
+   ]
+  }
+ ],
+ "rows": [
+  {
+   "route": "R6",
+   "id": "u0",
+   "src": "路透",
+   "t": "CoreWeave prices $2 billion bond sale as AI debt piles up",
+   "pub": "2026-10-20T00:00:00+00:00",
+   "seen": "2026-10-26T10:00:00+00:00",
+   "ents": "coreweave|ai_debt",
+   "lines": "credit"
+  },
+  {
+   "route": "R6",
+   "id": "u1",
+   "src": "路透",
+   "t": "Oracle downgraded by Moody's on data center borrowing",
+   "pub": "2026-10-21T01:00:00+00:00",
+   "seen": "2026-10-26T11:00:00+00:00",
+   "ents": "oracle",
+   "lines": "credit"
+  },
+  {
+   "route": "R6",
+   "id": "u2",
+   "src": "路透",
+   "t": "Nvidia faces new export controls on China chips",
+   "pub": "2026-10-22T02:00:00+00:00",
+   "seen": "2026-10-26T12:00:00+00:00",
+   "ents": "nvidia",
+   "lines": "geo"
+  },
+  {
+   "route": "R6",
+   "id": "u3",
+   "src": "路透",
+   "t": "Fed's Waller says rate cut possible in December",
+   "pub": "2026-10-20T03:00:00+00:00",
+   "seen": "2026-10-26T13:00:00+00:00",
+   "ents": "fed",
+   "lines": "rates"
+  },
+  {
+   "route": "R6",
+   "id": "u4",
+   "src": "路透",
+   "t": "Pfizer reports earnings",
+   "pub": "2026-10-21T04:00:00+00:00",
+   "seen": "2026-10-26T14:00:00+00:00",
+   "ents": "pharma",
+   "lines": ""
+  },
+  {
+   "route": "R6",
+   "id": "u5",
+   "src": "路透",
+   "t": "Measles cases: Pennsylvania reports 1,360",
+   "pub": "2026-10-22T05:00:00+00:00",
+   "seen": "2026-10-26T15:00:00+00:00",
+   "ents": "",
+   "lines": ""
+  },
+  {
+   "route": "R6",
+   "id": "u6",
+   "src": "路透",
+   "t": "SK Hynix raises HBM contract price",
+   "pub": "2026-10-20T06:00:00+00:00",
+   "seen": "2026-10-26T16:00:00+00:00",
+   "ents": "hynix",
+   "lines": "industry"
+  },
+  {
+   "route": "R6",
+   "id": "u7",
+   "src": "路透",
+   "t": "甲骨文发债 180 亿美元",
+   "pub": "2026-10-21T07:00:00+00:00",
+   "seen": "2026-10-26T17:00:00+00:00",
+   "ents": "oracle",
+   "lines": "credit"
+  },
+  {
+   "route": "R6",
+   "id": "u8",
+   "src": "路透",
+   "t": "Microsoft refinancing talks with banks",
+   "pub": "2026-10-22T08:00:00+00:00",
+   "seen": "2026-10-26T18:00:00+00:00",
+   "ents": "microsoft",
+   "lines": "credit"
+  },
+  {
+   "route": "R6",
+   "id": "u9",
+   "src": "路透",
+   "t": "Meta-analysis shows nothing",
+   "pub": "2026-10-20T00:00:00+00:00",
+   "seen": "2026-10-26T19:00:00+00:00",
+   "ents": "meta",
+   "lines": ""
+  },
+  {
+   "route": "R6",
+   "id": "u10",
+   "src": "路透",
+   "t": "Strike on Hormuz tanker lifts oil",
+   "pub": "2026-10-21T01:00:00+00:00",
+   "seen": "2026-10-26T20:00:00+00:00",
+   "ents": "",
+   "lines": "geo"
+  },
+  {
+   "route": "R6",
+   "id": "u11",
+   "src": "路透",
+   "t": "Blue Owl private credit fund limits withdrawals",
+   "pub": "2026-10-22T02:00:00+00:00",
+   "seen": "2026-10-26T21:00:00+00:00",
+   "ents": "blueowl|private_credit",
+   "lines": "credit"
+  },
+  {
+   "route": "R6",
+   "id": "u99",
+   "src": "路透",
+   "t": "CoreWeave prices $2 billion bond sale as AI debt piles up",
+   "pub": "2026-10-20T00:00:00+00:00",
+   "seen": "2026-10-26T23:00:00+00:00",
+   "ents": "coreweave|ai_debt",
+   "lines": "credit"
+  }
+ ],
+ "firsts": {
+  "u0": "coreweave:credit|ai_debt:credit",
+  "u1": "oracle:credit",
+  "u2": "nvidia:geo",
+  "u3": "fed:rates",
+  "u6": "hynix:industry",
+  "u8": "microsoft:credit",
+  "u11": "blueowl:credit|private_credit:credit"
+ }
+}

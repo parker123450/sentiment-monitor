@@ -23,7 +23,13 @@
    - 点 K 线某一天，能看那天存下的新闻。
 7. **试用记录**：每天点一下，看哪块真有用。
 
-推送（ntfy）只推新出现的"今天要知道的"、数据断了、自检没过。
+推送（ntfy，也可以加企业微信群机器人、Bark）推新出现的"今天要知道的"、快讯的"第一次"和扩散、数据断了、自检没过；每天最多 6 条（北京 08:00 起算），十年少见的不占名额，超了的第二天早上合成一条。
+
+## 第四轮：交易员雷达（radar 分支，2026-10-27 起，验收通过、用户同意后才合进 main）
+
+- **快讯**（第 1 步，`qx/flash.py`，口径第九节）："今天要知道的"下面。路透经 TradingView 和谷歌新闻取，加 CNBC、MarketWatch、金融时报、Seeking Alpha、日经亚洲、美联储、韩联社、华尔街见闻；按 `登记/entities.toml` 打公司和六条线的标签，观察名单的"第一次"和多家同时报道会推送。
+- **Worker**（`worker/`）：Cloudflare 上每 5 分钟取快讯和开盘中市场的价格，页面打开时现取。要用户注册 Cloudflare、加 Secret 以后才部署（`worker-setup.yml` 建库，`worker.yml` 测试和部署）。
+- **数据源实测**（第 0 步）：`tools/probe.py`、`docs/数据源实测.md`。
 
 ## 怎么跑
 
@@ -34,6 +40,10 @@
 | `python run.py daily` | 马上下载一次日线，再算 |
 | `python run.py selftest` | 自检：把数据截到过去某天重算，必须和全量一致（不用未来数据） |
 | `python run.py seal` | 本机 `../判断/*.json`（判断卡原文，不进仓库）加密成 `cards/*.enc` |
+| `python run.py backfill` | 快讯回补过去 30 天（约 3 小时；跑完才推"第一次"） |
+| `python run.py pushtest` | 测试推送：正文写发送时间，看手机上的到达时间 |
+| `python run.py rules` | 导出给 Worker 的规则 `data/out/rules.json` |
+| `cd worker && npm test` | Worker 的测试（不用装包，和 Python 对拍） |
 
 ## 放在哪
 
@@ -50,5 +60,6 @@ Secrets：
 - `PAGE_PASSWORD`：网页密码。
 - `DATA_KEY`：数据钥匙，本机 `~/.config/qx/data_key` 有一份。钥匙丢了，攒下的历史就打不开了。
 - `NTFY_TOPIC`、`FEEDBACK_TOPIC`：推送频道和试用记录频道，本机 `~/.config/qx/` 各有一份。
+- 第四轮要加的（用户同意后）：`WECOM_KEY`、`BARK_KEY`（推送渠道，可选）；`CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID`；`WORKER_URL` 和四把 Worker 令牌 `WORKER_READ_TOKEN`、`WORKER_WRITE_TOKEN`、`WORKER_BRIEF_TOKEN`、`WORKER_INGEST_TOKEN`。
 
 数据来源：Yahoo、FRED、CBOE、AAII、CNN、Polymarket、谷歌新闻和几家一手来源。这里只描述市场，不是买卖建议。
