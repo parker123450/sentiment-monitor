@@ -1,0 +1,59 @@
+# 第 0 步 · 数据源实测（第四轮规划，2026-10-26）。不是定时：推送 radar 分支且改了实测脚本时跑一次，合进 main 以后也能手动触发。
+#
+# 先每个源取一次（tools/probe.py once），再每 5 分钟一轮看路透几条路的新条目和各市场行情时点（watch），最后汇总延迟。
+# 日志只打状态码、条数和耗时；明细（来源、状态、robots.txt、条款的句子、公开新闻的标题和时间）放进构件，留 7 天，在会话里取回来看。
+# 不用任何 Secret。和面板（run.yml）不在一个并发组，互不影响。
+
+name: 数据源实测
+
+on:
+  push:
+    branches: [radar]
+    paths:
+      - tools/probe.py
+      - .github/workflows/probe.yml
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: "watch 跑几轮（每轮 5 分钟）"
+        default: "18"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      PROBE_WHERE: actions
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt exchange_calendars==4.13.2
+
+      - name: 每个源取一次
+        run: python tools/probe.py once
+
+      - name: 每 5 分钟一轮
+        run: python tools/probe.py watch --rounds "${{ inputs.rounds || '18' }}"
+
+      - name: 汇总
+        if: always()
+        run: python tools/probe.py summary
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: probe
+          path: data/probe/
+          retention-days: 7
