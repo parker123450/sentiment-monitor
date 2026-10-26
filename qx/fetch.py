@@ -326,6 +326,11 @@ def daily(log=print, only=None, full=None):
                     raise RuntimeError("FRED 连不上，这次跳过")
                 rows = fred(name)
                 old = store.read_rows(name)
+                if old and rows and rows[0][0] > old[0][0]:
+                    # FRED 的 ICE 利差 2026 年 4 月起只给最近 3 年：新的从更晚开始时和存下的合并（重叠的日子以新的为准），不丢更早的历史
+                    m = {r[0]: r for r in old}
+                    m.update({r[0]: r for r in rows})
+                    rows = [m[k] for k in sorted(m)]
                 warn = store.validate(name, rows, old)
                 if any("短很多" in w or "日期" in w for w in warn):
                     raise RuntimeError("；".join(warn))

@@ -231,7 +231,14 @@ def build(D, aaii, R, write=False):
     except Exception:
         fl = None
     radar = {}
-    for k, f in (("narr", lambda: narrative.block(D)), ("mkts", lambda: markets.rows(D))):
+    from qx import smallsignal, positioning
+    t_last = max(D[k].index[-1] for k in ("^SOX", "^GSPC") if k in D)
+    pos = {}
+    def _pos():
+        pos["v"] = positioning.compute(D, t_last)
+        return pos["v"]
+    for k, f in (("narr", lambda: narrative.block(D)), ("mkts", lambda: markets.rows(D)), ("pos", _pos),
+                 ("sig", lambda: smallsignal.compute(D, t_last, pos.get("v")))):
         try:
             radar[k] = f()
         except Exception as e:

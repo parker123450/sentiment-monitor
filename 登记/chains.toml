@@ -1,0 +1,46 @@
+# 推演链（第四轮第 3 步，2026-10-27 登记 v1）。规则在 口径.md 第十一节，代码 qx/smallsignal.py。
+# 每条链按顺序列几环；每一环写"哪个价格先动"（series：这一环的读数，出现偏高以上的小信号就算"亮"）和"哪天的数据能证实或证伪"（check）。
+# 程序盯着下一环：前一环亮了以后 20 个交易日内下一环也亮，算"推演链往下走了一环"（推送，第 5 步并进"三种走向的信号先出现"）。
+# 只增不改：改链、改环加新版本（version、since），旧的写 until。
+
+version = 1
+since = "2026-10-27"
+window = 20
+
+[[chain]]
+id = "ai_fin"
+name = "AI 融资"
+links = [
+  { name = "neocloud 信用", series = ["BAMLH0A2HYB", "BAMLH0A1HYBB", "CRWV", "NBIS"], stress = ["up", "up", "down", "down"], check = "单 B、BB 利差（FRED 次日）；CoreWeave、Nebius 发债和股价" },
+  { name = "云大厂融资", series = ["BAMLC0A0CM", "ORCL", "META"], stress = ["up", "down", "down"], check = "投资级利差；甲骨文、Meta 发债；云大厂财报的资本开支指引" },
+  { name = "资本开支预期", series = ["MSFT", "GOOGL", "AMZN"], stress = ["down", "down", "down"], check = "云大厂财报日（时间轴）；台积电月营收（每月 10 号前后）" },
+  { name = "芯片", series = ["^SOX", "NVDA", "AVGO"], stress = ["down", "down", "down"], check = "英伟达财报；费城半导体" },
+  { name = "存储和韩国", series = ["MU", "000660.KS", "^KS11", "KRW=X"], stress = ["down", "down", "down", "up"], check = "韩国出口（每月 1 号）；美光财报；HBM 合约价新闻" },
+]
+
+[[chain]]
+id = "oil"
+name = "原油和地缘"
+links = [
+  { name = "原油", series = ["CL=F", "BZ=F", "^OVX"], stress = ["up", "up", "up"], check = "霍尔木兹、制裁的新闻；OPEC 会议" },
+  { name = "通胀预期和利率", series = ["^TNX", "^MOVE"], stress = ["up", "up"], check = "CPI、PCE 公布日（时间轴）" },
+  { name = "航空和消费", series = ["JETS", "XLY"], stress = ["down", "down"], check = "零售销售；航空公司财报" },
+]
+
+[[chain]]
+id = "rates"
+name = "利率和流动性"
+links = [
+  { name = "长端利率", series = ["^TYX", "JGB30", "^MOVE"], stress = ["up", "up", "up"], check = "美债拍卖结果（投标倍数）；日本 30 年拍卖" },
+  { name = "银行和地产", series = ["KRE", "ITB", "XLRE"], stress = ["down", "down", "down"], check = "区域银行财报；新屋开工" },
+  { name = "小盘和成长", series = ["IWM", "IGV"], stress = ["down", "down"], check = "罗素 2000；软件股" },
+]
+
+[[chain]]
+id = "yen"
+name = "日元套利"
+links = [
+  { name = "日元走强", series = ["JPY=X"], stress = ["down"], check = "日本央行会议（时间轴）；日本国债 10 年" },
+  { name = "日经", series = ["^N225"], stress = ["down"], check = "日经期货" },
+  { name = "全球风险资产", series = ["^NDX", "BTC-USD"], stress = ["down", "down"], check = "纳指、比特币" },
+]

@@ -63,6 +63,11 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
             a, b = NR.values(NR.compute(D, t)), NR.values(NR.compute(Dt, t))
             eq = lambda x, y: x == y if isinstance(x, str) or isinstance(y, str) else same(x, y)
             diff += ["在交易什么 " + k for k in a if not eq(a[k], b.get(k, np.nan))]
+        if t >= pd.Timestamp("2024-01-01"):                  # 小信号和仓位（第四轮第 3 步）：ICE 利差 FRED 只给最近 3 年
+            from qx import smallsignal as SS, positioning as PS
+            pa, pb = PS.compute(D, t), PS.compute(Dt, t)
+            a, b = {**PS.values(pa), **SS.values(SS.compute(D, t, pa))}, {**PS.values(pb), **SS.values(SS.compute(Dt, t, pb))}
+            diff += ["小信号/仓位 " + k for k in set(a) | set(b) if not eq(a.get(k, np.nan), b.get(k, np.nan))]
         log(f"  {t.date()}：" + ("一致" if not diff else "不一致 " + "、".join(diff[:8])))
         if diff:
             bad.append((t, diff))

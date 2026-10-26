@@ -252,6 +252,32 @@
   setInterval(live, 60e3);
   document.addEventListener("visibilitychange", () => { if (!document.hidden) live(); });
 
+  // ---------- 小信号和仓位（第四轮第 3 步，qx/smallsignal.py、qx/positioning.py；口径.md 第十一节）
+  (function sig() {
+    const S = RD.sig, P = RD.pos, el = $("sig"); if (!S || !el) return;
+    el.hidden = false;
+    const pc = f => f < 0.001 ? "不到 0.1%" : (f * 100).toFixed(f < 0.1 ? 1 : 0) + "%";
+    const one = x => `<div class="fli"><div><span class="tg${x.level === "少见" ? " first" : ""}">${esc(x.level)}</span><b>${esc(x.text)}</b></div>` +
+      `<div class="fm">历史上 ${pc(x.frac)} 的日子同方向更极端 · 截至 ${md(x.asof)} · ${esc(x.next)}</div>` +
+      (x.asym ? `<div><span class="tg first">不对称：${esc(x.asym.market)}${esc(x.asym.word)}</span></div>` : "") + `</div>`;
+    const sg = S.signals || [];
+    let h = `<h2>小信号<small>截至 ${md(S.asof)} · 5 日变化在自己全部历史里偏高以上的</small></h2>`;
+    h += sg.length ? sg.slice(0, 3).map(one).join("") + (sg.length > 3 ? `<details><summary>再看 ${sg.length - 3} 条</summary>${sg.slice(3).map(one).join("")}</details>` : "") : `<p class="quiet">今天没有偏高以上的小信号。</p>`;
+    const F = S.firsts || [];
+    if (F.length) h += `<details><summary>一手来源第一次提到（${F.length} 条，最近 24 小时）</summary>${F.map(f => `<div class="fli">${f.watch ? `<span class="tg first">观察名单</span>` : ""}<b>${esc(f.ent)} × ${esc(f.line)}</b><div class="fm">${esc(f.src)} · ${esc(f.t)}</div></div>`).join("")}</details>`;
+    h += `<details><summary>推演链走到哪一环</summary>${(S.chains || []).map(c => `<div class="fli"><b>${esc(c.name)}</b> ${c.step} / ${c.of}<div class="fm">${c.links.map((L, i) => `${i < c.step ? "●" : L.lit ? "◐" : "○"} ${esc(L.name)}${L.lit ? "（" + md(L.lit) + "）" : ""}`).join(" → ")}</div>${c.next ? `<div class="fm">下一环看：${esc(c.next.name)}——${esc(c.next.check)}</div>` : ""}</div>`).join("")}<p class="knote">● 按顺序亮了；◐ 最近 20 个交易日亮过但顺序不对或隔太久。每一环"亮" = 这一环的读数出现偏高以上的小信号、方向是登记的压力方向（登记/chains.toml）。</p></details>`;
+    if ((S.mismatch || []).length) h += `<details><summary>数据动了价格没跟（只作描述）</summary>${S.mismatch.map(m => `<div class="fli">${esc(m.name)}：${esc(m.ym)} 营收同比 ${sgn(m.yoy, 0)}%，股价 20 日 ${sgn(m.r20, 1)}%</div>`).join("")}</details>`;
+    if (P) {
+      const cw = (P.crowd || []).filter(c => c.word !== "数据不够"), hot = cw.filter(c => c.word === "挤在多头" || c.word === "挤在空头");
+      h += `<p style="margin:10px 0 2px;font-size:14px"><b>仓位挤在哪边：</b>${hot.length ? hot.map(c => `${esc(c.market)}<b style="color:var(--alert)">${esc(c.word)}</b>`).join("、") : "没有挤在一边的市场"}</p>` +
+        `<details><summary>各市场仓位（${cw.length} 个市场，和自己全部历史比，10% 以外算挤）</summary><div class="mi" style="display:flex;flex-wrap:wrap;gap:4px 12px;font-size:13.5px">${cw.map(c => `<span>${esc(c.market)} <b>${esc(c.word)}</b></span>`).join("")}</div></details>`;
+      h += `<details><summary>每个仓位读数（${P.readings.length} 个）</summary><table class="nbk">${P.readings.map(r => `<tr><td>${esc(r.name)}<small>${esc(r.src)} · 截至 ${esc(r.asof)}，${esc(String(r.pub).slice(0, 10))} 公布${r.note ? " · " + esc(r.note) : ""}</small></td><td class="z">${r.value}${esc(r.unit)}<small>${r.pos == null ? "还不和历史比" : "位置 " + Math.round(r.pos * 100) + "%"}${r.side && r.side !== "中间" ? " · " + esc(r.side) : ""}</small></td></tr>`).join("")}</table></details>`;
+      const T = P.trend || [];
+      if (T.length) h += `<details><summary>趋势基金（估）：简化模型，不是真实持仓</summary><table class="nbk">${T.map(x => `<tr><td>${esc(x.name)}<small>翻转价：20 日 ${fmt(x.flip[20], 2)} · 60 日 ${fmt(x.flip[60], 2)} · 120 日 ${fmt(x.flip[120], 2)}</small></td><td class="z">${x.score > 0 ? "+" : ""}${x.score}<small>${x.score >= 2 ? "偏多" : x.score <= -2 ? "偏空" : "混"}</small></td></tr>`).join("")}</table><p class="knote">20、60、120 日涨跌各算 +1 / −1；价格跌破某个周期的翻转价，那个周期就翻成空。</p></details>`;
+    }
+    el.innerHTML = h;
+  })();
+
   // ---------- 快讯（第四轮第 1 步，qx/flash.py；口径.md 第九节）
   (function () {
     const F = RAW.flash, el = $("flash"); if (!F || !el) return;

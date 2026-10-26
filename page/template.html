@@ -249,7 +249,7 @@ footer { color: var(--ink-3); font-size: 12.5px; margin-top: 24px; }
 
   <h2>K 线</h2>
   <div class="kbox" id="kline">
-    <div class="kread"><b>怎么看</b>：价格区最下面的色带是每天在哪一段（<b style="color:var(--s1i)">在卖</b> → <b style="color:var(--s2i)">在怕</b> → <b style="color:var(--s3i)">投降</b> → <b style="color:var(--s4i)">在出清</b>），标签是进入某一段的那天，和恐慌高峰、恐慌退潮、二次探底、参与度先走这几个转折。副图默认是<b>恐慌热度</b>：抛售、定价、仓位、信用四行，颜色越深越恐慌，最深的是历史上最恐慌的 10%；在"副图"里可以单独看一条。鼠标移到某一天，下面的面板列出那天的事实和之后怎么走。拖动平移，Ctrl＋滚轮或双指缩放；可以自己画水平线和趋势线。</div>
+    <details class="kread"><summary><b>怎么看</b></summary>价格区最下面的色带是每天在哪一段（<b style="color:var(--s1i)">在卖</b> → <b style="color:var(--s2i)">在怕</b> → <b style="color:var(--s3i)">投降</b> → <b style="color:var(--s4i)">在出清</b>），标签是进入某一段的那天，和恐慌高峰、恐慌退潮、二次探底、参与度先走这几个转折。副图默认是<b>恐慌热度</b>：抛售、定价、仓位、信用四行，颜色越深越恐慌，最深的是历史上最恐慌的 10%；在"副图"里可以单独看一条。鼠标移到某一天，下面的面板列出那天的事实和之后怎么走。拖动平移，Ctrl＋滚轮或双指缩放；可以自己画水平线和趋势线。</details>
     <div class="ktools" id="ktools"></div>
     <div class="kwrap"><canvas id="kc" tabindex="0" role="img" aria-label="K 线、均线、成交量和副图，可点选和画线"></canvas><div class="klegend" id="klegend"></div><div class="kpl" id="kvl"></div><div class="kpl" id="ksl"></div><div class="khint" id="khint" hidden></div></div>
     <input type="range" class="kpan" id="kpan" step="1" aria-label="左右移动 K 线（不用拖图）">

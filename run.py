@@ -15,6 +15,7 @@
   python run.py backfill        # 快讯回补过去 30 天（谷歌新闻按日期搜，每分钟 1 次，约 3 小时；跑完才开始推"第一次"）
   python run.py pushtest        # 测试推送：正文写发送时间，看手机上的到达时间
   python run.py rules           # 导出给 Worker 的规则（data/out/rules.json）
+  python run.py replay [起] [止] # 小信号和仓位回放（每天只用截到那天能看到的数据重算），写 data/private/replay.csv（加密存，日志只打条数）
 """
 import csv, json, os, shutil, sys, time
 from datetime import datetime, timezone, timedelta
@@ -142,6 +143,11 @@ def auto():
         st["cal_ts"] = time.time()
     if do["fund"]:
         st["fund_ts"] = time.time()
+        try:                                            # 仓位和日本国债（第四轮第 3 步）：和基本面一样每天一次
+            from qx import positioning
+            positioning.fetch_all(log=log)
+        except Exception as e:
+            log(f"  ! 仓位数据出错：{type(e).__name__}")
     if do["opt"]:
         st["opt_ts"] = time.time()
     if do["archive"]:
@@ -233,6 +239,28 @@ def main():
         os.makedirs(os.path.join(ROOT, "data", "out"), exist_ok=True)
         store.write_atomic(os.path.join(ROOT, "data", "out", "rules.json"), json.dumps({"flash": flash.rules(), "push": notify.rules()}, ensure_ascii=False))
         log("规则：data/out/rules.json")
+        ok = True
+    elif cmd == "replay":
+        from qx import smallsignal, positioning
+        D, aaii = store.load_all()
+        a, b = (sys.argv[2:4] + ["2026-09-01", "2026-10-23"][len(sys.argv[2:4]):])[:2]
+        rows = []
+        for t in [d for d in D["^SOX"].index if a <= d.strftime("%Y-%m-%d") <= b]:
+            Dt, _ = selftest.cut(D, aaii, t)                  # 截到那天：FRED 只要那天以前的观测
+            pos = positioning.compute(Dt, t)
+            ss = smallsignal.compute(Dt, t, pos)
+            rows.append({"date": t.strftime("%Y-%m-%d"),
+                         "signals": "；".join(f"{x['level']} {x['text']}" for x in ss["signals"]),
+                         "crowd": "；".join(f"{c['market']}{c['word']}" for c in pos["crowd"] if c["word"] not in ("不挤", "数据不够")),
+                         "asym": "；".join(f"{x['name']}：{x['asym']['word']}" for x in ss["signals"] if x["asym"]),
+                         "chains": "；".join(f"{c['name']} {c['step']}/{c['of']}" + (f"，下一环 {c['next']['name']}" if c["next"] else "") for c in ss["chains"])})
+        os.makedirs(os.path.join(store.HERE, "private"), exist_ok=True)
+        p = os.path.join(store.HERE, "private", "replay.csv")
+        with open(p, "w", newline="", encoding="utf-8") as f:
+            w = csv.DictWriter(f, fieldnames=["date", "signals", "crowd", "asym", "chains"])
+            w.writeheader()
+            w.writerows(rows)
+        log(f"回放：{len(rows)} 天，有小信号的 {sum(1 for r in rows if r['signals'])} 天（明细在 data/private/replay.csv，随 data.enc 加密）")
         ok = True
     elif cmd == "selftest":
         D, aaii = store.load_all()
