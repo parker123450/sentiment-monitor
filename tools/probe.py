@@ -18,7 +18,6 @@
 机器名用环境变量 PROBE_WHERE（Actions 里是 actions），默认 mac。
 """
 import argparse, html, json, os, re, socket, statistics, sys, threading, time, urllib.error, urllib.parse, urllib.request
-import urllib.robotparser
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 from email.utils import parsedate_to_datetime
@@ -140,16 +139,55 @@ def robots(base, paths, ua=UA_NAMED):
     out = slim(r)
     txt = r.get("text") or ""
     if r.get("status") == 200 and "html" not in (r.get("ctype") or "").lower():
-        rp = urllib.robotparser.RobotFileParser()
-        rp.parse(txt.splitlines())
-        out["allow"] = {p: {"qx-radar": rp.can_fetch("qx-radar", base + p), "*": rp.can_fetch("*", base + p)} for p in paths}
-        out["crawl_delay"] = rp.crawl_delay("qx-radar") or rp.crawl_delay("*")
-        out["sitemaps"] = (rp.site_maps() or [])[:6]
+        out["allow"] = {p: {"qx-radar": allowed(txt, "qx-radar", p), "*": allowed(txt, "*", p)} for p in paths}
+        cd = [ln.split(":", 1)[1].strip() for ln in txt.splitlines() if ln.lower().startswith("crawl-delay:")]
+        out["crawl_delay"] = cd[0] if cd else None
+        out["sitemaps"] = [ln.split(":", 1)[1].strip() for ln in txt.splitlines() if ln.lower().startswith("sitemap:")][:6]
         out["lines"] = star_group(txt)
         out["ai_block"] = bool(re.search(r"GPTBot|ClaudeBot|anthropic|CCBot|Google-Extended", txt, re.I))
     elif r.get("status") == 200:
         out["note"] = "返回的是网页不是 robots.txt"
     return out
+
+
+def groups(txt):
+    """robots.txt → [(UA 列表, [(允许?, 路径模式)])]。照谷歌的规范（RFC 9309）：空行不分组，连着的几行 User-agent 是一组。
+    （Python 自带的 urllib.robotparser 把 User-agent 后面的空行当成一组结束，Lipper Alpha 那种写法会被读成什么都允许。）"""
+    out, agents, rules = [], [], []
+    for ln in txt.splitlines():
+        s = ln.split("#")[0].strip()
+        if ":" not in s:
+            continue
+        k, v = (x.strip() for x in s.split(":", 1))
+        k = k.lower()
+        if k == "user-agent":
+            if rules:
+                out.append((agents, rules))
+                agents, rules = [], []
+            agents.append(v.lower())
+        elif k in ("allow", "disallow") and agents:
+            if v:
+                rules.append((k == "allow", v))
+            elif not rules:
+                rules.append((True, ""))                    # "Disallow:" 空 = 全部允许
+    if agents:
+        out.append((agents, rules))
+    return out
+
+
+def allowed(txt, ua, path):
+    """这个 UA 能不能取 path（含查询串）：先找名字对得上的组，没有就用 *；最长匹配的规则说了算，一样长时允许优先。"""
+    gs = groups(txt)
+    mine = [r for a, r in gs if any(x != "*" and ua.lower().startswith(x) for x in a)] if ua != "*" else []
+    rules = [x for r in (mine or [r for a, r in gs if "*" in a]) for x in r]
+    best = None
+    for ok, pat in rules:
+        rx = re.escape(pat).replace(r"\*", ".*")
+        rx = rx[:-2] + "$" if rx.endswith(r"\$") else rx
+        if re.match(rx, path):
+            key = (len(pat), ok)
+            best = key if best is None or key > best else best
+    return True if best is None else best[1]
 
 
 def star_group(txt, n=12):
@@ -361,16 +399,18 @@ def yahoo_spark(syms, ver="v8"):
     got = {}
     try:
         j = json.loads(r["text"])
-        if ver == "v8":
-            for x in (j.get("spark") or {}).get("result") or []:
+        if "spark" in j:                                  # 带 meta 的格式（10-26 实测是 v7 给这种）
+            for x in j["spark"].get("result") or []:
                 resp = (x.get("response") or [{}])[0]
                 m = resp.get("meta") or {}
                 got[x["symbol"]] = {"rmt": m.get("regularMarketTime"), "n": len(resp.get("timestamp") or [])}
-        else:
+        else:                                             # 只有时间和收盘价的格式（10-26 实测是 v8 给这种）：没有 regularMarketTime，用最后一个时间戳
             for s, x in j.items():
-                got[s] = {"rmt": None, "n": len(x.get("timestamp") or []), "keys": sorted(x)[:12]}
+                ts = x.get("timestamp") or []
+                got[s] = {"rmt": None, "last_ts": ts[-1] if ts else None, "n": len(ts), "keys": sorted(x)[:12]}
     except Exception:
         pass
+    d["format"] = "meta" if any(v.get("rmt") for v in got.values()) else ("flat" if got else None)
     d["got"] = got
     return d
 
@@ -383,16 +423,17 @@ def probe_yahoo():
     # spark 一次几个：先试 20 个，不行就 10 个
     for ver in ("v8", "v7"):
         res = [yahoo_spark(allsyms[i:i + 20], ver) for i in range(0, 40, 20)]
-        out["spark"][ver] = [{k: v for k, v in r.items() if k != "got"} | {"n_got": len(r["got"]), "sample": dict(list(r["got"].items())[:2])} for r in res]
+        out["spark"][ver] = [{k: v for k, v in r.items() if k != "got"} | {"n_got": len(r["got"]), "sample": dict(list(r["got"].items())[:2]),
+                              "missing": [s for s in allsyms[i * 20:(i + 1) * 20] if s not in r["got"]]} for i, r in enumerate(res)]
     # 扫描范围里每个代码：spark v8 批量取，取不到的单个用 chart 再试
     sp = {}
     for i in range(0, len(allsyms), 20):
-        sp.update(yahoo_spark(allsyms[i:i + 20], "v8")["got"])
+        sp.update(yahoo_spark(allsyms[i:i + 20], "v7")["got"])
     for grp, syms in SCAN.items():
         for s in syms:
             g = sp.get(s)
             if g and g["rmt"]:
-                out["coverage"][s] = {"grp": grp, "via": "spark", "rmt_min": age_min(g["rmt"]), "n": g["n"]}
+                out["coverage"][s] = {"grp": grp, "via": "spark v7", "rmt_min": age_min(g["rmt"]), "n": g["n"]}
             else:
                 c = yahoo_chart(s, rng="5d", interval="1d")
                 out["coverage"][s] = {"grp": grp, "via": "chart", "ok": c.get("ok"), "status": c.get("status"), "rmt_min": c.get("rmt_min"), "name": c.get("name")}
@@ -658,7 +699,7 @@ def watch_round(k):
     with ThreadPoolExecutor(max_workers=8) as ex:
         for name, r in ex.map(run, jobs):
             rec["routes"][name] = r
-    sp = yahoo_spark(list(MARKET_PICK.values()), "v8")["got"]
+    sp = yahoo_spark(list(MARKET_PICK.values()), "v7")["got"]
     for m, s in MARKET_PICK.items():
         rec["mkt"][m] = {"sym": s, "rmt": (sp.get(s) or {}).get("rmt")}
     return rec
