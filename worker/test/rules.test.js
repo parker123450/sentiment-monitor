@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { compile, tag, firsts, gate, digest, pushDay, rarity, candidates } from "../src/rules.js";
+import { compile, tag, firsts, gate, digest, pushDay, rarity, candidates, moveMsgs } from "../src/rules.js";
 import { parseRss, parseTv, parseWscn, parseSpark, newsJobs, norm } from "../src/sources.js";
 
 const fx = n => readFileSync(new URL(`./fixtures/${n}`, import.meta.url), "utf8");
@@ -68,6 +68,17 @@ test("少见查表（同方向至少这么极端的天数，按 2520 天折算�
   assert.equal(rarity(tb, 0.2), 0);
   assert.equal(rarity(tb, -0.07), 0);
   assert.equal(rarity({ ...tb, n: 1260 }, 0.06), 4);
+});
+
+test("盘中少见：收益率按基点查表、只看涨的跌了不算、key 和 Python 盘中版一样", () => {
+  const tb = { n: 2520, up: [[0.03, 4], [0.05, 3], [0.08, 2], [0.1, 1]], down: [[0.03, 2], [0.06, 1]] };
+  const S = { rare: { NVDA: tb, "^VIX": tb, "^TNX": { n: 2520, bp: true, up: [[12, 3], [15, 2], [20, 1]], down: [[12, 1]] } },
+    names: { NVDA: "英伟达", "^TNX": "10 年美债" }, groups: { NVDA: "半导体", "^TNX": "美元和美债" }, up_only: ["^VIX"] };
+  const at = Date.parse("2026-10-28T15:00:00Z") / 1000, now = at * 1000;
+  const m = moveMsgs(S, { NVDA: { p: 113, pc: 100, at }, "^VIX": { p: 80, pc: 100, at }, "^TNX": { p: 4.40, pc: 4.24, at } }, now, 2);
+  assert.deepEqual(m.map(x => x.key), ["move:半导体:live|2026-10-28", "move:美元和美债:live|2026-10-28"]);
+  assert.match(m[1].title, /升 16 个基点/);                       // 原来按对数涨跌查基点的表，收益率永远查不到
+  assert.equal(moveMsgs(S, { NVDA: { p: 104, pc: 100, at } }, now, 2).length, 0);   // 不到十年 2 次
 });
 
 test("解析：TradingView 路透频道", () => {

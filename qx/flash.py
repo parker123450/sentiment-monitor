@@ -190,14 +190,24 @@ def _health():
         return {}
 
 
+WORKER_ROUTES = ("R6", "R3:", "R5")       # Worker 建好以后这几条路改在 Worker 里每 5 分钟取（口径第九节），Actions 不再重复取
+
+
+def worker_alive(now=None):
+    """Worker 配了、而且最近 1 小时同步成功过。连不上超过 1 小时，Actions 自己接着取这几条路。"""
+    now = now or time.time()
+    return bool(os.environ.get("WORKER_URL", "").strip()) and now - _state().get("worker_ok_at", 0) < 3600
+
+
 def fetch_routes(now=None, log=print):
     """→ {路: [条目]}，并更新每条路的健康（连续失败、停到几点）。"""
     now = now or time.time()
     H = _health()
     got = {}
+    skip = worker_alive(now)
     for r in ROUTES:
         h = H.setdefault(r["id"], {"fails": 0})
-        if h.get("stop_until", 0) > now:
+        if h.get("stop_until", 0) > now or (skip and r["id"].startswith(WORKER_ROUTES)):
             continue
         try:
             items = from_news() if r["kind"] == "news" else PARSE[r["kind"]](_get(r["url"], r["ua"]), r)
@@ -391,10 +401,15 @@ def block(now=None):
     H = _health()
     t = time.time()
     lag = lag_stats(rows, now=now)
+    cloud = worker_alive(t)
     health = []
     for r in ROUTES:
         h = H.get(r["id"], {})
         base = r["id"].split(":")[0]
+        if cloud and r["id"].startswith(WORKER_ROUTES):              # 在 Worker 里取（每 5 分钟）：健康看页面现取的那份
+            health.append(dict(id=r["id"], sec=r["id"].split(":", 1)[1] if r["id"].startswith("R3:") else "", src=r["src"] or "白名单", via=r["via"],
+                               ok=True, ago=None, cloud=True, fails=0, lag=lag.get(base)))
+            continue
         health.append(dict(id=r["id"], sec=r["id"].split(":", 1)[1] if r["id"].startswith("R3:") else "", src=r["src"] or "白名单", via=r["via"], ok=bool(h.get("ok_at")) and h.get("stop_until", 0) <= t,
                            ago=round((t - h["ok_at"]) / 60) if h.get("ok_at") else None, fails=h.get("fails", 0), lag=lag.get(base)))
     total = len(recent)
@@ -523,6 +538,7 @@ def sync(log=print, extra_state=None):
             save_rows(rows)
         if got:
             set_state(worker_since=max(x["seen"] for x in got))
+        set_state(worker_ok_at=time.time())
         log(f"  Worker：推了规则和 {len(last)} 个\"第一次\"，取回快讯 {n} 条")
         return True
     except Exception as e:

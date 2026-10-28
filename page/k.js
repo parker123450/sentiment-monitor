@@ -333,7 +333,7 @@
       `<div>${x.first.map(f => `<span class="tg first">第一次：${esc(f)}</span>`).join("")}${x.ents.map(e => `<span class="tg">${esc(e)}</span>`).join("")}${x.lines.map(l => `<span class="tg">${esc(l)}</span>`).join("")}</div></div>`;
     const top = F.items.slice(0, F.top), more = F.items.slice(F.top);
     const lag = h => h.lag ? `中位 ${h.lag.med} 分钟（90% ${h.lag.p90}，${h.lag.n} 条）` : "还没攒够";
-    const hr = F.health.map(h => `<tr><td>${esc(h.src)}${h.via ? " · 经" + esc(h.via) : ""}${h.sec ? `<small>（${esc(h.sec)} 栏目）</small>` : ""}</td><td class="${h.ok ? "" : "bad"}">${h.ok ? (h.ago == null ? "—" : h.ago + " 分钟前取到") : "停了 / 没取到"}</td><td>${lag(h)}</td></tr>`).join("");
+    const hr = F.health.map(h => `<tr><td>${esc(h.src)}${h.via ? " · 经" + esc(h.via) : ""}${h.sec ? `<small>（${esc(h.sec)} 栏目）</small>` : ""}</td><td class="${h.ok ? "" : "bad"}">${h.cloud ? "云端每 5 分钟取" : h.ok ? (h.ago == null ? "—" : h.ago + " 分钟前取到") : "停了 / 没取到"}</td><td>${lag(h)}</td></tr>`).join("");
     el.innerHTML = `<h2>快讯<small>最近 ${F.hours} 小时，打上标签的 ${F.shown} 件（共看到 ${F.total} 条）</small></h2>` +
       (top.length ? top.map(it).join("") : `<p class="quiet">最近 ${F.hours} 小时没有打上标签的快讯。</p>`) +
       (more.length ? `<details><summary>再看 ${more.length} 件</summary>${more.map(it).join("")}</details>` : "") +

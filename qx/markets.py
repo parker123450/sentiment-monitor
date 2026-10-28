@@ -79,16 +79,21 @@ def rare_table(D, s, t=None):
 
 
 def state(D, now=None):
+    """推给 Worker 的 markets。sessions 给今天和明天（UTC）两天：东京、首尔 UTC 0 点就开盘，Actions 跨日以后要过一阵才再推。
+    rare 带 bp（收益率按基点，Worker 要按基点查表）；groups 是"今天要知道的"的分组（qx/watch.py），Worker 的盘中推送用同一个 key
+    move:{组}:live|{日期}，和 Actions 推的同一件事去重；up_only 是只看涨的（VIX、VXN）。"""
+    from qx import watch as W
     now = now or datetime.now(timezone.utc)
-    sess = sessions(now.date())
+    sess, nxt = sessions(now.date()), sessions(now.date() + timedelta(days=1))
     syms = {s: C.MARKET.get(s, "XNYS") for s in C.CORE if s in D}
     rare = {}
     for s in syms:
         t = rare_table(D, s)
         if t:
-            rare[s] = {"up": t["up"], "down": t["down"], "n": t["n"]}
-    return {"syms": syms, "sessions": {k: v["s"] for k, v in sess.items()}, "always": ["24h"], "rare": rare,
-            "names": {s: C.NAME.get(s, s) for s in syms}, "at": int(now.timestamp() * 1000)}
+            rare[s] = {"up": t["up"], "down": t["down"], "n": t["n"], "bp": t["bp"]}
+    return {"syms": syms, "sessions": {k: v["s"] + (nxt.get(k) or {}).get("s", []) for k, v in sess.items()}, "always": ["24h"], "rare": rare,
+            "names": {s: C.NAME.get(s, s) for s in syms}, "groups": {s: g for g, ks in W.GROUPS for s in ks if s in syms},
+            "up_only": sorted(W.UP_ONLY & set(syms)), "at": int(now.timestamp() * 1000)}
 
 
 def rows(D, live=None, now=None):

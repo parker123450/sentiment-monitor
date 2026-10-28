@@ -15,7 +15,7 @@
 //   GET  /ack?id=   不要令牌      推送测试回执（一次性编号）
 // 只放公开的新闻标题、行情和读数；判断卡、三种走向不放。
 
-import { compile, tag, firsts, candidates, gate, digest, rarity, pushDay } from "./rules.js";
+import { compile, tag, firsts, candidates, gate, digest, moveMsgs, pushDay } from "./rules.js";
 import { newsJobs, parse, sparkUrl, parseSpark } from "./sources.js";
 
 const ORIGIN = "https://parker123450.github.io";
@@ -149,15 +149,7 @@ async function prices(env, now) {
   const old = ((await getState(env, "prices")) || {}).v || {};
   const pack = { ...(old.p || {}), ...out };
   await putState(env, "prices", { p: pack, fetched: now, open: [...open] }, now).run();
-  const msgs = [];
-  for (const [s, q] of Object.entries(out)) {
-    if (!q.pc) continue;
-    const r = Math.log(q.p / q.pc), n10 = rarity((S.rare || {})[s], r);
-    if (n10 != null && n10 <= RARE_PUSH) {
-      const day = new Date(now).toISOString().slice(0, 10), nm = (S.names || {})[s] || s;
-      msgs.push({ key: `move:${s}:${day}`, title: `${nm} ${r >= 0 ? "涨" : "跌"} ${(Math.abs(Math.exp(r) - 1) * 100).toFixed(1)}%`, body: `过去 10 年同方向这么大的只有 ${n10} 次（盘中，截至 ${new Date((q.at || now / 1000) * 1000 + 8 * 3600e3).toISOString().slice(11, 16)} 北京）。`, pri: 4, rare: true, n10 });
-    }
-  }
+  const msgs = moveMsgs(S, out, now, RARE_PUSH);                    // 十年 2 次以内的盘中涨跌（收益率按基点）
   if (msgs.length) await pushAll(env, msgs, now);
 }
 

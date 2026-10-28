@@ -88,6 +88,25 @@ export function digest(st, now, startH = 8) {
   return out;
 }
 
+// 盘中少见的涨跌 → 推送消息。S 是 Actions 推来的 markets（qx/markets.py 的 state()），quotes = {代码: {p, pc, at}}。
+// 收益率（rare[s].bp）按基点查表；只看涨的（up_only：VIX、VXN）跌了不算；key 和 qx/watch.py 的盘中版一样（move:{组}:live|{UTC 日期}），
+// 经同一个 /push 去重，Actions 15 分钟一次推的同一件事不会再推一遍。
+export function moveMsgs(S, quotes, now, maxN10 = 2) {
+  const out = [], up = new Set(S.up_only || []);
+  for (const [s, q] of Object.entries(quotes || {})) {
+    if (!q || !q.p || !q.pc) continue;
+    const tb = (S.rare || {})[s], bp = !!(tb && tb.bp), r = bp ? (q.p - q.pc) * 100 : Math.log(q.p / q.pc);
+    if (up.has(s) && r < 0) continue;
+    const n10 = rarity(tb, r);
+    if (n10 == null || n10 > maxN10) continue;
+    const at = (q.at || now / 1000) * 1000, day = new Date(at).toISOString().slice(0, 10), nm = (S.names || {})[s] || s;
+    const move = bp ? `${r >= 0 ? "升" : "降"} ${Math.abs(r).toFixed(0)} 个基点` : `${r >= 0 ? "涨" : "跌"} ${(Math.abs(Math.exp(r) - 1) * 100).toFixed(1)}%`;
+    out.push({ key: `move:${(S.groups || {})[s] || s}:live|${day}`, title: `${nm} ${move}`, pri: 4, rare: true, n10,
+      body: `过去 10 年同方向这么大的只有 ${Math.round(n10 * 10) / 10} 次（盘中，截至 ${new Date(at + 8 * 3600e3).toISOString().slice(11, 16)} 北京）。` });
+  }
+  return out;
+}
+
 // 少见查表：Actions 给的每个标的两个方向最极端的 40 个历史涨跌 [[值, 名次], ...]（值从小到大）和窗口长度 n。
 // 返回"过去 10 年同方向至少这么极端的天数"（按 2520 天折算，和 qx/watch.py 的 n10 一样）；不到第 40 名那么极端的返回 null。
 export function rarity(table, r) {
