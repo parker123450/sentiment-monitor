@@ -1,7 +1,8 @@
 """快讯（第四轮第 1 步，2026-10-27）。规则在 口径.md 第九节，词表在 登记/entities.toml。
 
 每次运行（Actions 每 15 分钟；Cloudflare Worker 建好以后每 5 分钟另取一份，经 /news 取回来并进同一个文件）：
-  取每条路的新条目 → 按（路, 链接）去重 → 记"看到时间" seen → 打标签（公司和机构、关键词组、六条线）→ 标"第一次" → 存 data/news_flash.csv（留 400 天）。
+  取每条路的新条目 → 按（路, 链接）去重 → 记"看到时间" seen → 打标签（公司和机构、关键词组、六条线）→ 标"第一次" →
+  存 data/news_flash.csv（打上标签的留 400 天；没打上的只留 30 天，够去重和算延迟）。
   页面"快讯"：最近 2 小时最多 20 条，同一件事几条路都有的合成一条；每条路的健康和"发布 → 看到"的实测延迟。
   推送候选：观察名单 ×（融资和信用 或 地缘和政策）的"第一次"；同一件事 1 小时内 3 家以上白名单来源报道（扩散）。回补跑完以前只标不推。
 只存标题、链接、发布时间、来源、哪条路、看到时间、标签；不存正文，不转发全文。
@@ -19,7 +20,7 @@ CSV = os.path.join(store.HERE, "news_flash.csv")
 HEALTH = os.path.join(store.HERE, "flash_health.json")
 ENT_FILE = os.path.join(ROOT, "登记", "entities.toml")
 COLS = ["route", "id", "src", "t", "pub", "seen", "ents", "lines", "first", "backfill"]
-KEEP_DAYS = 400
+KEEP_DAYS, KEEP_UNTAGGED_DAYS = 400, 30   # 打上标签的留 400 天；没打上的只留 30 天（2026-10-28：R6 一天两千多条、九成没标签，全留 data.enc 会到几十 MB）
 FIRST_DAYS = 30                     # "第一次"：同一（主体, 线）过去 30 天在白名单来源里没出现过
 SPREAD_H, SPREAD_N = 1, 3           # 扩散：同一件事 1 小时内 3 家以上白名单来源
 SHOW_H, SHOW_N, SHOW_TOP = 2, 20, 3 # 页面：最近 2 小时、最多 20 条、先显示 3 条
@@ -226,7 +227,9 @@ def load_rows():
 def save_rows(rows, now=None):
     now = now or datetime.now(timezone.utc)
     cut = (now - timedelta(days=KEEP_DAYS)).isoformat(timespec="seconds")
-    rows = sorted((r for r in rows if visible(r) >= cut), key=lambda r: (visible(r), r["route"], r["id"]))
+    cut_u = (now - timedelta(days=KEEP_UNTAGGED_DAYS)).isoformat(timespec="seconds")
+    keep = lambda r: visible(r) >= (cut if (r.get("ents") or r.get("lines")) else cut_u)
+    rows = sorted((r for r in rows if keep(r)), key=lambda r: (visible(r), r["route"], r["id"]))
     tmp = CSV + ".tmp"
     with open(tmp, "w", newline="", encoding="utf-8") as f:
         w = csv.DictWriter(f, fieldnames=COLS)
