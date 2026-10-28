@@ -75,8 +75,9 @@ from qx import coverage as _cov                                     # noqa: E402
 for _s in _cov.SCAN:
     if _s not in SERIES:
         _add(_s, "Yahoo", "Yahoo 最早起", 0, "", group="扫描", note=_cov.NAME.get(_s, _s))
-for _s in ("DGS30",):                                               # 30 年美债收益率（FRED），利率一行用
-    _add(_s, "FRED", "FRED 最早起", 1, "%", kind="value", group="扫描", note="30 年国债收益率")
+for _s, _n in (("DGS30", "30 年国债收益率"), ("WTREGEN", "财政部在美联储的账户（周度）"), ("WRESBAL", "银行准备金（周度）"),
+               ("RRPONTSYD", "隔夜逆回购"), ("RAMPAIALL", "Ramp AI 采用率（月度）")):   # 第四轮第 2、5 步：利率一行、前瞻、AI 账本
+    _add(_s, "FRED", "FRED 最早起", 1, "", kind="value", group="扫描", note=_n)
 
 YAHOO = [k for k, v in SERIES.items() if v["source"] == "Yahoo"]
 FRED = [k for k, v in SERIES.items() if v["source"] == "FRED"]

@@ -300,6 +300,30 @@
     el.innerHTML = h + `<details><summary>更多：${cs.length > 3 ? `其余 ${cs.length - 3} 张卡、` : ""}回放清单</summary>${more}</details>`;
   })();
 
+  // ---------- 前瞻和 AI 账本（第四轮第 5 步，qx/forward.py、qx/timeline.py、qx/ledger.py；口径.md 第十三节）
+  (function fwd() {
+    const F = RD.fwd, el = $("fwd"); if (!F || !el) return;
+    el.hidden = false;
+    const li = xs => xs.length ? `<ul class="nw">${xs.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p class="knote">—</p>`;
+    let h = `<h2>前瞻<small>截至 ${md(F.asof)} · 六条线，每条：先变的小信号、现在怎么样、接下来的检验</small></h2>`;
+    h += F.lines.map(L => `<details class="cd"><summary><b>${esc(L.name)}</b><span class="ns">${L.signals.length ? L.signals.length + " 条小信号" : "没有小信号"} · 接下来 ${L.next.length} 件</span></summary>` +
+      `<dl><dt>先变的小信号</dt><dd>${li(L.signals)}</dd><dt>现在怎么样</dt><dd>${li(L.now)}</dd><dt>接下来的检验（30 天内）</dt><dd>${li(L.next)}</dd></dl></details>`).join("");
+    for (const S of F.scenarios || []) {
+      h += `<h3 class="mh3">三种走向 · ${esc(S.name)}<small style="font-weight:500;color:var(--ink-3)">（${esc(S.since)} 登记；${S.lead ? "先出现的是：" + esc(S.lead) : "登记以后还没有哪条的信号先出现"}）</small></h3>` +
+        S.ways.map(w => `<details class="cd"><summary><b>${esc(w.name)}</b><span class="ns">${esc(w.how)} · 规则信号亮了 ${w.lit} 个</span></summary><ul class="nw">${w.signals.map(x => `<li>${x.hit === null ? "◇" : x.hit ? "●" : "○"} ${esc(x.text)}<small>${esc(x.why)}${x.first ? " · " + esc(x.first) + " 第一次亮" : x.pre ? " · 登记时已亮" : ""}</small></li>`).join("")}</ul></details>`).join("") +
+        `<p class="knote">● 亮 ○ 没亮 ◇ 写不成规则、要人看。${esc(S.note)} 情景，不是买卖建议。</p>`;
+    }
+    const T = F.timeline || {};
+    h += `<details><summary>时间轴：未来 6 个月 ${(T.events || []).length} 件（北京时间）</summary><table class="nbk">${(T.events || []).map(e => `<tr><td>${esc(e.bj)}</td><td><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title)}</a><small>${esc(e.src)}</small></td></tr>`).join("")}</table>` +
+      `<p class="knote"><b>排不到的：</b>${(T.missing || []).map(esc).join("；")}。手动登记的事件写在仓库的 登记/timeline.toml。</p></details>`;
+    el.innerHTML = h;
+    const lg = $("ledger");
+    if (lg && (F.ledger || []).length) {
+      lg.hidden = false;
+      lg.innerHTML = `<h2>AI 账本<small>每个数带来源、时点、下次公布日</small></h2><table class="nbk">${F.ledger.map(r => `<tr><td>${esc(r.name)}<small>${esc(r.chain)} · ${esc(r.src)}${r.asof ? " · " + esc(r.asof) : ""} · 下次 ${esc(r.next)}</small></td><td class="z" style="white-space:normal">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.value)}</a>` : esc(r.value)}</td></tr>`).join("")}</table>`;
+    }
+  })();
+
   // ---------- 快讯（第四轮第 1 步，qx/flash.py；口径.md 第九节）
   (function () {
     const F = RAW.flash, el = $("flash"); if (!F || !el) return;

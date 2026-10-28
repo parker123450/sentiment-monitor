@@ -15,6 +15,7 @@
   python run.py backfill        # 快讯回补过去 30 天（谷歌新闻按日期搜，每分钟 1 次，约 3 小时；跑完才开始推"第一次"）
   python run.py pushtest        # 测试推送：正文写发送时间，看手机上的到达时间
   python run.py rules           # 导出给 Worker 的规则（data/out/rules.json）
+  python run.py seal-scenarios  # 本机 ../判断/scenarios/*.json（三种走向原文，不进仓库）加密成 cards/scenarios/*.enc
   python run.py replay [起] [止] # 小信号和仓位回放（每天只用截到那天能看到的数据重算），写 data/private/replay.csv（加密存，日志只打条数）
 """
 import csv, json, os, shutil, sys, time
@@ -148,6 +149,18 @@ def auto():
             positioning.fetch_all(log=log)
         except Exception as e:
             log(f"  ! 仓位数据出错：{type(e).__name__}")
+        try:                                            # AI 账本的慢数据（第四轮第 5 步）：FactSet、美债拍卖
+            from qx import ledger
+            ledger.fetch_all(log=log)
+        except Exception as e:
+            log(f"  ! 账本数据出错：{type(e).__name__}")
+        try:                                            # 时间轴（第四轮第 5 步）：每周一次
+            from qx import timeline
+            if time.time() - st.get("tl_ts", 0) >= 6 * 86400:
+                timeline.build(log=log)
+                st["tl_ts"] = time.time()
+        except Exception as e:
+            log(f"  ! 时间轴出错：{type(e).__name__}")
         try:                                            # 财报反应（第四轮第 4 步第 4 类卡）：补最近 5 天
             from qx import earn
             earn.fetch(datetime.now(timezone.utc).date() - timedelta(days=5), log=log)
@@ -244,6 +257,11 @@ def main():
         os.makedirs(os.path.join(ROOT, "data", "out"), exist_ok=True)
         store.write_atomic(os.path.join(ROOT, "data", "out", "rules.json"), json.dumps({"flash": flash.rules(), "push": notify.rules()}, ensure_ascii=False))
         log("规则：data/out/rules.json")
+        ok = True
+    elif cmd == "seal-scenarios":
+        from qx import forward
+        for p in forward.seal():
+            log("加密：" + os.path.relpath(p, ROOT))
         ok = True
     elif cmd == "replay":
         from qx import smallsignal, positioning

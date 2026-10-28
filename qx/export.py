@@ -249,6 +249,11 @@ def build(D, aaii, R, write=False):
         radar["cards"] = RA.compute(D, t_last, radar.get("pos"), radar.get("sig"), (hap or {}).get("items"))
     except Exception as e:
         radar["cards"], radar["cards_err"] = None, type(e).__name__
+    try:
+        from qx import forward as FW                      # 前瞻（第四轮第 5 步）：六条线、时间轴、三种走向、AI 账本
+        radar["fwd"] = FW.block(D, t_last, radar, write=write)
+    except Exception as e:
+        radar["fwd"], radar["fwd_err"] = None, type(e).__name__
     wu, wt = os.environ.get("WORKER_URL", "").strip(), os.environ.get("WORKER_READ_TOKEN", "").strip()
     radar["live"] = {"url": wu, "token": wt} if wu and wt else None          # 只读令牌，放在加密页里（口径.md 第十节）
     radar["built"] = int(datetime.now(timezone.utc).timestamp() * 1000)

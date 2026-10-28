@@ -177,6 +177,8 @@ def push(data, ok, log=print, flash=None):
                          n10=min((x["n10"] for x in new if x.get("n10") is not None), default=None)))
     for x in flash or []:
         msgs.append(dict(key=x["key"], title=x["title"], body=f"{x['body']}\n（{x['src']}）", pri=4 if x["kind"] == "first" else 3))
+    for x in (((data or {}).get("radar") or {}).get("fwd") or {}).get("new") or []:          # 三种走向里某一条的信号先出现（第四轮第 5 步）
+        msgs.append(dict(key=x["key"], title=x["title"], body=x["body"], pri=4))
     for c in (((data or {}).get("radar") or {}).get("cards") or {}).get("cards") or []:      # 新满足的机会和风险卡（第四轮第 4 步）
         msgs.append(dict(key=c["key"], title=f"{c['cls_name']}：{c['title']}", body=f"{c['why']}\n哪里算错：{c['wrong']}", pri=3,
                          rare=c["rank"] is not None and c["rank"] <= 2 / 2520))

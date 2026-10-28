@@ -98,6 +98,7 @@ def fetch(start, end=None, log=print, sleep=1.0):
                     time.sleep(sleep)
             except Exception as e:
                 log(f"  ! 财报日历 {d}：{type(e).__name__}")
+            _save(out)                                       # 每天存一次：中途断了不丢
             time.sleep(sleep)
         d += timedelta(days=1)
     _save(out)
