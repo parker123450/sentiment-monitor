@@ -43,6 +43,12 @@ def _series(D, k, t):
     return s if len(s) > MIN_DAYS else None
 
 
+def _name(k):
+    """页面上写名字，不写 Yahoo 的代码（GC=F、^KS11 这种）；美股个股的代码交易员认得，没有中文名的照写代码。"""
+    from qx import coverage as C
+    return C.NAME.get(k, k)
+
+
 def _z20(D, k, t):
     """20 日对数涨跌 ÷（长期日波动 × √20）。"""
     s = _series(D, k, t)
@@ -90,6 +96,7 @@ def compute(D, t):
         for x in pairs:
             x["level"] = _level(x["frac"], R)
         out.append(dict(id=b["id"], name=b["name"], z=round(z, 3), n=len(zs), of=len(b["members"]), members={m: round(v, 2) for m, v in zs.items()},
+                        names={m: _name(m) for m in zs},
                         vs=b.get("vs"), ref=None if ref is None else round(ref, 3), same=None if ref is None else bool(np.sign(ref) == np.sign(z)),
                         pairs=pairs, control=bool(b.get("control_group")), end=b.get("end"), ai=bool(b.get("ai"))))
     cand = sorted([x for x in out if not x["control"]], key=lambda x: x["z"])

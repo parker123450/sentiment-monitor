@@ -395,7 +395,7 @@ def block(now=None):
     for r in ROUTES:
         h = H.get(r["id"], {})
         base = r["id"].split(":")[0]
-        health.append(dict(id=r["id"], src=r["src"] or "白名单", via=r["via"], ok=bool(h.get("ok_at")) and h.get("stop_until", 0) <= t,
+        health.append(dict(id=r["id"], sec=r["id"].split(":", 1)[1] if r["id"].startswith("R3:") else "", src=r["src"] or "白名单", via=r["via"], ok=bool(h.get("ok_at")) and h.get("stop_until", 0) <= t,
                            ago=round((t - h["ok_at"]) / 60) if h.get("ok_at") else None, fails=h.get("fails", 0), lag=lag.get(base)))
     total = len(recent)
     return dict(items=items[:SHOW_N], top=SHOW_TOP, total=total, shown=min(len(items), SHOW_N), hours=SHOW_H, health=health,

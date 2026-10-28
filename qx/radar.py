@@ -117,8 +117,8 @@ def class1(D, t, sig):
         a = x["asym"]
         out.append(_card(1, x["k"], f"{x['name']}：{a['word']}", f"{x['text']}（历史上 {x['frac'] * 100:.1f}% 的日子更极端）；{a['market']}的仓位{a['crowd']}。",
                          f"{x['name']}的 5 日变化回到平常，或者{a['market']}的仓位不再挤在一边。",
-                         "还没有回放（仓位读数里 SOXL 份额从 2026-10-27 起攒；CFTC 有 2006 年起的历史，回放在验收会话里做）。",
-                         f"{a['market']}相关的期货或 ETF；看{CROWD_PRICE.get(a['market'], ('', ''))[0] or '对应标的'}。", "5–20 个交易日",
+                         "还没有回放（SOXL 份额从 2026-10-27 起攒；CFTC 有 2006 年起的周度历史，还没回放）。",
+                         f"{a['market']}相关的期货或 ETF；看{C.NAME.get(CROWD_PRICE.get(a['market'], ('', ''))[0], CROWD_PRICE.get(a['market'], ('', ''))[0]) or '对应标的'}。", "5–20 个交易日",
                          x["frac"], x["asof"], replay=False))
     return out
 
@@ -194,7 +194,7 @@ def class2(D, t, replay_years=2):
                + ("信用在变好，股价却在跌" if up else "信用在变差，股价却在涨") + f"（差 {abs(bnow - hnow):.1f}）。")
         out.append(_card(2, b["id"], f"{b['name']}：{'信用变好、股价没跟' if up else '信用变差、股价没跟'}", why,
                          f"两样重新同向（{p['name']}的健康度和篮子 20 日涨跌同号），或者差缩到 1 以内。", space_text(st),
-                         f"篮子成员：{'、'.join(b['members'])}" + ("；" + letf_decay(D, t) if b.get("ai") else ""), "20 个交易日",
+                         f"篮子成员：{'、'.join(C.NAME.get(m, m) for m in b['members'])}" + ("；" + letf_decay(D, t) if b.get("ai") else ""), "20 个交易日",
                          float(((np.sign(j.b) != np.sign(j.h)) & ((j.b - j.h).abs() >= abs(bnow - hnow))).iloc[:-1].mean()), j.index[-1].strftime("%Y-%m-%d")))
     return out, sorted(rep, key=lambda r: r["date"])
 
@@ -222,7 +222,7 @@ def class3(D, t, pos):
         out.append(_card(3, r["name"], f"{r['market']}：{state}（{'多头' if crowded_long else '空头'}挤）",
                          f"{r['name']} {r['value']}{r['unit']}，在自己历史里 {r['pos'] * 100:.0f}% 的位置（{r['src']}，截至 {r['asof']}）{why2}。",
                          "仓位读数回到 5%–95% 之间；或者价格重新朝挤的方向走、创新高（新低）。",
-                         "还没有回放（CFTC 有 2006 年起的历史，周度；回放在验收会话里做）。",
+                         "还没有回放（CFTC 有 2006 年起的周度历史，还没回放）。",
                          f"{C.NAME.get(px[0], px[0]) if px else r['market']}相关的期货或 ETF", "5–20 个交易日",
                          min(r["pos"], 1 - r["pos"]), r["asof"], replay=False, state=state))
     return out

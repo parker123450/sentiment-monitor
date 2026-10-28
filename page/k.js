@@ -224,7 +224,7 @@
     let h = `<h2>市场在交易什么<small>截至 ${md(N.asof)} 收盘 · 规则算出来的，不是人定的</small></h2>`;
     if (N.main) h += `<div class="nr"><div class="nh">主线：${esc(N.main.name)} ↓</div><div>领跌，20 日按长期波动折算 ${zword(N.main.z)}；${pairTxt(N.main.pair)}</div><div class="ns">结束信号（登记时写好）：${esc(N.main.end)}</div></div>`;
     else { const L = B.find(b => b.id === N.lead); h += `<div class="nr"><div class="nh">没有认出主线</div><div>${L ? `领跌的是${esc(L.name)}（${zword(L.z)}），但配对的读数${L.pairs.length ? L.pairs.map(p => esc(p.name) + "是" + p.level).join("、") : "取不到"}，不够两样都满足。` : "数据不够。"}</div></div>`; }
-    h += `<details><summary>哪个篮子在带着跌（20 日涨跌按各自长期波动折算，${B.length} 个篮子）</summary><table class="nbk">${B.map(b => `<tr><td>${esc(b.name)}<small>${Object.entries(b.members).map(([m, z]) => esc(m) + " " + zword(z)).join(" · ")}${b.n < b.of ? ` · 缺 ${b.of - b.n} 只` : ""}</small>${b.pairs.map(p => `<small>${pairTxt(p)}</small>`).join("")}</td><td class="z">${zword(b.z)}${b.same == null ? "" : `<small>${b.same ? "和" : "和"}${b.vs === "^SOX" ? "费城半导体" : "标普"}${b.same ? "同向" : "反向"}</small>`}</td></tr>`).join("")}</table></details>`;
+    h += `<details><summary>哪个篮子在带着跌（20 日涨跌按各自长期波动折算，${B.length} 个篮子）</summary><table class="nbk">${B.map(b => `<tr><td>${esc(b.name)}<small>${Object.entries(b.members).map(([m, z]) => esc((b.names || {})[m] || m) + " " + zword(z)).join(" · ")}${b.n < b.of ? ` · 缺 ${b.of - b.n} 只` : ""}</small>${b.pairs.map(p => `<small>${pairTxt(p)}</small>`).join("")}</td><td class="z">${zword(b.z)}${b.same == null ? "" : `<small>${b.same ? "和" : "和"}${b.vs === "^SOX" ? "费城半导体" : "标普"}${b.same ? "同向" : "反向"}</small>`}</td></tr>`).join("")}</table></details>`;
     const H = N.heat || {};
     h += `<details><summary>主题热度（只作描述）</summary>${(H.rows || []).length ? `<table class="nbk">${H.rows.map(r => `<tr><td>${esc(r.topic)}<small>最近 5 天 ${r.n5} 条，前 60 天日均 ${r.base}${r.capped ? `，${r.capped} 天封顶不算` : ""}</small></td><td class="z">${r.ratio.toFixed(2)} 倍</td></tr>`).join("")}</table>` : `<p class="knote">${esc(H.note || "")}</p>`}<p class="knote">${esc(H.note && (H.rows || []).length ? H.note : "")}</p></details>`;
     el.innerHTML = h;
@@ -237,7 +237,7 @@
         const q = P[x.s], ch = q && q.pc ? (x.bp ? (q.p - q.pc) * 100 : Math.log(q.p / q.pc)) : x.chg;
         const txt = ch == null ? "—" : x.bp ? (ch >= 0 ? "+" : "−") + Math.abs(ch).toFixed(0) + "bp" : pctP((Math.exp(ch) - 1) * 100);
         return `<span class="${Math.abs(x.z || 0) >= 2 ? "big" : ""}">${esc(x.n)} <b${cP(ch)}>${txt}</b></span>`; }).join("")}${r.items.length > 8 ? `<span>…共 ${r.items.length} 个</span>` : ""}${(r.miss || []).length ? `<span class="miss">缺：${r.miss.map(esc).join("、")}</span>` : ""}</div></div>`).join("") +
-      `<p class="knote">每行按"今天涨跌 ÷ 长期日波动"从大到小排，加粗的是 2 倍以上。${Object.keys(P).length ? "盘中价格来自 Worker（Yahoo）。" : "没有现取价格时是最近一个收盘。"}</p>`;
+      `<p class="knote">每行按"今天涨跌 ÷ 长期日波动"从大到小排，加粗的是 2 倍以上。${Object.keys(P).length ? "盘中价格是打开页面时现取的（Yahoo）。" : "没有现取价格时是最近一个收盘。"}</p>`;
   }
   async function live() {
     if (!RD.live || document.hidden) return;
@@ -267,7 +267,7 @@
     let more = sg.length > 3 ? `<h3 class="mh3">其余 ${sg.length - 3} 条小信号</h3>${sg.slice(3).map(one).join("")}` : "";
     const F = S.firsts || [];
     if (F.length) more += `<details><summary>一手来源第一次提到（${F.length} 条，最近 24 小时）</summary>${F.map(f => `<div class="fli">${f.watch ? `<span class="tg first">观察名单</span>` : ""}<b>${esc(f.ent)} × ${esc(f.line)}</b><div class="fm">${esc(f.src)} · ${esc(f.t)}</div></div>`).join("")}</details>`;
-    more += `<details><summary>推演链走到哪一环</summary>${(S.chains || []).map(c => `<div class="fli"><b>${esc(c.name)}</b> ${c.step} / ${c.of}<div class="fm">${c.links.map((L, i) => `${i < c.step ? "●" : L.lit ? "◐" : "○"} ${esc(L.name)}${L.lit ? "（" + md(L.lit) + "）" : ""}`).join(" → ")}</div>${c.next ? `<div class="fm">下一环看：${esc(c.next.name)}——${esc(c.next.check)}</div>` : ""}</div>`).join("")}<p class="knote">● 按顺序亮了；◐ 最近 20 个交易日亮过但顺序不对或隔太久。每一环"亮" = 这一环的读数出现偏高以上的小信号、方向是登记的压力方向（登记/chains.toml）。</p></details>`;
+    more += `<details><summary>推演链走到哪一环</summary>${(S.chains || []).map(c => `<div class="fli"><b>${esc(c.name)}</b> ${c.step} / ${c.of}<div class="fm">${c.links.map((L, i) => `${i < c.step ? "●" : L.lit ? "◐" : "○"} ${esc(L.name)}${L.lit ? "（" + md(L.lit) + "）" : ""}`).join(" → ")}</div>${c.next ? `<div class="fm">下一环看：${esc(c.next.name)}——${esc(c.next.check)}</div>` : ""}</div>`).join("")}<p class="knote">● 按顺序亮了；◐ 最近 20 个交易日亮过但顺序不对或隔太久。每一环"亮" = 这一环的读数出现偏高以上的小信号、方向是事先登记的压力方向。</p></details>`;
     if ((S.mismatch || []).length) more += `<details><summary>数据动了价格没跟（只作描述）</summary>${S.mismatch.map(m => `<div class="fli">${esc(m.name)}：${esc(m.ym)} 营收同比 ${sgn(m.yoy, 0)}%，股价 20 日 ${sgn(m.r20, 1)}%</div>`).join("")}</details>`;
     if (P) {
       const cw = (P.crowd || []).filter(c => c.word !== "数据不够"), hot = cw.filter(c => c.word === "挤在多头" || c.word === "挤在空头");
@@ -315,7 +315,7 @@
     }
     const T = F.timeline || {};
     h += `<details><summary>时间轴：未来 6 个月 ${(T.events || []).length} 件（北京时间）</summary><table class="nbk">${(T.events || []).map(e => `<tr><td>${esc(e.bj)}</td><td><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title)}</a><small>${esc(e.src)}</small></td></tr>`).join("")}</table>` +
-      `<p class="knote"><b>排不到的：</b>${(T.missing || []).map(esc).join("；")}。手动登记的事件写在仓库的 登记/timeline.toml。</p></details>`;
+      `<p class="knote"><b>排不到的：</b>${(T.missing || []).map(esc).join("；")}。选举、上市、大额融资这类没有固定日程的，要手动登记才有。</p></details>`;
     el.innerHTML = h;
     const lg = $("ledger");
     if (lg && (F.ledger || []).length) {
@@ -333,13 +333,13 @@
       `<div>${x.first.map(f => `<span class="tg first">第一次：${esc(f)}</span>`).join("")}${x.ents.map(e => `<span class="tg">${esc(e)}</span>`).join("")}${x.lines.map(l => `<span class="tg">${esc(l)}</span>`).join("")}</div></div>`;
     const top = F.items.slice(0, F.top), more = F.items.slice(F.top);
     const lag = h => h.lag ? `中位 ${h.lag.med} 分钟（90% ${h.lag.p90}，${h.lag.n} 条）` : "还没攒够";
-    const hr = F.health.map(h => `<tr><td>${esc(h.src)}${h.via ? " · 经" + esc(h.via) : ""}<small> ${esc(h.id)}</small></td><td class="${h.ok ? "" : "bad"}">${h.ok ? (h.ago == null ? "—" : h.ago + " 分钟前取到") : "停了 / 没取到"}</td><td>${lag(h)}</td></tr>`).join("");
+    const hr = F.health.map(h => `<tr><td>${esc(h.src)}${h.via ? " · 经" + esc(h.via) : ""}${h.sec ? `<small>（${esc(h.sec)} 栏目）</small>` : ""}</td><td class="${h.ok ? "" : "bad"}">${h.ok ? (h.ago == null ? "—" : h.ago + " 分钟前取到") : "停了 / 没取到"}</td><td>${lag(h)}</td></tr>`).join("");
     el.innerHTML = `<h2>快讯<small>最近 ${F.hours} 小时，打上标签的 ${F.shown} 件（共看到 ${F.total} 条）</small></h2>` +
       (top.length ? top.map(it).join("") : `<p class="quiet">最近 ${F.hours} 小时没有打上标签的快讯。</p>`) +
       (more.length ? `<details><summary>再看 ${more.length} 件</summary>${more.map(it).join("")}</details>` : "") +
       `<details><summary>各条路的健康和延迟</summary><table class="fh">${hr}</table>` +
       `<p class="knote">延迟 = 我们看到的时间 − 发布时间，只算每条路开始取以后新出现的条目；云端每 15 分钟取一次，所以含最多 15 分钟的等待。` +
-      `${F.backfill_done ? "" : "过去 30 天还没回补完，\"第一次\"只标不推。"}路透经 TradingView、谷歌新闻取，是用户 10-27 定的（口径.md 第九节）。</p></details>`;
+      `${F.backfill_done ? "" : "过去 30 天还没回补完，\"第一次\"只标不推。"}路透经 TradingView、谷歌新闻取，是你 10-27 定的。</p></details>`;
   })();
 
   // ---------- 最近一年：阶段一条 + 四行热度（和 K 线副图同一套颜色）
@@ -749,16 +749,19 @@
       if (!html) html = dayPanel(sel && sel.type === "day" ? clampI(sel.i) : B.length - 1);
       el.innerHTML = html;
     }
+    let toolsOpen = matchMedia("(min-width: 700px)").matches;     // 手机上默认收起（第四轮验收：工具栏 370 px 把图挤出两屏），宽屏默认展开
     function toolbar() {
       const on = c => c ? " on" : "";
       $("ktools").innerHTML = `
-        <div class="kgrp" role="group" aria-label="品种">${SYMS.filter(s => !s.more).map(s => `<button type="button" class="kbtn${on(s.k === cfg.sym)}" data-sym="${esc(s.k)}">${esc(s.n)}</button>`).join("")}${(RAW.kmore || []).length ? `<select class="kmore" id="kmore" aria-label="扫描范围里的其他标的"><option value="">更多（${RAW.kmore.length} 个）…</option>${RAW.kmore.map(x => `<option value="${esc(x.k)}"${x.k === cfg.sym ? " selected" : ""}>${esc(x.cls ? x.cls + " · " : "")}${esc(x.n)}</option>`).join("")}</select>` : ""}</div>
+        <div class="kgrp ksyms" role="group" aria-label="品种">${(RAW.kmore || []).length ? `<select class="kmore" id="kmore" aria-label="扫描范围里的其他标的"><option value="">更多（${RAW.kmore.length} 个）…</option>${RAW.kmore.map(x => `<option value="${esc(x.k)}"${x.k === cfg.sym ? " selected" : ""}>${esc(x.cls ? x.cls + " · " : "")}${esc(x.n)}</option>`).join("")}</select>` : ""}${SYMS.filter(s => !s.more).map(s => `<button type="button" class="kbtn${on(s.k === cfg.sym)}" data-sym="${esc(s.k)}">${esc(s.n)}</button>`).join("")}</div>
+        <details class="kmt" id="kmt"${toolsOpen ? " open" : ""}><summary>工具：时间范围、画线、均线、副图</summary><div class="ktools2">
         <div class="kgrp" role="group" aria-label="时间范围">${[[63, "3月"], [126, "6月"], [252, "1年"], [756, "3年"], [0, "全部"]].map(([n, t]) => `<button type="button" class="kbtn${on(cfg.n === n)}" data-rng="${n}">${t}</button>`).join("")}<button type="button" class="kbtn" data-zoom="0.8" aria-label="放大">＋</button><button type="button" class="kbtn" data-zoom="1.25" aria-label="缩小">－</button></div>
         <div class="kgrp" role="group" aria-label="画线工具"><span class="kl">画线</span>${[["pick", "点选"], ["h", "水平线"], ["t", "趋势线"]].map(([k, t]) => `<button type="button" class="kbtn${on(tool === k)}" data-tool="${k}">${t}</button>`).join("")}<button type="button" class="kbtn" data-act="clear">${clearArm ? "再点一次确认" : "清除画线"}</button></div>
         <div class="kgrp" role="group" aria-label="均线"><span class="kl">均线</span>${cfg.mas.map(p => `<button type="button" class="kbtn mach${cfg.on[p] ? "" : " off"}" data-ma="${p}"><i style="background:${maCol(p)}"></i>MA${p}${DEF_MA.includes(p) ? "" : ' <span data-rm="' + p + '" aria-label="删除">×</span>'}</button>`).join("")}<input id="k-maadd" type="number" min="2" max="400" step="1" placeholder="周期" aria-label="添加均线周期"><button type="button" class="kbtn" data-act="addma">添加</button></div>
         <div class="kgrp"><label for="k-sub" class="kl">副图</label><select id="k-sub">${SUBS.map(([id, t]) => `<option value="${id}"${cfg.sub === id ? " selected" : ""}>${t}</option>`).join("")}</select>
           <label><input type="checkbox" id="k-mk"${cfg.mk ? " checked" : ""}>阶段标签</label><label><input type="checkbox" id="k-smk"${cfg.smk ? " checked" : ""}>抛售 / 涨过头</label><label><input type="checkbox" id="k-bg"${cfg.bg ? " checked" : ""}>阶段色带</label><label><input type="checkbox" id="k-sw"${cfg.sw ? " checked" : ""}>摆动结构</label>
-          <button type="button" class="kbtn" data-act="updown">${cfg.redUp ? "红涨绿跌" : "绿涨红跌"}</button></div>`;
+          <button type="button" class="kbtn" data-act="updown">${cfg.redUp ? "红涨绿跌" : "绿涨红跌"}</button></div></div></details>`;
+      $("kmt").ontoggle = e => { toolsOpen = e.target.open; };
       $("k-sub").onchange = e => { cfg.sub = e.target.value; saveCfg(); schedule(); };
       $("k-mk").onchange = e => { cfg.mk = e.target.checked; saveCfg(); buildMarkers(); schedule(); };
       $("k-smk").onchange = e => { cfg.smk = e.target.checked; saveCfg(); buildMarkers(); schedule(); };
