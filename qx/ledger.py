@@ -130,17 +130,15 @@ def _fred_last(D, k, t):
 
 def rows(D, t):
     """账本：每条链 4–6 个数，每个带来源、时点、下次公布日。"""
-    import csv as _csv
     from qx import fundamentals as F
     t = pd.Timestamp(t)
     out = []
     # 台积电月营收
-    if os.path.exists(F.TW_CSV):
-        tw = [r for r in _csv.DictReader(open(F.TW_CSV, encoding="utf-8")) if r["code"] == "2330" and r.get("pub") and pd.Timestamp(r["pub"][:10]) <= t]
-        if tw:
-            r = sorted(tw, key=lambda r: r["ym"])[-1]
-            nxt = (pd.Timestamp(r["ym"] + "-01") + pd.DateOffset(months=2)).strftime("%Y-%m-10")
-            out.append(dict(chain="芯片", name="台积电月营收同比", value=f"{float(r['yoy']):+.1f}%", asof=r["ym"], src="台湾证交所", next=f"约 {nxt}"))
+    tw = [r for r in F.load_tw() if r["code"] == "2330" and r.get("pub") and pd.Timestamp(r["pub"][:10]) <= t]
+    if tw:
+        r = sorted(tw, key=lambda r: r["ym"])[-1]
+        nxt = (pd.Timestamp(r["ym"] + "-01") + pd.DateOffset(months=2)).strftime("%Y-%m-10")
+        out.append(dict(chain="芯片", name="台积电月营收同比", value=f"{float(r['yoy']):+.1f}%", asof=r["ym"], src="台湾证交所", next=f"约 {nxt}"))
     # FactSet
     fs = [r for r in _rows(FACTSET_CSV) if pd.Timestamp(r["pub"][:10]) <= t]
     if fs:

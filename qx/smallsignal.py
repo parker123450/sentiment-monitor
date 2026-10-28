@@ -190,11 +190,10 @@ def firsts(t, hours=24):
 
 def mismatch(D, t):
     """台湾月营收同比 vs 股价 20 日涨跌：方向相反写"对不上"（只作描述）。"""
-    import csv
     from qx import fundamentals as F
-    if not os.path.exists(F.TW_CSV):
+    rows = F.load_tw()                                        # 自检截断时这里只给 pub ≤ t 的行（qx/selftest.py 的 extras_cut）
+    if not rows:
         return []
-    rows = list(csv.DictReader(open(F.TW_CSV, encoding="utf-8")))
     t = pd.Timestamp(t)
     out = []
     for code, nm in F.TW.items():

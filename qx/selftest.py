@@ -6,7 +6,7 @@ t 那天的每个读数都要和全量计算完全一致（相对误差 1e-9）�
 
 用法：python -m qx.selftest [--n 5]
 """
-import argparse, sys
+import argparse, contextlib, sys
 import numpy as np
 import pandas as pd
 
@@ -23,6 +23,45 @@ def cut(D, aaii, t):
         late = k in SERIES and SERIES[k]["source"] == "FRED"
         out[k] = f[f.index < t] if late else f[f.index <= t]
     return out, (aaii[aaii.index < t] if aaii is not None else None)
+
+
+@contextlib.contextmanager
+def extras_cut(t):
+    """第四轮新攒的文件，按各自"能看到的时间"截到 t（规划第〇节：cut() 按这一列截断）：
+      仓位（cftc、letf、short_interest、jgb）和美债拍卖、FactSet、台湾月营收：pub 的日期 ≤ t；
+      财报反应：seen（反应日）≤ t；快讯：能看到的时间（seen，回补的用 pub）在 t 那天结束以前（模块的口径是"收盘日当天看到的都算"）。
+    模块自己也按这一列过滤，所以两边应该一样；哪个模块忘了过滤、用了 t 以后才看得到的行，这里会对不上。"""
+    from qx import positioning as PS, flash as FL, earn as EA, fundamentals as FU, ledger as LG, store as ST
+    t = pd.Timestamp(t)
+    day = t.strftime("%Y-%m-%d")
+    end = (pd.Timestamp(day, tz="UTC") + pd.Timedelta(days=1)).isoformat()
+    pub = lambda rows: [r for r in rows if (r.get("pub") or "")[:10] <= day]
+    saved = (PS._rows, LG._rows, FL.load_rows, EA.rows, FU.load_tw, ST.load_aaii)
+    PS._rows = lambda p, f=saved[0]: pub(f(p))
+    LG._rows = lambda p, f=saved[1]: pub(f(p))
+    FL.load_rows = lambda f=saved[2]: [r for r in f() if FL.visible(r) < end]
+    EA.rows = lambda f=saved[3]: [r for r in f() if (r.get("seen") or "")[:10] <= day]
+    FU.load_tw = lambda f=saved[4]: pub(f())
+    ST.load_aaii = lambda f=saved[5]: (lambda a: None if a is None else a[a.index < t])(f())     # AAII 第二天才用（和 cut() 一样）
+    try:
+        yield
+    finally:
+        PS._rows, LG._rows, FL.load_rows, EA.rows, FU.load_tw, ST.load_aaii = saved
+
+
+def radar_values(D, t):
+    """第四轮第 3–5 步的读数（小信号、仓位、卡、三种走向的信号、前瞻六条线），自检比对用。"""
+    from qx import smallsignal as SS, positioning as PS, radar as RA, narrative as NR, forward as FW
+    p = PS.compute(D, t)
+    s = SS.compute(D, t, p)
+    c = RA.compute(D, t, p, s)
+    v = {**PS.values(p), **SS.values(s), **{"卡:" + k: x for k, x in RA.values(c).items()}}
+    n = NR.compute(D, t)
+    sc, _ = FW.scenarios(D, t, n, write=False)
+    v.update({f"走向:{S['id']}:{w['id']}:{i}": str(x["hit"]) for S in sc for w in S["ways"] for i, x in enumerate(w["signals"])})
+    for L in FW.lines(D, t, dict(sig=s, pos=p, narr=n, cards=c)):
+        v["前瞻:" + L["id"]] = "；".join(L["signals"] + L["now"])
+    return v
 
 
 def values_at(R, t):
@@ -46,6 +85,8 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
     rng = np.random.default_rng(seed)
     pool = idx[(idx >= "2000-01-01") & (idx < idx[-5])]
     days = list(idx[-2:]) + list(pd.DatetimeIndex(rng.choice(pool.values, size=n, replace=False)))
+    recent = idx[(idx >= "2024-01-01") & (idx < idx[-2])]           # 雷达（第四轮）的新文件多是最近才有：另抽 2 个 2024 年以后的日子
+    days += [d for d in pd.DatetimeIndex(rng.choice(recent.values, size=min(2, len(recent)), replace=False)) if d not in days]
     bad = []
     for t in days:
         Dt, at = cut(D, aaii, t)
@@ -63,14 +104,11 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
             a, b = NR.values(NR.compute(D, t)), NR.values(NR.compute(Dt, t))
             eq = lambda x, y: x == y if isinstance(x, str) or isinstance(y, str) else same(x, y)
             diff += ["在交易什么 " + k for k in a if not eq(a[k], b.get(k, np.nan))]
-        if t >= pd.Timestamp("2024-01-01"):                  # 小信号和仓位（第四轮第 3 步）：ICE 利差 FRED 只给最近 3 年
-            from qx import smallsignal as SS, positioning as PS
-            pa, pb = PS.compute(D, t), PS.compute(Dt, t)
-            sa, sb = SS.compute(D, t, pa), SS.compute(Dt, t, pb)
-            from qx import radar as RA                        # 机会和风险卡（第四轮第 4 步）
-            a = {**PS.values(pa), **SS.values(sa), **{"卡:" + k: v for k, v in RA.values(RA.compute(D, t, pa, sa)).items()}}
-            b = {**PS.values(pb), **SS.values(sb), **{"卡:" + k: v for k, v in RA.values(RA.compute(Dt, t, pb, sb)).items()}}
-            diff += ["小信号/仓位 " + k for k in set(a) | set(b) if not eq(a.get(k, np.nan), b.get(k, np.nan))]
+        if t >= pd.Timestamp("2024-01-01"):                  # 小信号、仓位、卡、三种走向、前瞻（第四轮第 3–5 步）：ICE 利差 FRED 只给最近 3 年
+            a = radar_values(D, t)                            # 全量：所有攒下的文件都在，模块自己按"能看到的时间"过滤
+            with extras_cut(t):                               # 截断：行情截到 t，新攒的文件也截到 t 那一刻能看到的
+                b = radar_values(Dt, t)
+            diff += ["雷达 " + k for k in set(a) | set(b) if not eq(a.get(k, np.nan), b.get(k, np.nan))]
         log(f"  {t.date()}：" + ("一致" if not diff else "不一致 " + "、".join(diff[:8])))
         if diff:
             bad.append((t, diff))
@@ -126,7 +164,8 @@ def flash_check(rng, log=print, n=3):
     for t in [ts[-1]] + list(rng.choice(ts[: max(1, len(ts) - 1)], size=min(n, len(ts) - 1), replace=False)):
         part = [r for r in rows if flash.visible(r) <= t]
         a = flash.firsts(part)
-        b = {k: v for k, v in full.items() if any(r["route"] == k[0] and r["id"] == k[1] for r in part)}
+        keys = {(r["route"], r["id"]) for r in part}
+        b = {k: v for k, v in full.items() if k in keys}
         same_ = a == b
         ok &= same_
         log(f"  快讯截到 {t[:16]}：" + ("一致" if same_ else f"不一致（{len(set(a.items()) ^ set(b.items()))} 处）"))
