@@ -1,6 +1,6 @@
 """仓位和资金（第四轮第 3 步，2026-10-27）。规则在 口径.md 第十一节。
 
-取数（每天一次，run.py 按时间判断；每个文件都带"能看到的时间" pub，按它截断）：
+取数（每天一次，run.py 按时间判断；每个文件都带"能看到的时间" pub，按它截断；攒起来以后新取到的行，pub 不早于取到的那天）：
   CFTC 每周持仓（publicreporting.cftc.gov，Legacy 期货）：非商业（投机）多空，2006 年起。数据截至周二，周五美东 15:30 公布 → pub = 周二 + 3 天。
   杠杆 ETF：Direxion 每天的 SOXL / SOXS 份额（CSV 第一行 Shares Outstanding），从 10-27 起攒；pub = 取到的时间。
   空头仓位：纳斯达克的 short-interest（每月两次结算日；FINRA 约 8 个工作日后公布）→ pub = 结算日 + 11 天（保守）。
@@ -50,6 +50,17 @@ def _write(p, cols, rows):
 
 
 # ================================================================ 取
+def _seen_day(incremental):
+    """攒起来以后新取到的行：能看到的时间不早于取到的那天（UTC）。第一次整份取的历史没有这个限制。"""
+    return datetime.now(timezone.utc).date() if incremental else None
+
+
+def _pub(guess, seen):
+    """公布时间 = 推定的公布日（CFTC 周二 + 3 天、空头结算日 + 11 天、日本国债次日）和取到那天里晚的那个。
+    CFTC 遇到假日、政府停摆会晚发，推定的日子会早于真正能看到的那天（2026-10-28 补，口径第十一节）。"""
+    return (max(guess, seen) if seen else guess).isoformat()
+
+
 def fetch_cftc(log=print):
     from qx.fetch import get
     old = _rows(CFTC_CSV)
@@ -60,13 +71,14 @@ def fetch_cftc(log=print):
     url = "https://publicreporting.cftc.gov/resource/6dca-aqww.json?" + urllib.parse.quote(q, safe="=&$'(),")
     j = json.loads(get(url, timeout=120, ua=UA_NAMED))
     have = {(r["code"], r["date"]) for r in old}
+    seen = _seen_day(bool(old))
     n = 0
     for x in j:
         d = x["report_date_as_yyyy_mm_dd"][:10]
         k = (x["cftc_contract_market_code"], d)
         if k in have:
             continue
-        old.append({"code": k[0], "date": d, "pub": (date.fromisoformat(d) + timedelta(days=3)).isoformat(), "oi": x.get("open_interest_all", ""),
+        old.append({"code": k[0], "date": d, "pub": _pub(date.fromisoformat(d) + timedelta(days=3), seen), "oi": x.get("open_interest_all", ""),
                     "long": x.get("noncomm_positions_long_all", ""), "short": x.get("noncomm_positions_short_all", "")})
         have.add(k)
         n += 1
@@ -98,6 +110,7 @@ def fetch_si(log=print):
     from qx.fetch import get
     rows = _rows(SI_CSV)
     have = {(r["sym"], r["settle"]) for r in rows}
+    seen = _seen_day(bool(rows))
     n = 0
     for s in SI_WATCH:
         try:
@@ -107,7 +120,7 @@ def fetch_si(log=print):
                 if (s, d.isoformat()) in have:
                     continue
                 num = lambda v: float(str(v).replace(",", "")) if v not in (None, "", "N/A") else ""
-                rows.append({"sym": s, "settle": d.isoformat(), "pub": (d + timedelta(days=11)).isoformat(), "si": num(x.get("interest")),
+                rows.append({"sym": s, "settle": d.isoformat(), "pub": _pub(d + timedelta(days=11), seen), "si": num(x.get("interest")),
                              "adv": num(x.get("avgDailyShareVolume")), "dtc": num(x.get("daysToCover"))})
                 have.add((s, d.isoformat()))
                 n += 1
@@ -133,6 +146,7 @@ def fetch_jgb(log=print, full=None):
     """财务省国债收益率：列是 1、2、3、4、5、6、7、8、9、10、15、20、25、30、40 年。只留 2、10、30、40 年。"""
     from qx.fetch import get_bytes
     rows = {r["date"]: r for r in _rows(JGB_CSV)}
+    seen = _seen_day(bool(rows))
     full = full if full is not None else not rows
     urls = (["https://www.mof.go.jp/jgbs/reference/interest_rate/data/jgbcm_all.csv"] if full else []) + ["https://www.mof.go.jp/jgbs/reference/interest_rate/jgbcm.csv"]
     for u in urls:
@@ -143,7 +157,8 @@ def fetch_jgb(log=print, full=None):
             if not d or len(p) < 15:
                 continue
             f = lambda i: p[i].strip() if i < len(p) and re.match(r"^-?\d+(\.\d+)?$", p[i].strip()) else ""
-            rows[d.isoformat()] = {"date": d.isoformat(), "pub": (d + timedelta(days=1)).isoformat(), "y2": f(2), "y10": f(10), "y30": f(14), "y40": f(15)}
+            old = rows.get(d.isoformat())                             # 当月的文件每次都会再给一遍：已经有的行保留原来的公布时间
+            rows[d.isoformat()] = {"date": d.isoformat(), "pub": old["pub"] if old else _pub(d + timedelta(days=1), seen), "y2": f(2), "y10": f(10), "y30": f(14), "y40": f(15)}
     _write(JGB_CSV, ["date", "pub", "y2", "y10", "y30", "y40"], [rows[k] for k in sorted(rows)])
     log(f"  日本国债：{len(rows)} 天，到 {max(rows) if rows else '—'}")
 
