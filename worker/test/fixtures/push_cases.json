@@ -1,0 +1,50 @@
+{
+  "note": "推送总规则对拍：qx/notify.py 的 gate()、digest()（python run.py selftest）和 worker/src/rules.js 的 gate()、digest()（cd worker && npm test）读同一组样例，按顺序跑，结果要一样。只判断，不发。",
+  "rules": {"day_cap": 6, "day_start_bj": 8, "repeat_h": 24},
+  "steps": [
+    {
+      "at": "2026-10-27T01:00:00Z",
+      "note": "北京 09:00：9 条普通的 + 1 条十年少见的 → 发 6 条普通的和少见的那条，攒 3 条",
+      "msgs": [
+        {"key": "k0", "title": "t0", "n10": 5}, {"key": "k1", "title": "t1", "n10": 9}, {"key": "k2", "title": "t2", "n10": 8},
+        {"key": "k3", "title": "t3", "n10": 7}, {"key": "k4", "title": "t4", "n10": 6}, {"key": "k5", "title": "t5", "n10": 4},
+        {"key": "k6", "title": "t6", "n10": 3}, {"key": "k7", "title": "t7"}, {"key": "k8", "title": "t8", "n10": 1},
+        {"key": "rare", "title": "r", "rare": true, "n10": 0.5}
+      ],
+      "send": ["k0", "k1", "k2", "k3", "k4", "k5", "rare"],
+      "held": 3
+    },
+    {
+      "at": "2026-10-27T03:00:00Z",
+      "note": "同一个 key 24 小时内不再推；不占名额的照发（名额已满）；合并进来的 also 也记成推过",
+      "msgs": [
+        {"key": "k0", "title": "again"}, {"key": "sys", "title": "自检没过", "cap": false},
+        {"key": "m1", "title": "合并", "also": ["m2"], "cap": false}, {"key": "m2", "title": "被合并的"}
+      ],
+      "send": ["sys", "m1"],
+      "held": 0
+    },
+    {
+      "at": "2026-10-27T23:59:00Z",
+      "note": "北京 07:59，还是同一个推送日：不合成",
+      "msgs": [],
+      "digest": [],
+      "send": []
+    },
+    {
+      "at": "2026-10-28T00:30:00Z",
+      "note": "北京 08:30：新的一天，先把昨天攒下的 3 件合成一条（按十年几次从少到多，没有次数的放最后）；名额重新算",
+      "msgs": [{"key": "n0", "title": "新的"}],
+      "digest": [{"title": "没推的 3 件（10-27）", "body": "· t8\n· t6\n· t7"}],
+      "send": ["n0"],
+      "held": 0
+    },
+    {
+      "at": "2026-10-28T01:30:00Z",
+      "note": "k0 上次推是 10-27 01:00，已经过了 24 小时，可以再推",
+      "msgs": [{"key": "k0", "title": "t0"}],
+      "digest": [],
+      "send": ["k0"]
+    }
+  ]
+}

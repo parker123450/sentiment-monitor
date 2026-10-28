@@ -43,6 +43,18 @@ test("推送上限：每天 6 条，少见的不占名额，超了的第二天 0
   assert.match(d[0].title, /没推的 3 件/);
 });
 
+test("推送总规则和 Python 对拍（fixtures/push_cases.json，qx/notify.py 的自检读同一份）", () => {
+  const P = JSON.parse(fx("push_cases.json")), st = {};
+  const nHeld = () => Object.values(st.held || {}).reduce((a, x) => a + x.length, 0);
+  for (const s of P.steps) {
+    const now = Date.parse(s.at), dg = digest(st, now, P.rules.day_start_bj);
+    if (s.digest) assert.deepEqual(dg.map(m => ({ title: m.title, body: m.body })), s.digest, s.note);
+    const before = nHeld(), out = gate(P.rules, st, s.msgs, now);
+    assert.deepEqual(out.map(m => m.key), s.send, s.note);
+    if (s.held != null) assert.equal(nHeld() - before, s.held, s.note);
+  }
+});
+
 test("推送的一天从北京 08:00 算", () => {
   assert.equal(pushDay(Date.parse("2026-10-26T23:59:00Z")), "2026-10-26");   // 北京 07:59
   assert.equal(pushDay(Date.parse("2026-10-27T00:00:00Z")), "2026-10-27");   // 北京 08:00

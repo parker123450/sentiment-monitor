@@ -184,5 +184,5 @@ def scenarios(D, t, narr_res=None, write=False):
 def block(D, t, ctx, write=False):
     sc, new = scenarios(D, t, ctx.get("narr"), write=write)
     tl = TL.load()
-    return dict(asof=pd.Timestamp(t).strftime("%Y-%m-%d"), lines=lines(D, t, ctx), scenarios=sc, new=new,
+    return dict(asof=pd.Timestamp(t).strftime("%Y-%m-%d"), lines=lines(D, t, ctx), scenarios=sc, new=new, written=bool(write),
                 timeline=dict(events=tl.get("events", []), missing=tl.get("missing", []), built=tl.get("built")), ledger=LG.rows(D, t))

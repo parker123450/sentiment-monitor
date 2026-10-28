@@ -66,7 +66,8 @@ async function send(env, m) {
   return rs.filter(r => r.status === "fulfilled" && r.value.ok).length;
 }
 
-// 所有推送都过这里：读推送状态 → 去重和上限 → 发 → 写回（一条语句写回，两个定时同时跑也只多算不少算）
+// 所有推送都过这里（Worker 自己的定时，和 Actions 经 /push 送来的）：读推送状态 → 去重和上限 → 写回 → 发。
+// 状态是整包读、整包写，不是规划说的一条 INSERT … SELECT：两个请求恰好同时到时可能多推一条（两个定时错开 2 分钟、Actions 15 分钟一次，很少碰上）。
 async function pushAll(env, msgs, now) {
   const R = { ...PUSH_RULES, ...(((await getState(env, "rules")) || {}).v || {}).push };
   const st = ((await getState(env, "push")) || {}).v || {};

@@ -76,7 +76,42 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
             bad.append((t, diff))
     if not flash_check(rng, log):
         bad.append(("快讯", ["第一次"]))
+    if not parity_check(log):
+        bad.append(("和 Worker 对拍", ["打标签、第一次或推送规则"]))
     return not bad
+
+
+def parity_check(log=print):
+    """和 Worker 对拍（第四轮第 1 步）：Worker 的测试（cd worker && npm test）读同一组样例，两边的结果都要等于样例里写的。
+    parity.json：按样例自己带的词表打标签、标"第一次"（不依赖现在的 登记/entities.toml，改词表不会让自检失败）；
+    push_cases.json：推送总规则（qx/notify.py 的 gate、digest，只判断，不发）。"""
+    import json, os
+    from datetime import datetime
+    from qx import flash, notify
+    fx = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "worker", "test", "fixtures")
+    ok = True
+    P = json.load(open(os.path.join(fx, "parity.json"), encoding="utf-8"))
+    E = [(x["id"], flash._alias_re(x["alias"])) for x in P["rules"]["entities"]]
+    L = [(x["id"], flash._kw_re(x["kw"])) for x in P["rules"]["lines"]]
+    good = all([i for i, rx in E if rx.search(c["t"])] == c["ents"] and [i for i, rx in L if rx.search(c["t"])] == c["lines"] for c in P["cases"])
+    if P["rules"]["white"] == sorted(flash.WHITE) and P["rules"]["first_days"] == flash.FIRST_DAYS:
+        good &= {k[1]: v for k, v in flash.firsts([dict(r) for r in P["rows"]]).items()} == P["firsts"]
+    ok &= good
+    log("  和 Worker 对拍（打标签、第一次）：" + ("一致" if good else "不一致"))
+    C = json.load(open(os.path.join(fx, "push_cases.json"), encoding="utf-8"))
+    if C["rules"] != {"day_cap": notify.DAY_CAP, "day_start_bj": notify.DAY_START_H, "repeat_h": notify.REPEAT_H}:
+        log("  和 Worker 对拍（推送规则）：样例的上限和现在的不一样，要重新写 push_cases.json")
+        return False
+    st, good = {}, True
+    for s in C["steps"]:
+        now = datetime.fromisoformat(s["at"].replace("Z", "+00:00"))
+        dg = notify.digest(st, now)
+        out, n_held = notify.gate(st, [dict(m) for m in s["msgs"]], now)
+        good &= [m["key"] for m in out] == s["send"] and ("held" not in s or n_held == s["held"]) \
+            and ("digest" not in s or [{"title": m["title"], "body": m["body"]} for m in dg] == s["digest"])
+    ok &= good
+    log(f"  和 Worker 对拍（推送规则 {len(C['steps'])} 步）：" + ("一致" if good else "不一致"))
+    return ok
 
 
 def flash_check(rng, log=print, n=3):

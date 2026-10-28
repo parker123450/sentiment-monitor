@@ -7,13 +7,15 @@
 推什么：
   1. "今天要知道的"里新出现的条目（同一天同一件事只推一次；几条一起出现合成一条）。
   2. 快讯：观察名单 ×（融资和信用 或 地缘和政策）的"第一次"；同一件事 1 小时内 3 家以上白名单来源报道（qx/flash.py）。
-  3. 数据断了、自检没过（每天最多一次，不占上限）。
-总规则（rules()，Worker 读同一份）：
+  3. 新满足的机会和风险卡（上一次运行还没满足、这次满足了；一直满足的不重推）；三种走向里某一条的信号先出现（收盘后记下的那次运行推）。
+  4. 数据断了、自检没过（每天最多一次，不占上限）。
+总规则（rules()、gate()、digest()；Worker 的 rules.js 是同一套，worker/test/fixtures/push_cases.json 两边对拍）：
   每天最多 DAY_CAP 条，"每天"从北京时间 08:00 算起；十年少见的（n10 ≤ 2）和数据断了、自检没过不占名额。
   超了的不丢：下一个北京 08:00 合成一条"没推的 N 件"（按少见程度排，只列标题）。
   同一件事（key）24 小时内只推一次。不设免打扰。
+  有 Worker 时全部经它的 /push 发（上限和去重只在一处算）；Worker 连不上才在这里直接发。
   每条带"发给 Claude"：claude.ai 新对话的链接，预填当时的数字和要推演的问题。
-  第一次运行只记下现有的条目、不推。
+  第一次运行只记下现有的条目、不推；卡第一次跑到（没有上一次的记录）也只记下、不推。
 日志只打条数，不打标题和正文（公开仓库的 Actions 日志谁都能看）。
 试用记录：页面底部点一下，页面把这一条发到另一个 ntfy 频道（FEEDBACK_TOPIC）；云端取回来加密存进 data/private/trial_log.csv。
 """
@@ -109,26 +111,20 @@ def send(title, msg, priority=3, log=print):
     return n
 
 
-def deliver(msgs, st, now=None, log=print):
-    """按总规则发：去重、上限、超了的攒到下一个 08:00 合成一条。msgs：[{key, title, body, pri, rare, cap}]，cap=False 的不占名额。"""
-    now = now or datetime.now(timezone.utc)
+def gate(st, msgs, now):
+    """推送总规则的判断，只判断不发（和 worker/src/rules.js 的 gate() 一样；自检和 Worker 测试读同一组样例 worker/test/fixtures/push_cases.json 对拍）：
+    同一个 key 24 小时内只推一次（合并进这条的 also 也记成推过）；每天（北京 08:00 切）最多 DAY_CAP 条，rare 和 cap=False 的不占名额；
+    超了的攒进 held，下一个推送日合成一条。返回（这次要发的, 这次攒下的条数）；st 会被改。"""
     day = push_day(now)
-    sent = st.setdefault("sent", {})
-    used = st.setdefault("used", {})
-    held = st.setdefault("held", {})
-    # 上一个推送日攒下的：到了新的一天先合成一条发
-    for d in sorted(k for k in held if k < day):
-        xs = sorted(held.pop(d), key=lambda x: (x.get("n10") is None, x.get("n10") or 0))
-        if xs:
-            title = f"没推的 {len(xs)} 件（{d[5:]}）"
-            body = "\n".join("· " + x["title"] for x in xs[:12]) + ("\n……" if len(xs) > 12 else "")
-            send(title, body, 3, log)
+    sent, used, held = st.setdefault("sent", {}), st.setdefault("used", {}), st.setdefault("held", {})
+    stamp = now.isoformat(timespec="minutes")
     cut = (now - timedelta(hours=REPEAT_H)).isoformat(timespec="minutes")
     out, n_held = [], 0
     for m in msgs:
         if sent.get(m["key"], "") >= cut:
             continue
-        sent[m["key"]] = now.isoformat(timespec="minutes")
+        for k in [m["key"]] + list(m.get("also") or []):
+            sent[k] = stamp
         if m.get("cap", True) and not m.get("rare"):
             if used.get(day, 0) >= DAY_CAP:
                 held.setdefault(day, []).append({"title": m["title"], "n10": m.get("n10")})
@@ -137,12 +133,68 @@ def deliver(msgs, st, now=None, log=print):
             used[day] = used.get(day, 0) + 1
         out.append(m)
     st["used"] = {k: v for k, v in used.items() if k >= (now - timedelta(days=7)).date().isoformat()}
+    return out, n_held
+
+
+def digest(st, now):
+    """上一个推送日攒下的，合成一条"没推的 N 件"（按十年几次从少到多排，只列标题；不占名额）。st 会被改。"""
+    day = push_day(now)
+    held = st.setdefault("held", {})
+    out = []
+    for d in sorted(k for k in held if k < day):
+        xs = sorted(held.pop(d), key=lambda x: (x.get("n10") is None, x.get("n10") or 0))
+        if xs:
+            out.append(dict(key=f"digest:{d}", title=f"没推的 {len(xs)} 件（{d[5:]}）", pri=3, cap=False,
+                            body="\n".join("· " + x["title"] for x in xs[:12]) + ("\n……" if len(xs) > 12 else "")))
+    return out
+
+
+def worker_on():
+    return bool(os.environ.get("WORKER_URL", "").strip() and os.environ.get("WORKER_WRITE_TOKEN", "").strip())
+
+
+def _via_worker(msgs, st, now, log):
+    """交给 Worker 的 /push：上限、去重、合并只在 Worker 一处算（规划第四节"分工的规矩"）。连不上返回 None。"""
+    from qx import flash
+    keep = ("key", "title", "body", "pri", "rare", "cap", "n10", "also")
+    try:
+        r = flash._worker("/push", {"msgs": [{k: m[k] for k in keep if k in m} for m in msgs]})
+    except Exception as e:
+        log(f"  ! Worker 的推送接口没连上（{type(e).__name__}），改成在这里直接发")
+        return None
+    stamp = now.isoformat(timespec="minutes")
+    for m in msgs:                                    # 本地也记一笔：Worker 断了改成在这里直接发时，24 小时内不会再推一遍
+        for k in [m["key"]] + list(m.get("also") or []):
+            st.setdefault("sent", {})[k] = stamp
+    n = int((r or {}).get("sent") or 0)
+    log(f"推送：交给 Worker {len(msgs)} 条，发出 {n} 条")
+    return n
+
+
+def deliver(msgs, st, now=None, log=print):
+    """按总规则发。msgs：[{key, title, body, pri, rare, cap, n10, also}]，cap=False 的不占名额，also 是合并进这条的别的 key。
+    有 Worker（WORKER_URL、WORKER_WRITE_TOKEN）时全交给它的 /push；没有 Worker 或者连不上，就在这里按同一套规则（gate、digest）直接发。"""
+    now = now or datetime.now(timezone.utc)
+    dg = digest(st, now)
+    if (dg or msgs) and worker_on():
+        n = _via_worker(dg + list(msgs), st, now, log)
+        if n is not None:
+            return n
+    out, n_held = gate(st, msgs, now)
     n = 0
-    for m in out:
+    for m in dg + out:
         n += send(m["title"], m["body"], m.get("pri", 3), log) > 0
-    if out or n_held:
+    if dg or out or n_held:
         log(f"推送：{n} 条发出" + (f"，{n_held} 条超了上限攒到明早 08:00" if n_held else ""))
     return n
+
+
+def new_cards(st, cards):
+    """新满足的卡：上一次运行还没满足、这次满足了（一直满足的不每天重推）。没有上一次的记录（比如刚合进 main 第一次跑到这里）
+    返回空，只记下。st 会被改。"""
+    prev = st.get("cards_on")
+    st["cards_on"] = [c["key"] for c in cards]
+    return [] if prev is None else [c for c in cards if c["key"] not in set(prev)]
 
 
 def push(data, ok, log=print, flash=None):
@@ -156,12 +208,16 @@ def push(data, ok, log=print, flash=None):
     msgs = []
     items = ((data or {}).get("today") or {}).get("items") or []
     new = [x for x in items if f"{x['key']}|{x['date']}" not in st["sent"]]
+    rd = (data or {}).get("radar") or {}
+    cards = (rd["cards"].get("cards") or []) if rd.get("cards") is not None else None    # None：这次没算出来（出错），卡的记录不动
     if first:
         for x in items:
             st["sent"][f"{x['key']}|{x['date']}"] = now.isoformat(timespec="minutes")
         for x in flash or []:
             st["sent"][x["key"]] = now.isoformat(timespec="minutes")
-        log(f"推送：第一次运行，记下现有 {len(items) + len(flash or [])} 条，不推")
+        if cards is not None:
+            st["cards_on"] = [c["key"] for c in cards]
+        log(f"推送：第一次运行，记下现有 {len(items) + len(flash or []) + len(cards or [])} 条，不推")
         _save(st)
         return 0
     if new:
@@ -171,26 +227,33 @@ def push(data, ok, log=print, flash=None):
             title, body = (new[0]["title"].split("：")[0] if "：" in new[0]["title"] else "今天要知道的"), new[0]["title"]
         else:
             title, body = f"今天要知道的 {len(new)} 件", "\n".join("· " + x["title"] for x in new[:8]) + ("\n……" if len(new) > 8 else "")
-        for x in new[1:]:
-            st["sent"][f"{x['key']}|{x['date']}"] = now.isoformat(timespec="minutes")
         msgs.append(dict(key=f"{new[0]['key']}|{new[0]['date']}", title=title, body=body, pri=4 if hi else 3, rare=rare,
-                         n10=min((x["n10"] for x in new if x.get("n10") is not None), default=None)))
+                         n10=min((x["n10"] for x in new if x.get("n10") is not None), default=None),
+                         also=[f"{x['key']}|{x['date']}" for x in new[1:]]))
     for x in flash or []:
         msgs.append(dict(key=x["key"], title=x["title"], body=f"{x['body']}\n（{x['src']}）", pri=4 if x["kind"] == "first" else 3))
-    for x in (((data or {}).get("radar") or {}).get("fwd") or {}).get("new") or []:          # 三种走向里某一条的信号先出现（第四轮第 5 步）
-        msgs.append(dict(key=x["key"], title=x["title"], body=x["body"], pri=4))
-    for c in (((data or {}).get("radar") or {}).get("cards") or {}).get("cards") or []:      # 新满足的机会和风险卡（第四轮第 4 步）
-        msgs.append(dict(key=c["key"], title=f"{c['cls_name']}：{c['title']}", body=f"{c['why']}\n哪里算错：{c['wrong']}", pri=3,
-                         rare=c["rank"] is not None and c["rank"] <= 2 / 2520))
+    fw = rd.get("fwd") or {}
+    if fw.get("written"):                     # 三种走向里某一条的信号先出现（第四轮第 5 步）：只在收盘后记下"第一次亮"的那次运行推，推送和样本外记录是同一件事
+        for x in fw.get("new") or []:
+            msgs.append(dict(key=x["key"], title=x["title"], body=x["body"], pri=4))
+    if cards is not None and ok:              # 机会和风险卡（第四轮第 4 步）：只推新满足的
+        for c in new_cards(st, cards):
+            msgs.append(dict(key=c["key"], title=f"{c['cls_name']}：{c['title']}", body=f"{c['why']}\n哪里算错：{c['wrong']}", pri=3,
+                             rare=c["rank"] is not None and c["rank"] <= 2 / 2520, n10=None if c["rank"] is None else c["rank"] * 2520))
     if not ok and st.get("selftest_fail") != today:
         st["selftest_fail"] = today
         msgs.append(dict(key=f"selftest|{today}", title="雷达 · 自检没过", body="截断重算和全量不一致，网页这次没有发布。看 GitHub Actions 的日志。", pri=4, cap=False))
     if data and clock.is_trading_day(ny.date()) and (ny.hour, ny.minute) >= (18, 30) and data.get("asof") != clock.last_closed(ny) and st.get("stale") != today:
         st["stale"] = today
         msgs.append(dict(key=f"stale|{today}", title="雷达 · 数据没更新", body=f"美股日线还停在 {data.get('asof')}，最近一个交易日是 {clock.last_closed(ny)}。页面沿用旧数据。", pri=3, cap=False))
-    if msgs and not channels():
-        log("推送：没有推送渠道（NTFY_TOPIC / WECOM_KEY / BARK_KEY），不推")
-    n = deliver(msgs, st, now, log) if channels() else 0
+    n = 0
+    if channels() or worker_on():
+        n = deliver(msgs, st, now, log)
+    elif msgs:
+        log("推送：没有推送渠道（NTFY_TOPIC / WECOM_KEY / BARK_KEY），不推，只记下")
+        for m in msgs:                        # 记成推过：以后接上渠道时不会把这些旧的一下推出去
+            for k in [m["key"]] + list(m.get("also") or []):
+                st["sent"][k] = now.isoformat(timespec="minutes")
     _save(st)
     return n
 

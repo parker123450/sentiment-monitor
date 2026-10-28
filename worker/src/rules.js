@@ -1,6 +1,6 @@
 // 规则：和 Python（qx/flash.py、qx/notify.py）一模一样的打标签、"第一次"、推送上限。规则本身不写在这里：
 // Actions 每 15 分钟把 rules.json（登记/entities.toml 导出）经 /state 推过来，Worker 用最新的一份。
-// 改这里要同时改 Python，并跑 test/parity.test.js（两边读同一组样例对拍）。
+// 改这里要同时改 Python，并跑 npm test（test/rules.test.js；fixtures/parity.json、push_cases.json 两边读同一组样例对拍）。
 
 const NONASCII = /[^\x00-\x7f]/;
 const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -56,30 +56,34 @@ export function candidates(C, row, newFirsts) {
     .map(k => { const [e, l] = k.split(":"); return { kind: "first", key: `first:${k}`, title: `第一次：${name(e)} × ${lineName(l)}`, body: `${row.t}\n（${row.src}）`, pri: 4 }; });
 }
 
-// 推送总规则：去重（repeat_h 小时内同 key 只推一次）、每天上限（rare 和 cap=false 的不占名额）、超了的攒起来
-// st = {sent: {key: ms}, used: {day: n}, held: {day: [title]}}；返回这次要发的
+// 推送总规则：去重（repeat_h 小时内同 key 只推一次，合并进这条的 also 也记成推过）、每天上限（rare 和 cap=false 的不占名额）、超了的攒起来
+// st = {sent: {key: ms}, used: {day: n}, held: {day: [{title, n10}]}}；返回这次要发的。和 qx/notify.py 的 gate() 一样（fixtures/push_cases.json 对拍）
 export function gate(R, st, msgs, now) {
   const day = pushDay(now, R.day_start_bj), out = [], cut = now - R.repeat_h * 3600e3;
   st.sent = st.sent || {}; st.used = st.used || {}; st.held = st.held || {};
   for (const m of msgs) {
     if ((st.sent[m.key] || 0) >= cut) continue;
-    st.sent[m.key] = now;
+    for (const k of [m.key, ...(m.also || [])]) st.sent[k] = now;
     if (m.cap !== false && !m.rare) {
-      if ((st.used[day] || 0) >= R.day_cap) { (st.held[day] = st.held[day] || []).push(m.title); continue; }
+      if ((st.used[day] || 0) >= R.day_cap) { (st.held[day] = st.held[day] || []).push({ title: m.title, n10: m.n10 ?? null }); continue; }
       st.used[day] = (st.used[day] || 0) + 1;
     }
     out.push(m);
   }
+  const old = pushDay(now - 7 * 86400e3, R.day_start_bj);
+  for (const d of Object.keys(st.used)) if (d < old) delete st.used[d];
   return out;
 }
 
-// 上一个推送日攒下的，合成一条
+// 上一个推送日攒下的，合成一条（按十年几次从少到多，只列标题）
 export function digest(st, now, startH = 8) {
   const day = pushDay(now, startH), out = [];
   for (const d of Object.keys(st.held || {}).sort()) {
     if (d >= day) continue;
-    const xs = st.held[d]; delete st.held[d];
-    if (xs.length) out.push({ key: `digest:${d}`, title: `没推的 ${xs.length} 件（${d.slice(5)}）`, body: xs.slice(0, 12).map(x => "· " + x).join("\n") + (xs.length > 12 ? "\n……" : ""), cap: false });
+    const xs = st.held[d].map(x => typeof x === "string" ? { title: x, n10: null } : x)
+      .sort((a, b) => (a.n10 == null) - (b.n10 == null) || (a.n10 || 0) - (b.n10 || 0));
+    delete st.held[d];
+    if (xs.length) out.push({ key: `digest:${d}`, title: `没推的 ${xs.length} 件（${d.slice(5)}）`, body: xs.slice(0, 12).map(x => "· " + x.title).join("\n") + (xs.length > 12 ? "\n……" : ""), pri: 3, cap: false });
   }
   return out;
 }
