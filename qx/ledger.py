@@ -71,30 +71,44 @@ def fetch_factset(log=print):
     log(f"  FactSet：新 {n} 篇（共 {len(rows)}）")
 
 
+AUCTION_COLS = ["date", "pub", "type", "term", "oterm", "tips", "frn", "cusip", "btc", "yield", "indirect", "amt"]
+
+
+def _v(x):
+    """Fiscal Data 缺的值是字符串 "null"。"""
+    return "" if x in (None, "", "null") else x
+
+
 def fetch_auctions(log=print):
+    """财政部 Fiscal Data 的拍卖结果。存原始期限（续发的 "9-Year 10-Month" 记成 10-Year）、是不是通胀保值（TIPS）和浮动利率（FRN）。
+    只存有投标倍数的（公布了结果的）；每次往回多取 30 天，补上当时还没出结果的那几场。"""
     from qx.fetch import get
     rows = _rows(AUCTION_CSV)
-    since = max((r["date"] for r in rows), default="2008-01-01")
+    if rows and "oterm" not in rows[0]:
+        rows = []                                                     # 2026-10-28 以前存的没有原始期限和 TIPS 标记：整份重取
+    since = (pd.Timestamp(max((r["date"] for r in rows), default="2008-01-01")) - pd.Timedelta(days=30)).strftime("%Y-%m-%d")
     have = {(r["date"], r["cusip"]) for r in rows}
     page, n = 1, 0
     while True:
-        u = (f"{FISCAL}?fields=auction_date,security_type,security_term,cusip,bid_to_cover_ratio,high_yield,indirect_bidder_accepted,offering_amt"
+        u = (f"{FISCAL}?fields=auction_date,security_type,security_term,original_security_term,inflation_index_security,floating_rate,cusip,"
+             f"bid_to_cover_ratio,high_yield,indirect_bidder_accepted,offering_amt"
              f"&filter=auction_date:gt:{since}&sort=auction_date&page%5Bsize%5D=1000&page%5Bnumber%5D={page}")
         j = json.loads(get(u, timeout=90, ua=UA_NAMED))
         for x in j.get("data") or []:
             k = (x["auction_date"], x["cusip"])
-            if k in have or x.get("security_type") not in ("Note", "Bond"):
+            if k in have or x.get("security_type") not in ("Note", "Bond") or not _v(x.get("bid_to_cover_ratio")):
                 continue
-            rows.append({"date": x["auction_date"], "pub": x["auction_date"], "type": x["security_type"], "term": x["security_term"], "cusip": x["cusip"],
-                         "btc": x.get("bid_to_cover_ratio") or "", "yield": x.get("high_yield") or "", "indirect": x.get("indirect_bidder_accepted") or "",
-                         "amt": x.get("offering_amt") or ""})
+            rows.append({"date": x["auction_date"], "pub": x["auction_date"], "type": x["security_type"], "term": x["security_term"],
+                         "oterm": _v(x.get("original_security_term")) or x["security_term"], "tips": _v(x.get("inflation_index_security")),
+                         "frn": _v(x.get("floating_rate")), "cusip": x["cusip"], "btc": _v(x.get("bid_to_cover_ratio")), "yield": _v(x.get("high_yield")),
+                         "indirect": _v(x.get("indirect_bidder_accepted")), "amt": _v(x.get("offering_amt"))})
             have.add(k)
             n += 1
         if page >= int((j.get("meta") or {}).get("total-pages") or 1):
             break
         page += 1
         time.sleep(1)
-    _write(AUCTION_CSV, ["date", "pub", "type", "term", "cusip", "btc", "yield", "indirect", "amt"], sorted(rows, key=lambda r: (r["date"], r["cusip"])))
+    _write(AUCTION_CSV, AUCTION_COLS, sorted(rows, key=lambda r: (r["date"], r["cusip"])))
     log(f"  美债拍卖：新 {n} 场（共 {len(rows)}）")
 
 
@@ -108,15 +122,17 @@ def fetch_all(log=print):
 
 # ================================================================ 读
 def auctions(t, terms=("10-Year", "30-Year", "2-Year")):
-    """长端拍卖：最近一场的投标倍数，在同期限自己全部历史里的位置（低 = 需求弱）。"""
-    rs = [r for r in _rows(AUCTION_CSV) if r["pub"] <= pd.Timestamp(t).strftime("%Y-%m-%d") and r.get("btc")]
+    """长端拍卖：最近一场的投标倍数，在同期限自己全部历史里的位置（低 = 需求弱）。
+    只看普通国债：按原始期限分（新发和续发放在一起），不含通胀保值国债（TIPS）和浮动利率国债（FRN）。"""
+    day = pd.Timestamp(t).strftime("%Y-%m-%d")
+    rs = [r for r in _rows(AUCTION_CSV) if r["pub"] <= day and _v(r.get("btc")) and r.get("tips") != "Yes" and r.get("frn") != "Yes"]
     out = []
     for term in terms:
-        g = [r for r in rs if r["term"] == term]
+        g = [r for r in rs if (r.get("oterm") or r["term"]) == term]
         if len(g) < 20:
             continue
         b = np.array([float(r["btc"]) for r in g])
-        out.append(dict(term=term, date=g[-1]["date"], btc=b[-1], pos=float((b[:-1] < b[-1]).mean()), n=len(b), yld=g[-1]["yield"]))
+        out.append(dict(term=term.replace("-Year", " 年期"), date=g[-1]["date"], btc=b[-1], pos=float((b[:-1] < b[-1]).mean()), n=len(b), yld=g[-1]["yield"]))
     return out
 
 
@@ -153,7 +169,7 @@ def rows(D, t):
         x = _fred_last(D, k, t)
         out.append(dict(chain=chain, name=nm, value=f"{x[1]:,.2f}{unit}" if x else "缺（FRED 还没取到）", asof=x[0] if x else "", src="FRED " + k, next=nxt))
     for a in auctions(t):
-        out.append(dict(chain="流动性", name=f"{a['term']} 美债拍卖投标倍数", value=f"{a['btc']:.2f}（同期限历史里 {a['pos'] * 100:.0f}% 的位置）", asof=a["date"], src="财政部 Fiscal Data", next="看时间轴"))
+        out.append(dict(chain="流动性", name=f"{a['term']}美债拍卖投标倍数", value=f"{a['btc']:.2f}（同期限历史里 {a['pos'] * 100:.0f}% 的位置）", asof=a["date"], src="财政部 Fiscal Data", next="看时间轴"))
     out.append(dict(chain="资本开支预期", name="云厂商资本开支和自由现金流", value="缺：SEC 接口要联系邮箱（用户给了 SEC_CONTACT 才接）", asof="", src="SEC XBRL", next="财报后"))
     out.append(dict(chain="存储", name="存储价格、GPU 租金、token 价格、韩国出口", value="没有免费可自动化的数，只放新闻链接", asof="", src="—", next="—"))
     return out

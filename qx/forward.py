@@ -43,7 +43,7 @@ def lines(D, t, ctx):
             if j is not None and len(j):
                 now.append(f"日本 30 年国债 {j.iloc[-1]:.2f}%（{j.index[-1].strftime('%m-%d')}）")
             for a in LG.auctions(t)[:2]:
-                now.append(f"{a['term']} 拍卖投标倍数 {a['btc']:.2f}，同期限历史里 {a['pos'] * 100:.0f}% 的位置（{a['date']}）")
+                now.append(f"{a['term']}美债拍卖投标倍数 {a['btc']:.2f}，同期限历史里 {a['pos'] * 100:.0f}% 的位置（{a['date']}）")
         elif lid == "industry":
             for r in LG.rows(D, t):
                 if r["chain"] in ("芯片", "资本开支预期", "AI 需求") and not r["value"].startswith("缺"):
