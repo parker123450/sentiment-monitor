@@ -113,7 +113,7 @@ def rows(D, live=None, now=None):
             if len(c) < 2:
                 continue
             r = _ret(D, s)
-            lv = float(r.iloc[-WIN:].std()) if r is not None and len(r) > 60 else None
+            lv = float(r.std()) if r is not None and len(r) > 60 else None           # 长期日波动：全部历史（原则 2，不用最近 2520 天这种滚动窗口）
             q = (live or {}).get(s)
             last, prev = (q["p"], q.get("pc") or float(c.iloc[-1])) if q else (float(c.iloc[-1]), float(c.iloc[-2]))
             chg = (last - prev) * 100 if s in C.BP else (np.log(last / prev) if last > 0 and prev > 0 else None)
