@@ -175,7 +175,7 @@ def auto():
     try:
         happen.archive()                                # 新闻标题、议息会概率存档
     except Exception as e:
-        log(f"  ! 存档出错：{e}")
+        log(f"  ! 存档出错：{type(e).__name__}")
     cands = []
     try:
         cands = flash.run(log=log)                      # 快讯：取、去重、打标签、"第一次"；回补跑完以后才给推送候选
@@ -201,7 +201,7 @@ def auto():
     try:
         notify.pull_feedback(log=log)                   # 页面发来的试用记录
     except Exception as e:
-        log(f"  ! 试用记录没取到：{e}")
+        log(f"  ! 试用记录没取到：{type(e).__name__}")
     ok, data = build(check=check, write=write)
     if os.environ.get("WORKER_URL"):                    # 有 Worker 时：推规则、各市场时刻和少见表，取回它每 5 分钟攒的快讯
         try:
@@ -212,7 +212,7 @@ def auto():
     try:
         notify.push(data, ok, log=log, flash=cands)
     except Exception as e:
-        log(f"  ! 推送出错：{e}")
+        log(f"  ! 推送出错：{type(e).__name__}")
     files = archive_chains(fetch.read_state())
     with open(os.path.join(ROOT, "data", "out", "upload.txt") if files else os.devnull, "w") as f:
         f.write("\n".join(files))
