@@ -135,6 +135,21 @@ def _basket_z_series(D, members, t):
     return pd.concat(zs, axis=1).median(axis=1).dropna() if zs else None
 
 
+def _basket_index(D, members, t):
+    """篮子的等权指数（第 2 类"之后 20 天"用）：每天取当天有数的成员对数涨跌的平均，累加。
+    成员上市晚的从它有数那天起才算进来；价高的成员不多占权重；不同市场休市的日子只算开着的成员。"""
+    rs = []
+    for m in members:
+        s = _close(D, m, t)
+        if s is None or (s <= 0).any():
+            continue
+        rs.append(np.log(s).diff().rename(m))
+    if not rs:
+        return None
+    r = pd.concat(rs, axis=1).mean(axis=1).dropna()
+    return np.exp(r.cumsum())
+
+
 def _health_series(D, p, t):
     """配对信用读数的 20 日"健康度"：−（20 日变化 ÷ 自己全部历史里 20 日变化的标准差），up_is_stress=False 的不取负。"""
     s = NR._series(D, p["id"], t)
@@ -162,7 +177,9 @@ def class2(D, t, replay_years=2):
             continue
         flag = (np.sign(j.b) != np.sign(j.h)) & ((j.b - j.h).abs() >= DIV_GAP)
         ep = episodes(flag)
-        price = pd.concat([(_close(D, m, t)) for m in b["members"] if _close(D, m, t) is not None], axis=1).mean(axis=1).dropna()
+        price = _basket_index(D, b["members"], t)
+        if price is None:
+            continue
         for d in ep:
             if d >= t - pd.Timedelta(days=365 * replay_years):
                 r = fwd(price, [d], up=bool(j.h.get(d, 0) > 0))
@@ -172,7 +189,7 @@ def class2(D, t, replay_years=2):
             continue
         bnow, hnow = float(j.b.iloc[-1]), float(j.h.iloc[-1])
         up = hnow > 0                                                # 信用在变好、股价在跌 → 看股价跟上信用（偏多）；反过来偏空
-        st = fwd(price, [d for d in ep if d < j.index[-1]], up=up)
+        st = fwd(price, [d for d in ep if d < j.index[-1] and bool(j.h.get(d, 0) > 0) == up], up=up)   # 历史同类：只算同方向的
         why = (f"{b['name']} 20 日折算 {bnow:+.1f}，{p['name']}的 20 日健康度 {hnow:+.1f}："
                + ("信用在变好，股价却在跌" if up else "信用在变差，股价却在涨") + f"（差 {abs(bnow - hnow):.1f}）。")
         out.append(_card(2, b["id"], f"{b['name']}：{'信用变好、股价没跟' if up else '信用变差、股价没跟'}", why,
