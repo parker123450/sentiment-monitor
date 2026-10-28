@@ -23,13 +23,16 @@
    - 点 K 线某一天，能看那天存下的新闻。
 7. **试用记录**：每天点一下，看哪块真有用。
 
-推送（ntfy，也可以加企业微信群机器人、Bark）推新出现的"今天要知道的"、快讯的"第一次"和扩散、数据断了、自检没过；每天最多 6 条（北京 08:00 起算），十年少见的不占名额，超了的第二天早上合成一条。
+推送（ntfy，也可以加企业微信群机器人、Bark）推新出现的"今天要知道的"、快讯的"第一次"和扩散、新满足的机会和风险卡（一直满足的不重推）、三种走向里某一条的信号先出现、数据断了、自检没过；每天最多 6 条（北京 08:00 起算），十年少见的不占名额，超了的第二天早上合成一条。有 Worker 时所有推送都经 Worker 的 /push，上限和去重只在一处算。
 
 ## 第四轮：交易员雷达（radar 分支，2026-10-27 起，验收通过、用户同意后才合进 main）
 
 - **快讯**（第 1 步，`qx/flash.py`，口径第九节）："今天要知道的"下面。路透经 TradingView 和谷歌新闻取，加 CNBC、MarketWatch、金融时报、Seeking Alpha、日经亚洲、美联储、韩联社、华尔街见闻；按 `登记/entities.toml` 打公司和六条线的标签，观察名单的"第一次"和多家同时报道会推送。
 - **市场在交易什么、各市场一行**（第 2 步，`qx/narrative.py`、`qx/markets.py`、`qx/coverage.py`，口径第十节）：页面第一屏；扫描范围约 190 个标的，K 线里其余的标的点了才加载。
-- **Worker**（`worker/`）：Cloudflare 上每 5 分钟取快讯和开盘中市场的价格，页面打开时现取。要用户注册 Cloudflare、加 Secret 以后才部署（`worker-setup.yml` 建库，`worker.yml` 测试和部署）。
+- **小信号、仓位、推演链**（第 3 步，`qx/smallsignal.py`、`qx/positioning.py`，口径第十一节，登记表 `登记/chains.toml`）：第一屏"小信号"，冷门市场先动、仓位挤在哪边（CFTC、SOXL 份额、空头、认沽认购、AAII）、推演链走到哪一环；`python run.py replay` 回放。
+- **机会和风险卡**（第 4 步，`qx/radar.py`、`qx/earn.py`，口径第十二节）：6 类卡，每张五栏，写"情景，不是买卖建议"；第 2 类回放最近 2 年、第 4 类最近 4 个季度。
+- **前瞻和 AI 账本**（第 5 步，`qx/forward.py`、`qx/timeline.py`、`qx/ledger.py`，口径第十三节）：六条线、未来 6 个月时间轴、三种走向（原文加密在 `cards/scenarios/`）、账本。
+- **Worker**（`worker/`）：Cloudflare 上每 5 分钟取快讯和开盘中市场的价格，页面打开时现取。要用户注册 Cloudflare、加 Secret 以后才部署（`worker-setup.yml` 建库，`worker.yml` 测试和部署）。推送规则、打标签和 Python 读同一组样例对拍（`worker/test/fixtures/`，自检和 `npm test` 都跑）。
 - **数据源实测**（第 0 步）：`tools/probe.py`、`docs/数据源实测.md`。
 
 ## 怎么跑
@@ -44,6 +47,9 @@
 | `python run.py backfill` | 快讯回补过去 30 天（约 3 小时；跑完才推"第一次"） |
 | `python run.py pushtest` | 测试推送：正文写发送时间，看手机上的到达时间 |
 | `python run.py rules` | 导出给 Worker 的规则 `data/out/rules.json` |
+| `python run.py replay [起] [止]` | 小信号和仓位回放（每天截到那天重算），明细加密存 `data/private/replay.csv` |
+| `python run.py seal-scenarios` | 本机 `../判断/scenarios/*.json`（三种走向原文，不进仓库）加密成 `cards/scenarios/*.enc` |
+| `python run.py earn-refresh` | 财报反应：2026-10-28 以前按"前 504 天"算日度波动的行，按全部历史重算（别和正在写这个文件的进程同时跑） |
 | `cd worker && npm test` | Worker 的测试（不用装包，和 Python 对拍） |
 
 ## 放在哪
