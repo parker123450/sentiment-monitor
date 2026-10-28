@@ -80,9 +80,10 @@ def archive():
     cal = EV.load()
     fr = {(r["date"], r["meeting"]): r for r in _rows(FOMC)}
     today = datetime.now(timezone.utc).astimezone(clock.NY).date().isoformat()
-    for e in cal.get("events", []):
-        if e.get("kind") == "fomc" and e.get("pm") and not e["pm"].get("stale"):
-            fr[(today, e["date"])] = {"date": today, "meeting": e["date"], "hold": e["pm"]["hold"], "cut": e["pm"]["cut"], "hike": e["pm"]["hike"]}
+    pms = {e["date"]: e["pm"] for e in cal.get("events", []) if e.get("kind") == "fomc" and e.get("pm")} | (cal.get("fomc_pm") or {})   # 下一次和下下次（口径五.1）
+    for m, p in pms.items():
+        if not p.get("stale"):
+            fr[(today, m)] = {"date": today, "meeting": m, "hold": p["hold"], "cut": p["cut"], "hike": p["hike"]}
     _write(FOMC, ["date", "meeting", "hold", "cut", "hike"], [fr[k] for k in sorted(fr)])
 
 

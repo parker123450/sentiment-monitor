@@ -24,7 +24,11 @@ JSON_UA = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
 FED_KEEP = {"FOMC Meeting": ("fomc", "议息会（决议）"), "FOMC Press Conference": ("presser", "主席发布会"),
             "FOMC Minutes": ("minutes", "会议纪要"), "Beige Book": ("beige", "褐皮书")}
 NAMES = {"NVDA": "英伟达", "MU": "美光", "TSM": "台积电", "AVGO": "博通", "AMD": "AMD", "ASML": "阿斯麦", "AAPL": "苹果", "MSFT": "微软",
-         "GOOGL": "谷歌", "AMZN": "亚马逊", "META": "Meta", "TSLA": "特斯拉", "ORCL": "甲骨文", "CRWV": "CoreWeave", "INTC": "英特尔"}
+         "GOOGL": "谷歌", "AMZN": "亚马逊", "META": "Meta", "TSLA": "特斯拉", "ORCL": "甲骨文", "CRWV": "CoreWeave", "INTC": "英特尔",
+         "LLY": "礼来", "STM": "意法半导体", "ASX": "日月光", "UMC": "联电", "SNDK": "闪迪", "KLAC": "KLA", "LRCX": "泛林", "AMAT": "应用材料",
+         "QCOM": "高通", "TXN": "德州仪器", "ADI": "亚德诺", "NXPI": "恩智浦", "ON": "安森美", "MRVL": "迈威尔", "ARM": "Arm", "SMCI": "超微电脑",
+         "DELL": "戴尔", "HPE": "慧与", "CSCO": "思科", "IBM": "IBM", "NFLX": "奈飞", "WDC": "西部数据", "STX": "希捷", "TER": "泰瑞达", "ASML": "阿斯麦",
+         "JPM": "摩根大通", "V": "Visa", "MA": "万事达", "WMT": "沃尔玛", "COST": "好市多", "XOM": "埃克森美孚", "BRK.B": "伯克希尔", "UNH": "联合健康"}   # 一张名字表：有中文名的用中文（五样方案第五节）
 WATCH = sorted(set(SEMIS) | set(BIGTECH) | {t for v in AI.values() for t in v})
 BIG_CAP = 200e9
 TIME_N = {"time-pre-market": "盘前", "time-after-hours": "盘后"}
@@ -32,7 +36,7 @@ TIME_N = {"time-pre-market": "盘前", "time-after-hours": "盘后"}
 ECON = [
     ("United States", r"^CPI$|^Inflation Rate (YoY|MoM)$", "美国 CPI"),
     ("United States", r"^Core (CPI|Inflation Rate)", "美国核心 CPI"),
-    ("United States", r"^Non ?Farm Payrolls$", "美国非农就业"),
+    ("United States", r"(?i)^non ?farm payrolls$", "美国非农就业"),   # 纳斯达克写 Nonfarm Payrolls（10-29 核对，原来大小写对不上一直没认出）
     ("United States", r"^Unemployment Rate$", "美国失业率"),
     ("United States", r"^Core PCE Price Index", "美国核心 PCE"),
     ("United States", r"^GDP Growth Rate", "美国 GDP"),
@@ -77,7 +81,7 @@ def nasdaq_days(get, url, start, end, log):
                 ok += 1
             except Exception as e:
                 log(f"  ! 纳斯达克 {d} 没取到：{str(e)[:80]}")
-            time.sleep(0.4)
+            time.sleep(1)                                              # 数据接口每次至少隔 1 秒（口径第八节）
         d += timedelta(days=1)
     return out, ok
 
@@ -96,19 +100,37 @@ def earnings(tables):
             if (s in WATCH or (cap or 0) >= BIG_CAP) and nm not in seen:
                 seen.add(nm)
                 out.append({"date": d, "time": TIME_N.get(r.get("time"), "时间未定"), "kind": "earnings", "title": "财报", "sym": s,
-                            "name": NAMES.get(s) or nm[:24], "cap": cap, "why": "关注" if s in WATCH else "大市值", "src": "纳斯达克"})
+                            "name": NAMES.get(s) or nm, "cap": cap, "why": "关注" if s in WATCH else "大市值", "src": "纳斯达克"})
+    return out
+
+
+NASDAQ_TZ = timezone(timedelta(hours=-4))
+
+
+def econ_rows(rows, q):
+    """纳斯达克宏观日历两处口径（2026-10-29 核对，口径三.8 补）：
+    查 date=q 返回的是前一天的事件（查 2024-08-03 周六返回 8/2 的非农，查 2026-10-02 返回 10/1 的 ISM）；
+    时间一律按 UTC−4 写（夏令时结束以后 ISM 的 10:00 写成 11:00）。返回 [(row, 美东日期, utc 时刻或 None)]。"""
+    d = q - timedelta(days=1)
+    out = []
+    for r in rows:
+        m = re.match(r"^(\d{1,2}):(\d{2})$", (r.get("gmt") or "").strip())
+        utc = datetime(d.year, d.month, d.day, int(m[1]), int(m[2]), tzinfo=NASDAQ_TZ).astimezone(timezone.utc) if m else None
+        out.append((r, utc.astimezone(clock.NY).date() if utc else d, utc))
     return out
 
 
 def econ(tables):
     out, seen = [], set()
-    for d, rows in tables.items():
-        for r in rows:
+    for q, rows in tables.items():
+        for r, d, utc in econ_rows(rows, date.fromisoformat(q)):
             c, n = (r.get("country") or "").strip(), (r.get("eventName") or "").strip()
             for cc, rx, nm in ECON:
-                if c == cc and re.search(rx, n) and (d, nm) not in seen:
-                    seen.add((d, nm))
-                    out.append({"date": d, "time": ((r.get("gmt") or "").strip() + " 美东").strip(), "kind": "macro", "title": nm, "note": n, "src": "纳斯达克"})
+                if c == cc and re.search(rx, n):
+                    if (d, nm) not in seen:
+                        seen.add((d, nm))
+                        out.append({"date": d.isoformat(), "time": utc.astimezone(clock.NY).strftime("%H:%M") + " 美东" if utc else "",
+                                    "utc": utc.isoformat(timespec="minutes") if utc else None, "kind": "macro", "title": nm, "note": n, "src": "纳斯达克"})
                     break
     return out
 
@@ -143,27 +165,57 @@ def fetch(log=print, today=None):
         fe, ok["fed"] = keep_old({"fomc", "presser", "minutes", "beige", "chair"}), False
     et, n1 = nasdaq_days(get, EARN_URL, start, end, log)
     ea = earnings(et) if n1 else keep_old({"earnings"})
-    mt, n2 = nasdaq_days(get, ECON_URL, start, end, log)
-    ma = econ(mt) if n2 else keep_old({"macro"})
+    mt, n2 = nasdaq_days(get, ECON_URL, start + timedelta(days=1), end + timedelta(days=1), log)   # 查 q 得到 q 前一天的事件
+    ma = [e for e in econ(mt) if start.isoformat() <= e["date"] <= end.isoformat()] if n2 else keep_old({"macro"})
     ok.update(earnings=n1, macro=n2)
     ev = sorted(fe + ea + ma + opex(start, end), key=lambda e: (e["date"], e["kind"] != "fomc", e.get("time") or "", e.get("sym") or ""))
     # 议息会加 Polymarket 的"不变 / 降 / 加"概率（只显示；取不到就沿用上次的，标 stale）
-    from qx import polymarket
-    pm = polymarket.fetch([e["date"] for e in ev if e["kind"] == "fomc"], get, log)
-    old_pm = {e["date"]: e["pm"] for e in old.get("events", []) if e.get("kind") == "fomc" and e.get("pm")}
+    from qx import polymarket, timeline
+    # 下一次和下下次议息会都取概率（口径五.1；2026-10-29 补：原来只取 14 天窗口里的那一次）。会期从时间轴的美联储日程来
+    nxt = sorted({e["date"] for e in timeline.load().get("events", []) if e.get("kind") == "fomc" and e["date"] >= start.isoformat()})[:2]
+    meetings = sorted({e["date"] for e in ev if e["kind"] == "fomc"} | set(nxt))
+    pm = polymarket.fetch(meetings, get, log)
+    old_pm = {e["date"]: e["pm"] for e in old.get("events", []) if e.get("kind") == "fomc" and e.get("pm")} | (old.get("fomc_pm") or {})
     for e in ev:
         if e["kind"] == "fomc" and (pm.get(e["date"]) or old_pm.get(e["date"])):
             e["pm"] = pm.get(e["date"]) or {**old_pm[e["date"]], "stale": True}
+    fomc_pm = {d: pm.get(d) or {**old_pm[d], "stale": True} for d in meetings if pm.get(d) or old_pm.get(d)}
     ok["polymarket"] = bool(pm)
     store.write_atomic(CAL, json.dumps({"fetched": datetime.now(timezone.utc).isoformat(timespec="minutes"), "from": start.isoformat(),
-                                        "to": end.isoformat(), "events": ev, "ok": ok}, ensure_ascii=False))
+                                        "to": end.isoformat(), "events": ev, "fomc_pm": fomc_pm, "ok": ok}, ensure_ascii=False))
     log(f"日历：{start} → {end}，美联储 {len(fe)} 件、财报 {len(ea)} 家、宏观 {len(ma)} 件（纳斯达克财报 {n1} 天、宏观 {n2} 天取到）")
     return ev
+
+
+OFFICIAL = {"gdp": "美国 GDP", "pce": "美国 PCE", "boj": "日本央行利率决议"}
+
+
+def official(start=None, end=None):
+    """时间轴从官方日程取到的 GDP、PCE、日本央行（纳斯达克那份没有或不全），换成日历的格式（2026-10-29 补：48 小时原来漏了这几样）。"""
+    from qx import timeline
+    out = []
+    for e in timeline.load().get("events", []):
+        nm = OFFICIAL.get(e.get("kind"))
+        if not nm or (start and e["date"] < start) or (end and e["date"] > end):
+            continue
+        bj, utc, tm = e.get("bj") or "", None, ""
+        if len(bj) >= 16:
+            t = datetime.fromisoformat(bj[:16]).replace(tzinfo=clock.SH)
+            utc = t.astimezone(timezone.utc).isoformat(timespec="minutes")
+            tm = t.astimezone(clock.NY).strftime("%H:%M") + " 美东"
+        out.append({"date": e["date"], "time": tm, "utc": utc, "kind": "macro", "title": nm, "note": e.get("title", ""), "src": e.get("src", "")})
+    return out
 
 
 def load():
     try:
         with open(CAL, encoding="utf-8") as f:
-            return json.load(f)
+            cal = json.load(f)
     except Exception:
-        return {"fetched": None, "events": []}
+        cal = {"fetched": None, "events": []}
+    ev = cal.get("events", [])
+    have = {(e["date"], e["title"]) for e in ev}
+    add = [e for e in official(cal.get("from"), cal.get("to")) if (e["date"], e["title"]) not in have]
+    if add:
+        cal = dict(cal, events=sorted(ev + add, key=lambda e: (e["date"], e["kind"] != "fomc", e.get("time") or "", e.get("sym") or "")))
+    return cal

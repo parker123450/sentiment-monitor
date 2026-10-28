@@ -240,6 +240,37 @@ details { margin-top: 24px; background: var(--panel); border: 1px solid var(--li
 details summary { cursor: pointer; color: var(--ink); font-weight: 600; }
 details p { margin: 8px 0; }
 footer { color: var(--ink-3); font-size: 12.5px; margin-top: 24px; }
+/* —— 前台五样（2026-10-29，口径十四） */
+.top b { color: var(--ink); font-size: 15px; }
+.tl { margin: 8px 0 0; }
+.tl .tg2 { display: block; background: var(--panel); border-left: 3px solid var(--alert); border-radius: 8px; padding: 8px 12px; margin: 6px 0; font-size: 14px; }
+.pl { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px 10px; margin: 12px 0 0; }
+.pl .ph { display: flex; align-items: center; justify-content: space-between; min-height: 44px; }
+.pl .ph h2 { margin: 0; font-size: 17px; }
+.pl .ph a { color: var(--accent); text-decoration: none; font-size: 14px; padding: 10px 0 10px 16px; }
+.pl .hl { margin: 0 0 6px; font-size: 15px; font-weight: 600; line-height: 1.55; }
+.pl .hl small, .pl .rw small { font-weight: 400; color: var(--ink-3); font-size: 13px; }
+.pl .rw { font-size: 14px; color: var(--ink-2); padding: 5px 0; border-top: 1px dashed var(--line); }
+.pl .rw b { color: var(--ink); }
+.pl .trg { font-size: 14px; padding: 6px 10px; margin: 6px 0 0; border-left: 3px solid var(--alert); background: var(--bg); border-radius: 6px; }
+.pl .trg small { display: block; color: var(--ink-3); font-size: 13px; }
+.pl table.ptab { width: 100%; border-collapse: collapse; font-size: 14px; }
+.pl table.ptab td, .pl table.ptab th { padding: 3px 4px 3px 0; text-align: right; white-space: nowrap; }
+.pl table.ptab th { color: var(--ink-3); font-weight: 500; font-size: 13px; }
+.pl table.ptab td:first-child, .pl table.ptab th:first-child { text-align: left; }
+.pl .h48 { margin: 2px 0; }
+.pl .h48 .d { font-weight: 700; color: var(--ink); }
+.kbox { margin-top: 8px; }
+.kday { font-size: 14px; color: var(--ink-2); min-height: 22px; }
+.kday b { color: var(--ink); }
+.kall { margin-top: 0; }
+.backbtn { display: block; width: 100%; margin: 16px 0 0; min-height: 44px; font: inherit; font-size: 16px; font-weight: 700; text-align: left; color: var(--accent); background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; cursor: pointer; }
+.backbtn small { display: block; font-weight: 400; color: var(--ink-3); font-size: 13px; }
+.back h2.bk { margin: 34px 0 8px; padding-top: 10px; border-top: 2px solid var(--line); font-size: 18px; }
+.bk3 { font-size: 15px; margin: 18px 0 4px; }
+small { font-size: max(12px, .9em); }
+@media (max-width: 560px) { .klegend { display: none; } }
+
 @media (max-width: 760px) {
   h1 { font-size: 23px; }
   .steps, .two, .kpc .three, .gauge { grid-template-columns: 1fr; }
@@ -251,67 +282,84 @@ footer { color: var(--ink-3); font-size: 12.5px; margin-top: 24px; }
 </head>
 <body>
 <main>
-  <div class="top"><span>交易员雷达</span><span id="clock"></span></div>
+  <div class="top"><b>交易员雷达</b><span id="clock"></span></div>
   <div class="times" id="times"></div>
   <div class="warn" id="warn" hidden></div>
-  <section class="narr" id="narr" hidden></section>
-  <section class="today" id="today"></section>
-  <section class="sig" id="sig" hidden></section>
-  <section class="cards" id="cards" hidden></section>
+  <div class="tl" id="tline" hidden></div>
 
-  <h2>K 线</h2>
+  <!-- 前台：按用户说的五样排（第四轮五样方案，口径十四）。每样一句结论、两三个数、只在有新东西时出的触发行；其余在最下面"全部" -->
+  <section class="pl" id="p-emo"></section>
+  <section class="pl" id="p-price"></section>
   <div class="kbox" id="kline">
     <div class="ktools" id="ktools"></div>
-    <div class="kwrap"><canvas id="kc" tabindex="0" role="img" aria-label="K 线、均线、成交量和副图，可点选和画线"></canvas><div class="klegend" id="klegend"></div><div class="kpl" id="kvl"></div><div class="kpl" id="ksl"></div><div class="khint" id="khint" hidden></div></div>
-    <input type="range" class="kpan" id="kpan" step="1" aria-label="左右移动 K 线（不用拖图）">
-    <details class="kread"><summary><b>怎么看</b></summary>价格区最下面的色带是每天在哪一段（<b style="color:var(--s1i)">在卖</b> → <b style="color:var(--s2i)">在怕</b> → <b style="color:var(--s3i)">投降</b> → <b style="color:var(--s4i)">在出清</b>），标签是进入某一段的那天，和恐慌高峰、恐慌退潮、二次探底、参与度先走这几个转折。副图默认是<b>恐慌热度</b>：抛售、定价、仓位、信用四行，颜色越深越恐慌，最深的是历史上最恐慌的 10%；在"副图"里可以单独看一条。鼠标移到某一天，下面的面板列出那天的事实和之后怎么走。拖动平移，Ctrl＋滚轮或双指缩放；可以自己画水平线和趋势线。</details>
-    <div class="kkey" id="kkey"></div>
-    <div class="kma" id="kma"></div>
-    <div class="kpanel" id="kpanel" aria-live="polite"></div>
+    <div class="kwrap"><canvas id="kc" tabindex="0" role="img" aria-label="K 线、200 日线、成交量和恐慌热度副图，点某一天看那天"></canvas><div class="klegend" id="klegend"></div><div class="kpl" id="kvl"></div><div class="kpl" id="ksl"></div><div class="khint" id="khint" hidden></div></div>
+    <div class="kday" id="kday" aria-live="polite"></div>
+    <details class="kall" id="kall"><summary>图的全部：怎么看、标签说明、均线、那天的事实</summary>
+      <input type="range" class="kpan" id="kpan" step="1" aria-label="左右移动 K 线（不用拖图）">
+      <div class="kread"><b>怎么看</b>：点图上某一天，图下那一行就换成那天；左右拖动平移，两指缩放（电脑上鼠标移到某一天、Ctrl＋滚轮缩放）。价格区最下面的色带是每天在哪一段（<b style="color:var(--s1i)">在卖</b> → <b style="color:var(--s2i)">在怕</b> → <b style="color:var(--s3i)">投降</b> → <b style="color:var(--s4i)">在出清</b>），空白是平稳。副图默认是<b>恐慌热度</b>：抛售、定价、仓位、信用四行，颜色越深越恐慌，最深的是历史上最恐慌的一成；"工具"里可以换副图、打开阶段标签、抛售 / 涨过头标签和别的均线。<b>gamma 转负</b>：按期权持仓估的做市商对冲会放大波动（简化模型）；<b>判断</b>：你提出判断的那天。可以自己画水平线和趋势线。</div>
+      <div class="kkey" id="kkey"></div>
+      <div class="kma" id="kma"></div>
+      <div class="kpanel" id="kpanel" aria-live="polite"></div>
+    </details>
   </div>
+  <section class="pl" id="p-flow"></section>
+  <section class="pl" id="p-expect"></section>
+  <section class="pl" id="p-fund"></section>
+  <button type="button" class="backbtn" id="backbtn">全部（后台）›<small>情绪细节、各市场、小信号和仓位、全部卡、期权、预测市场、前瞻、AI 账本、快讯、新闻和日历、我的判断、试用记录</small></button>
 
-  <section class="today" id="n48"></section>
-  <section class="fl" id="flash" hidden></section>
-
-  <h2 class="screen2">各市场</h2>
-  <section class="mk" id="mkts" hidden></section>
-
-  <h2>情绪 · 费城半导体<small id="asof"></small></h2>
-  <h1 id="hero"></h1>
-  <p class="lead" id="lead"></p>
-  <div class="gauge">
-    <div class="gbox"><h3>四条恐慌读数，今天</h3><div id="lines"></div></div>
-    <div class="gbox"><h3>最近一年：上面一条是阶段，下面四行越深越恐慌</h3><canvas id="yr" role="img" aria-label="最近一年的阶段和四条恐慌读数"></canvas></div>
-  </div>
-  <div class="steps" id="steps"></div>
-  <div class="next" id="next"></div>
-  <div class="two">
+  <!-- 后台：原来的每一块都在这里，一样不删（规则、推送照旧） -->
+  <div class="back" id="back" hidden>
+    <h2 class="bk" id="b-emo">① 情绪 · 全部<small id="asof"></small></h2>
+    <h1 id="hero"></h1>
+    <p class="lead" id="lead"></p>
+    <div class="gauge">
+      <div class="gbox"><h3>四条恐慌读数，今天</h3><div id="lines"></div></div>
+      <div class="gbox"><h3>最近一年：上面一条是阶段，下面四行越深越恐慌</h3><canvas id="yr" role="img" aria-label="最近一年的阶段和四条恐慌读数"></canvas></div>
+    </div>
+    <div class="steps" id="steps"></div>
+    <div class="next" id="next"></div>
     <div class="card"><h3>这次谁跌得最深</h3><p>按产业链分组：几只跌破 20 日线、几只今天创 20 天新低、10 天跌了多少、离一年高点跌了多少（都是中位数）。</p><table class="tbl" id="groups"></table></div>
-    <div class="card"><h3>信用压力在哪一层</h3><p>公司债比国债多要的利息（利差，基点），按评级分，越往下评级越差。看压力是不是从最差的公司往上扩散。</p><table class="tbl" id="ice"></table></div>
+    <details>
+      <summary>四条恐慌读数是怎么算的</summary>
+      <p><b>抛售恐慌</b>：28 只半导体股里，最近 5 天平均每天有几只创 20 天新低，和历史比排第几。股票池扩大到 63 只（加小盘、次新）结论一样。历次大跌的最低点前后，费城半导体、纳指、标普 84% 到 100% 的次数都到了历史上最高的 10%，2015 年前后都成立。</p>
+      <p><b>定价恐慌</b>：科技股保险（VXN）比它自己最近 3 个月的平常水平贵多少。和"自己最近"比，不和 2001、2008 年比。</p>
+      <p><b>仓位恐慌</b>（美股期权和散户）：两样取较高的：股票期权里买跌和买涨的比例比平时高多少；散户看多减看空一周里掉了多少。</p>
+      <p><b>信用压力</b>：7 只信用 ETF（高收益债、贷款、堕落天使、投资级、新兴市场债）里，有几只 20 天跑输国债到了历史最差的 10%。历次底部亮 82% 到 90%，随机日子只有三成。</p>
+      <p><b>三段</b>：历次底部都是先在卖（成分股普跌、放量），再在怕（保险变贵、散户转空），最后投降（抢买保护、信用利差走阔、VIX 冲高）。按这个顺序算，价格回升就重新开始；某一段 10 天没再亮就退回去。半导体 21 次大跌全都到了"在怕"，19 次到了"投降"。进入"投降"不等于到底，只有约两成在 3 周内见底。阶段只有研究做的样本内核对，没有前瞻检验。</p>
+      <p><b>在加速 / 在减速</b>：每条读数 5 天里升了多少、比 5 天前升得快还是慢。研究里加速度最先到顶，所以"还在升，但在减速"多半在第一、二段之间，不是最后。</p>
+      <p><b>哪一型</b>：这一段下跌以来 VIX 到过 30，是<b>宏观冲击型</b>，大盘读数都会亮；没到过，是<b>板块自己跌型</b>（像 2026 年 7 月、10 月），大盘读数看不出来，要看"比自己最近"的读数和成分股。</p>
+      <p><b>转折标签</b>：<b>恐慌高峰</b> = 一段下跌里三条读数平均最高的那天（要等恐慌退了才标出来，是事后标的）；<b>恐慌退潮</b> = 怕过以后各项读数都退了的第一天；<b>二次探底</b> = 退潮以后价格回到这一段最低点 3% 以内，但恐慌比高峰低很多；<b>参与度先走</b> = 指数离一年高点不到 3%，站上 50 日线的成分股却比最近少了 20 个百分点以上（顶部历史上测不出来，只是描述）。</p>
+      <p><b>CNN 恐慌贪婪</b>：CNN 公布的数，只作参考，不进阶段。它用的都是大盘读数，板块自己跌的时候常常看不出来。</p>
+      <p><b>抛售</b>标签：成交量是 50 日均量 2 倍以上、当天跌 2% 以上、RSI 低于 40。<b>涨过头</b>标签：RSI 高于 75、价格比 50 日线高 15% 以上，只说明涨得急。所有读数只和当天以前的历史比。这是描述，不是买卖建议。</p>
+    </details>
+
+    <h2 class="bk" id="b-price">② 价格位置 · 全部</h2>
+    <section class="narr" id="narr" hidden></section>
+    <section class="today" id="today"></section>
+    <h3 class="bk3">各市场</h3>
+    <section class="mk" id="mkts" hidden></section>
+
+    <h2 class="bk" id="b-flow">③ 买卖方结构和变化 · 全部</h2>
+    <section class="sig" id="sig" hidden></section>
+
+    <h2 class="bk" id="b-expect">④ 预期 · 全部</h2>
+    <details class="opt" id="opt"></details>
+    <details class="opt" id="pm"></details>
+    <section class="today" id="n48"></section>
+
+    <h2 class="bk" id="b-fund">⑤ 基本面 · 全部</h2>
+    <div class="card"><h3>信用压力在哪一层</h3><p>公司债比国债多要的利息（利差，基点），按评级分，越往下评级越差。和规则同一个观测日（FRED 晚一天）；5 日变化按小信号的偏高 / 少见。三年里的位置只作参考（FRED 只给 3 年）。</p><table class="tbl" id="ice"></table></div>
+    <section class="fwd" id="fwd" hidden></section>
+    <section class="ledger" id="ledger" hidden></section>
+
+    <h2 class="bk" id="b-more">全部卡、快讯、新闻和日历、我的判断</h2>
+    <section class="cards" id="cards" hidden></section>
+    <section class="fl" id="flash" hidden></section>
+    <section class="news" id="news"></section>
+    <section class="jg" id="judge"></section>
+    <section class="trial" id="trial" hidden></section>
+    <footer>数据：Yahoo（行情、VIX、VXN、成分股、信用 ETF）、CBOE（认沽认购、期权链）、AAII 散户调查、FRED（信用利差、美债收益率）、CFTC 期货持仓、纳斯达克（财报、宏观日历）、美联储和日本央行日程、美国经济分析局、Polymarket、台湾证交所、美国财政部、日本财务省、TradingView 和谷歌新闻里的路透、CNBC、华尔街见闻、CNN 恐慌贪婪。<span id="upd"></span></footer>
   </div>
-  <section class="fwd" id="fwd" hidden></section>
-
-  <details class="opt" id="opt"></details>
-  <details class="opt" id="pm"></details>
-  <section class="ledger" id="ledger" hidden></section>
-  <section class="news" id="news"></section>
-  <section class="jg" id="judge"></section>
-
-  <details>
-    <summary>四条恐慌读数是怎么算的</summary>
-    <p><b>抛售恐慌</b>：28 只半导体股里，最近 5 天平均每天有几只创 20 天新低，和历史比排第几。股票池扩大到 63 只（加小盘、次新）结论一样。历次大跌的最低点前后，费城半导体、纳指、标普 84% 到 100% 的次数都到了历史上最高的 10%，2015 年前后都成立。</p>
-    <p><b>定价恐慌</b>：科技股保险（VXN）比它自己最近 3 个月的平常水平贵多少。和"自己最近"比，不和 2001、2008 年比。</p>
-    <p><b>仓位恐慌</b>：两样取较高的：股票期权里买跌和买涨的比例比平时高多少；散户看多减看空一周里掉了多少。</p>
-    <p><b>信用压力</b>：7 只信用 ETF（高收益债、贷款、堕落天使、投资级、新兴市场债）里，有几只 20 天跑输国债到了历史最差的 10%。历次底部亮 82% 到 90%，随机日子只有三成。</p>
-    <p><b>三段</b>：历次底部都是先在卖（成分股普跌、放量），再在怕（保险变贵、散户转空），最后投降（抢买保护、信用利差走阔、VIX 冲高）。按这个顺序算，价格回升就重新开始；某一段 10 天没再亮就退回去。半导体 21 次大跌全都到了"在怕"，19 次到了"投降"。进入"投降"不等于到底，只有约两成在 3 周内见底。</p>
-    <p><b>在加速 / 在减速</b>：每条读数 5 天里升了多少、比 5 天前升得快还是慢。研究里加速度最先到顶，所以"还在升，但在减速"多半在第一、二段之间，不是最后。</p>
-    <p><b>哪一型</b>：这一段下跌以来 VIX 到过 30，是<b>宏观冲击型</b>，大盘读数都会亮；没到过，是<b>板块自己跌型</b>（像 2026 年 7 月、10 月），大盘读数看不出来，要看"比自己最近"的读数和成分股。</p>
-    <p><b>转折标签</b>：<b>恐慌高峰</b> = 一段下跌里三条读数平均最高的那天（要等恐慌退了才标出来）；<b>恐慌退潮</b> = 怕过以后各项读数都退了的第一天；<b>二次探底</b> = 退潮以后价格回到这一段最低点 3% 以内，但恐慌比高峰低很多；<b>参与度先走</b> = 指数离一年高点不到 3%，站上 50 日线的成分股却比最近少了 20 个百分点以上（顶部历史上测不出来，只是描述）。</p>
-    <p><b>CNN 恐慌贪婪</b>：CNN 公布的数，只作参考，不进阶段。它用的都是大盘读数，板块自己跌的时候常常看不出来。</p>
-    <p><b>抛售</b>标签：成交量是 50 日均量 2 倍以上、当天跌 2% 以上、RSI 低于 40。<b>涨过头</b>标签：RSI 高于 75、价格比 50 日线高 15% 以上，只说明涨得急。所有读数只和当天以前的历史比。这是描述，不是买卖建议。定义全文在仓库的 口径.md。</p>
-  </details>
-  <section class="trial" id="trial" hidden></section>
-  <footer>数据：Yahoo（行情、VIX、VXN、成分股、信用 ETF）、CBOE 认沽认购、AAII 散户调查、FRED（Moody's 和 ICE 信用利差）、CNN 恐慌贪婪。<span id="upd"></span></footer>
 </main>
 <script src="k.js"></script>
 </body>

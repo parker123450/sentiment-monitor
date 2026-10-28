@@ -61,6 +61,37 @@ def _pub(guess, seen):
     return (max(guess, seen) if seen else guess).isoformat()
 
 
+# CFTC 停摆后补发的真实公布日（CFTC 2025-12-09 公告的加快补发表，cftc.gov COT Historical Special Announcements）。
+# 原来按"周二 + 3 天"推，这 13 期提前了 1–7 周看到，回放和卡的回放用了未来数据（原则 3）。口径十一 2026-10-29 补。
+CFTC_LATE = {"2025-09-30": "2025-11-19", "2025-10-07": "2025-11-21", "2025-10-14": "2025-11-25", "2025-10-21": "2025-12-02",
+             "2025-10-28": "2025-12-05", "2025-11-04": "2025-12-09", "2025-11-10": "2025-12-10", "2025-11-18": "2025-12-12",
+             "2025-11-25": "2025-12-15", "2025-12-02": "2025-12-17", "2025-12-09": "2025-12-19", "2025-12-16": "2025-12-23",
+             "2025-12-23": "2025-12-29"}
+
+
+def _us_holidays(y):
+    """会让 CFTC 那周晚发的美国联邦假日（落在周三到周五的才有影响）：元旦、六月节（2021 起）、独立日、退伍军人节、感恩节、圣诞，周末的按观察日。"""
+    def obs(d):
+        return d - timedelta(days=1) if d.weekday() == 5 else d + timedelta(days=1) if d.weekday() == 6 else d
+    nov = date(y, 11, 1)
+    out = {obs(date(y, 1, 1)), obs(date(y, 7, 4)), obs(date(y, 11, 11)), obs(date(y, 12, 25)), nov + timedelta(days=(3 - nov.weekday()) % 7 + 21)}
+    if y >= 2021:
+        out.add(obs(date(y, 6, 19)))
+    return {d.isoformat() for d in out}
+
+
+def cftc_pub(d):
+    """截至周二 d 的那一期什么时候能看到：通常周五（d + 3）。停摆补发的用 CFTC 公布的补发日；
+    那一周周三到周五碰到美国假日的，按下周一算（宁晚不早）。"""
+    s = d.isoformat()
+    if s in CFTC_LATE:
+        return date.fromisoformat(CFTC_LATE[s])
+    hol = _us_holidays(d.year) | _us_holidays(d.year + 1)
+    if any((d + timedelta(days=k)).isoformat() in hol for k in (1, 2, 3)):
+        return d + timedelta(days=6)
+    return d + timedelta(days=3)
+
+
 def fetch_cftc(log=print):
     from qx.fetch import get
     old = _rows(CFTC_CSV)
@@ -78,7 +109,7 @@ def fetch_cftc(log=print):
         k = (x["cftc_contract_market_code"], d)
         if k in have:
             continue
-        old.append({"code": k[0], "date": d, "pub": _pub(date.fromisoformat(d) + timedelta(days=3), seen), "oi": x.get("open_interest_all", ""),
+        old.append({"code": k[0], "date": d, "pub": _pub(cftc_pub(date.fromisoformat(d)), seen), "oi": x.get("open_interest_all", ""),
                     "long": x.get("noncomm_positions_long_all", ""), "short": x.get("noncomm_positions_short_all", "")})
         have.add(k)
         n += 1
@@ -177,6 +208,9 @@ def _df(p, t, date_col="date"):
     if not r:
         return pd.DataFrame()
     d = pd.DataFrame(r)
+    if p == CFTC_CSV:                                   # 已经存下的行也按真实公布日截（取两者里晚的那个）
+        fix = d["date"].map(lambda s: cftc_pub(date.fromisoformat(s[:10])).isoformat())
+        d["pub"] = np.where(fix > d["pub"].str[:10], fix, d["pub"])
     d = d[pd.to_datetime(d["pub"].str[:10]) <= pd.Timestamp(t)]
     return d
 

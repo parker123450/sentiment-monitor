@@ -446,6 +446,16 @@ def pushes_on(now=None):
     return None
 
 
+def first_valid_from():
+    """从什么时候起，存档里的"第一次"标记算数（口径第九节那道闸，2026-10-29 补给三种走向用）：
+    回补跑完了，实时开始那一刻起就算数；没回补的，要等实时取满 30 天。还没开始实时取的返回 None。"""
+    st = _state()
+    if not st.get("live_since"):
+        return None
+    t0 = datetime.fromisoformat(st["live_since"])
+    return t0 if st.get("backfill_done") else t0 + timedelta(days=FIRST_DAYS)
+
+
 def run(log=print, now=None):
     """每次运行：取、并进、返回推送候选（"第一次"还不能推时返回空的，只标不推）。"""
     now = now or datetime.now(timezone.utc)

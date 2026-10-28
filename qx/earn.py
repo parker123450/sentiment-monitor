@@ -6,6 +6,9 @@ fetch(days)    纳斯达克财报日历（api.nasdaq.com/api/calendar/earnings?d
 反应日：盘前发的是当天；盘后发的是下一个交易日；不知道的（time-not-supplied）取当天和下一天两天合计。
 日度波动：反应日以前全部日线的对数涨跌标准差（原则 2，至少 250 天；两天合计的乘 √2）。2026-10-28 以前是"前 504 天"（滚动窗口），
                那时算的行没有 basis 列，不进第 4 类卡；refresh() 按全部历史重算（python run.py earn-refresh）。
+当时的市值（cap_then，2026-10-29 补，口径十二）：纳斯达克日历给的市值是取数那天的，回补的季度拿它筛"≥ 200 亿美元"等于用了后来的数据（原则 3）。
+               改成 取数时的市值 × 公布前一个交易日收盘 ÷ 取数那天以前最后一个收盘（股本按取数时的算，近似）。入选看 cap_then。
+               还剩的偏差：回补时只存了取数那天 ≥ 200 亿的公司，当时够、后来跌出去的没有存下（只会漏，不会多）。
 """
 import csv, json, os, time
 from datetime import date, datetime, timedelta, timezone
@@ -15,7 +18,8 @@ import numpy as np
 from qx import store
 
 CSV = os.path.join(store.HERE, "earnings_react.csv")
-COLS = ["date", "sym", "name", "time", "eps", "est", "surprise", "cap", "react_day", "ret", "dvol", "seen", "basis"]
+COLS = ["date", "sym", "name", "time", "eps", "est", "surprise", "cap", "react_day", "ret", "dvol", "seen", "basis", "cap_then", "fetched"]
+FETCHED_FIRST = "2026-10-27"            # 2026-10-29 以前存下的行都是 10-27、10-28 取的（回补和头两天的实时），取数日按这天算
 CAP_MIN = 20e9
 BASIS, MIN_HIST = "all", 250              # basis = all：日度波动按反应日以前的全部历史算；至少 250 天（和 qx/sentiment.py 的 MIN_N 一样）
 JSON_UA = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
@@ -74,6 +78,51 @@ def _react_rows(rs, d, tm):
     return ds[j], ret, float(np.std(lr, ddof=1)) * (np.sqrt(2) if two else 1.0)
 
 
+def _cap_then(rs, d, cap, fetched):
+    """公布前一个交易日的市值（近似）= 取数时的市值 × 那天收盘 ÷ 取数那天以前最后一个收盘。数据不够返回 None。"""
+    if not rs or not cap:
+        return None
+    before = [r for r in rs if r[0] < d]
+    at = [r for r in rs if r[0] <= fetched]
+    if not before or not at or not at[-1][1]:
+        return None
+    return float(cap) * before[-1][1] / at[-1][1]
+
+
+def in_sample(r):
+    """进第 4 类卡、季度计数和比较样本的行：日度波动按全部历史算，而且公布前的市值 ≥ 200 亿美元（cap_then，原则 3）。"""
+    try:
+        return r.get("basis") == BASIS and float(r.get("cap_then") or 0) >= CAP_MIN
+    except ValueError:
+        return False
+
+
+def recap(log=print, limit=None, sleep=1.0):
+    """给还没有 cap_then 的行补上公布前的市值（每个代码取一次日线；python run.py earn-recap）。"""
+    rs = rows()
+    todo = sorted({r["sym"] for r in rs if not r.get("cap_then")})
+    n = 0
+    for sym in todo[:limit]:
+        try:
+            hist = _history(sym.replace(".", "-"))
+        except Exception as e:
+            log(f"  ! {sym} 日线没取到：{type(e).__name__}（下次再算）")
+            continue
+        for r in rs:
+            if r["sym"] != sym or r.get("cap_then"):
+                continue
+            ct = _cap_then(hist, r["date"], _num(r.get("cap")), r.get("fetched") or FETCHED_FIRST)
+            r["fetched"] = r.get("fetched") or FETCHED_FIRST
+            r["cap_then"] = round(ct) if ct else "na"
+            n += 1
+        time.sleep(sleep)
+        if n and n % 200 == 0:
+            _save(rs)
+    _save(rs)
+    log(f"  财报反应：补了 {n} 行的公布前市值（{len(todo[:limit])} 个代码，还剩 {max(0, len(todo) - len(todo[:limit]))} 个）")
+    return n
+
+
 def _react(sym, d, tm):
     return _react_rows(_history(sym), d, tm)
 
@@ -124,14 +173,18 @@ def fetch(start, end=None, log=print, sleep=1.0):
                     if eps is None:
                         continue
                     try:
-                        rr = _react(sym.replace(".", "-"), d, x.get("time"))
+                        hist = _history(sym.replace(".", "-"))
+                        rr = _react_rows(hist, d, x.get("time"))
                     except Exception:
-                        rr = None
+                        hist, rr = [], None
                     if not rr:
                         continue
+                    today = datetime.now(timezone.utc).date().isoformat()
+                    ct = _cap_then(hist, d.isoformat(), cap, today)
                     out.append({"date": d.isoformat(), "sym": sym, "name": (x.get("name") or "")[:60], "time": x.get("time", ""), "eps": eps, "est": "" if est is None else est,
                                 "surprise": _num(x.get("surprise")) if _num(x.get("surprise")) is not None else "", "cap": cap, "react_day": rr[0],
-                                "ret": round(rr[1], 6), "dvol": round(rr[2], 6), "seen": rr[0], "basis": BASIS})
+                                "ret": round(rr[1], 6), "dvol": round(rr[2], 6), "seen": rr[0], "basis": BASIS,
+                                "cap_then": round(ct) if ct else "na", "fetched": today})
                     have.add((d.isoformat(), sym))
                     n += 1
                     time.sleep(sleep)

@@ -153,7 +153,7 @@ def fred(series_id):
     last = None
     for attempt, ua in enumerate(("Mozilla/5.0", "Python-urllib/3", "trading-terminal/1.0 (personal research)")):
         try:
-            lines = get(url, ua={"User-Agent": ua}).splitlines()
+            lines = get(url, timeout=10 if attempt == 0 else 60, ua={"User-Agent": ua}).splitlines()   # 第一个请求头常常干等满超时（10-27 实测每个序列白等 60 秒），先试 10 秒
             if not lines or not lines[0].lower().startswith(("observation_date", "date")):
                 raise ValueError("返回的不是数据表（可能是网页或限流）")
             rows = []

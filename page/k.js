@@ -89,10 +89,85 @@
     $("next").innerHTML = NEXT[st];
     $("groups").innerHTML = `<tr><th>组</th><th class="r">跌破 20 日线</th><th class="r">今天创新低</th><th class="r">10 天</th><th class="r">离一年高点</th></tr>` +
       RAW.groups.map(g => `<tr><td class="nm">${esc(g.name)}${g.names ? `<small>${esc(g.names)}</small>` : ""}</td><td class="r num">${g.below} / ${g.n}</td><td class="r num">${g.low}</td><td class="r num ${g.r10 < 0 ? "neg" : "pos"}">${sgn(g.r10, 1)}%</td><td class="r num">${g.dd}%</td></tr>`).join("");
-    $("ice").innerHTML = `<tr><th>评级</th><th class="r">现在</th><th class="r">一个月里</th><th>三年里的位置</th></tr>` +
+    $("ice").innerHTML = `<tr><th>评级</th><th class="r">现在（基点）</th><th class="r">5 日</th><th class="r">一个月里</th><th>三年里的位置</th></tr>` +
       Object.entries(RAW.ice).map(([k, v]) => { const p = (v.now - v.lo) / ((v.hi - v.lo) || 1) * 100, ch = v.now - v.m1;
-        return `<tr><td>${esc(k)}</td><td class="r num">${v.now}</td><td class="r num" style="color:${ch >= 30 ? tok("--alert") : tok("--ink-2")}">${sgn(ch, 0)}</td><td><div class="bar" title="三年最低 ${v.lo}，最高 ${v.hi}"><i style="width:${Math.max(3, p).toFixed(0)}%"></i></div></td></tr>`; }).join("");
+        return `<tr><td>${esc(k)}<small>截至 ${md(v.date)}</small></td><td class="r num">${v.now}</td><td class="r num">${sgn(v.c5, 0)}${v.lvl5 ? `<small style="color:var(--alert)">${v.lvl5}</small>` : ""}</td><td class="r num">${sgn(ch, 0)}</td><td><div class="bar" title="三年最低 ${v.lo}，最高 ${v.hi}"><i style="width:${Math.max(3, p).toFixed(0)}%"></i></div></td></tr>`; }).join("");
   })();
+
+  // ---------- 前台五样（第四轮五样方案，qx/front.py；口径十四）：每样一句结论、两三个数、只在有新东西时出的触发行
+  (function front() {
+    const FR = RAW.front; if (!FR || FR.err) return;
+    const d2 = s => s ? `${+s.slice(5, 7)}/${+s.slice(8, 10)}` : "";
+    const n0 = x => x == null ? "—" : Math.round(x).toLocaleString("en-US");
+    const s1 = x => x == null ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(1);
+    const s0 = x => x == null ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(Math.round(x));
+    const head = (id, no, nm) => `<div class="ph"><h2>${no} ${nm}</h2><a href="#b-${id}" data-back="b-${id}">全部 ›</a></div>`;
+    const trg = xs => (xs || []).map(x => `<div class="trg">${esc(x.title)}${x.why ? `<small>${esc(x.why)}</small>` : ""}</div>`).join("");
+    const put = (id, html) => { const el = $("p-" + id); if (el) el.innerHTML = html; };
+    const T = FR.trig || {};
+    // 顶上：判断卡（只在错的条件第一次出现、要人看的事两个交易日内）
+    const tl = $("tline"), J = FR.judge || [];
+    if (tl && J.length) { tl.hidden = false; tl.innerHTML = J.map(x => `<a class="tg2" href="#b-more" data-back="b-more">${esc(x.title)} → 我的判断</a>`).join(""); }
+    // ① 情绪
+    { const E = FR.emo; let h = head("emo", "①", "情绪");
+      if (E) {
+        const reg = E.regime === 2 ? `，板块自己跌（这一段 VIX 最高 ${E.vixmax}，没到 30）` : E.regime === 1 ? `，宏观冲击（这一段 VIX 最高到过 ${E.vixmax}）` : "";
+        h += `<p class="hl">${E.stage ? `费城半导体${esc(E.name)}（${d2(E.since)} 起第 ${E.ndays} 个交易日）${reg}` : "费城半导体平稳：没在跌"}${E.changed ? "　<b style=\"color:var(--alert)\">今天变的</b>" : ""}<small>　阶段没有前瞻检验</small></p>`;
+        const r = E.read || {}, b = v => v == null ? "—" : v >= 90 ? `<b>${Math.round(v)}</b>` : Math.round(v);
+        h += `<div class="rw">恐慌读数（分位，100 = 历史上最恐慌）：抛售 ${b(r.sell)} · 定价 ${b(r.price)} · 仓位 ${b(r.pos)} · 信用 ${b(r.credit)}</div>`;
+        h += `<div class="rw">大盘保险：VIX ${E.vix}（历史第 ${E.vix_pct} 分位）· 1 个月 ÷ 3 个月 ${E.t3}（≥1 是倒挂）</div>`;
+      }
+      put("emo", h + trg(T.emo)); }
+    // ② 价格位置
+    { let h = head("price", "②", "价格位置"); const P = FR.pos || [], S = P.find(x => x.k === "^SOX");
+      if (S) h += `<p class="hl">费城半导体离一年高点 ${s1(S.dd)}%（${d2(S.hi_date)} 收盘 ${n0(S.hi)}）；收盘 ${n0(S.close)}，在 200 日线${S.d200 >= 0 ? "上方" : "下方"} ${Math.abs(S.d200).toFixed(1)}%${S.d200 < 0 ? "；在线下时，60 天内再跌一大段的比例历来高 7–8 个百分点（只说风险，不说方向）" : ""}</p>`;
+      if (P.length) h += `<table class="ptab"><tr><th></th><th>离一年高点</th><th>离 200 日线</th></tr>${P.map(x => `<tr><td>${esc(x.name)}</td><td class="num">${s1(x.dd)}%</td><td class="num">${s1(x.d200)}%${x.below_since ? `<small>（${d2(x.below_since)} 跌破，第 ${x.below_days} 天）</small>` : ""}</td></tr>`).join("")}</table>`;
+      const N = FR.ends;
+      if (N) { const m = xs => xs.map(([n, z]) => `${esc(n)} ${s1(z)}`).join("、");
+        h += `<div class="rw">${N.main ? `<b>主线：${esc(N.main.name)}</b>（领跌，配的${esc(N.main.pair.name)}${esc(N.main.pair.level)}）；` : ""}最弱：<b>${esc(N.lo.name)}</b>（20 日跌了平常波动的 ${Math.abs(N.lo.z).toFixed(1)} 倍：${m(N.lo.members)}）· 最强：<b>${esc(N.hi.name)}</b>（${s1(N.hi.z)}）</div>`; }
+      put("price", h + trg(T.price)); }
+    // ③ 买卖方结构和变化
+    { let h = head("flow", "③", "买卖方结构和变化"); const F = FR.flow;
+      if (F) {
+        const ch = (F.changed || []).map(x => x.runs ? `${esc(x.market)}${esc(x.word)}（之前连挤 ${x.runs} 期）` : `${esc(x.market)}新${esc(x.word)}`);
+        const byWord = {}; for (const x of F.still || []) (byWord[x.word] = byWord[x.word] || []).push(x);
+        const st = Object.entries(byWord).map(([w, xs]) => `${xs.map(x => `${esc(x.market)}（第 ${x.runs} 期）`).join("、")}还${esc(w)}${xs.every(x => x.dir === xs[0].dir) && xs[0].dir ? "，这一期都在" + xs[0].dir : ""}`);
+        const calm = (F.calm || []).map(x => `${esc(x.market)}${esc(x.word)}`);
+        h += `<p class="hl">期货仓位（CFTC ${d2(F.asof)} 那期，${d2(F.pub)} 公布）：${[...ch, ...st, ...calm].join("；") || "没有挤在一边的市场"}</p>`;
+        const ns = F.nums || [];
+        if (ns.length) h += `<div class="rw">${ns.map(x => `${esc(x.market)} ${x.prev == null ? "" : x.prev + "% → "}<b>${x.now}%</b>${x.pos == null ? "" : `（历史位置 ${Math.round(x.pos * 100)}%）`}`).join(" · ")}<small>　投机净多 ÷ 总持仓</small></div>`;
+      }
+      put("flow", h + trg(T.flow)); }
+    // ④ 预期
+    { let h = head("expect", "④", "预期"); const M = FR.m1 || [], S = M.find(x => x.name === "费城半导体");
+      if (S) h += `<p class="hl">期权给费城半导体接下来一个月定价上下各约 ${S.m}%（约 ${n0(S.lo)}–${n0(S.hi)}）${M.filter(x => x !== S).map(x => `，${esc(x.name.replace(" 500", "").replace(" 100", ""))} ${x.m}%`).join("")}<small>　检验过：能衡量幅度，只说幅度，不说方向</small></p>`;
+      const F = FR.fomc || [];
+      if (F.length) h += `<div class="rw">议息会：${F.map(x => `${d2(x.date)} 不变 ${Math.round(x.hold * 100)}%、降息 ${Math.round(x.cut * 100)}%、加息 ${Math.round(x.hike * 100)}%${x.stale ? "（上次取到的）" : ""}`).join("；")}<small>　Polymarket</small></div>`;
+      const H = FR.h48 || [];
+      if (H.length) h += `<div class="rw"><b>接下来 48 小时</b>（北京时间）${H.map(d => `<div class="h48"><span class="d">${esc(d.day)}</span> ${d.items.map(x => `${esc(x.at)} ${esc(x.text)}`).join("；")}</div>`).join("")}</div>`;
+      const R = FR.react;
+      if (R) h += `<div class="rw">财报反应：${esc(R.word)}已报 ${R.n} 家，好消息不涨 ${R.bad}、坏消息不跌 ${R.good}（好消息不涨占 ${R.share}%${R.past_n ? `，以往 ${R.past_n} 季 ${R.past_lo}–${R.past_hi}%` : ""}）</div>`;
+      put("expect", h + trg(T.expect)); }
+    // ⑤ 基本面
+    { let h = head("fund", "⑤", "基本面"); const E = FR.season, W = FR.tw, C = FR.credit || [], Y = FR.y10;
+      const hot = C.filter(x => x.lvl20 || (x.lvl5 && x.up5)).map(x => ({ x, f: Math.min(x.lvl20 ? x.f20 : 1, x.lvl5 && x.up5 ? x.f5 : 1) })).sort((a, b) => a.f - b.f).slice(0, 2).map(o => o.x);
+      const cw = hot.length ? `信用利差在走阔：${hot.map(x => x.lvl20 ? `${esc(x.name)} 20 日 ${s0(x.c20)} 基点（${x.lvl20}）` : `${esc(x.name)} 5 日 ${s0(x.c5)} 基点（${x.lvl5}）`).join("、")}（FRED ${d2(hot[0].date)}）` : "信用利差五档都没有偏高的变化";
+      h += `<p class="hl">${E ? `${esc(E.word)}已报 ${E.n} 家（市值 ≥200 亿美元），${E.beat} 家超预期` : ""}${W ? `；台积电 ${+W.ym.slice(5)} 月营收同比 ${s1(W.yoy)}%` : ""}；${cw}</p>`;
+      const nm = x => `${esc(x.name)} ${n0(x.now)}${x.lvl20 ? `（20 日 ${s0(x.c20)}，${x.lvl20}）` : x.lvl5 ? `（5 日 ${s0(x.c5)}，${x.lvl5}）` : x.c20 != null ? `（20 日 ${s0(x.c20)}）` : `（5 日 ${s0(x.c5)}）`}`;
+      const lowq = C.filter(x => ["单 B", "BB", "CCC"].includes(x.name)), ig = C.find(x => x.name === "投资级");
+      if (C.length) h += `<div class="rw">融资环境（基点，FRED ${d2(C[0].date)}）：${lowq.map(nm).join(" · ")}<br>${ig ? nm(ig) : ""}${Y ? ` · 10 年美债 ${Y.now}%（20 日 ${s0(Y.c20)} 基点）` : ""}</div>`;
+      if (E && E.med != null) h += `<div class="rw">超预期幅度：中位 ${s1(E.med)}%${E.ai_n ? `；AI 链 ${E.ai_n} 家里 ${E.ai_beat} 家超预期` : ""}</div>`;
+      put("fund", h + trg(T.fund)); }
+  })();
+  // 全部（后台）：点"全部 ›"或最下面的按钮打开，跳到那一组
+  function openBack(id) {
+    const bk = $("back"); if (!bk) return;
+    if (bk.hidden) { bk.hidden = false; $("backbtn").hidden = true; dispatchEvent(new Event("resize")); }
+    const el = id && $(id); if (el) el.scrollIntoView({ block: "start" });
+  }
+  document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("[data-back]"); if (a) { e.preventDefault(); openBack(a.dataset.back); } });
+  if ($("backbtn")) $("backbtn").addEventListener("click", () => openBack("b-emo"));
+  if (/^#b-/.test(location.hash)) openBack(location.hash.slice(1));
 
   // ---------- 今天要知道的（规则在 口径.md 第三节；文字在 qx/watch.py 写好，这里只排版）
   (function today() {
@@ -207,14 +282,20 @@
   function times() {
     const el = $("times"), ck = $("clock"); if (!el) return;
     if (ck) ck.textContent = "北京 " + bjd(Date.now());
-    const parts = [`状态 <b>${bjd(RD.built || Date.now())}</b>（GitHub，约 15 分钟一次）`];
+    const FR = RAW.front || {}, age = Math.max(0, Math.round((Date.now() - (RD.built || Date.now())) / 60e3));
+    const ago = age < 1 ? "刚刚" : age < 60 ? age + " 分钟前" : age < 1440 ? Math.floor(age / 60) + " 小时前" : Math.floor(age / 1440) + " 天前";
+    const d2 = s => s ? `${+s.slice(5, 7)}/${+s.slice(8, 10)}` : "";
+    const parts = [`<span class="${age > 40 ? "stale" : ""}">状态 ${ago}（${bjd(RD.built || Date.now())}）</span>`];
     if (LIVE && LIVE.prices) {
       const P = LIVE.prices.p || {}, by = {};
       for (const r of RD.mkts || []) for (const x of r.items) { const q = P[x.s]; if (q && q.at && r.open) by[r.market] = Math.max(by[r.market] || 0, q.at * 1000); }
       const ps = Object.entries(by).map(([m, t]) => `${esc(m)} 截至 ${bj(t)}${Date.now() - t > 30 * 60e3 ? "" : `，延迟约 ${Math.max(0, Math.round((Date.now() - t) / 60e3))} 分钟`}`);
-      if (ps.length) parts.unshift("价格 " + ps.join("；"));
-    } else parts.push(RD.live ? `<span class="stale">实时部分取不到${LIVE_ERR ? "（" + esc(LIVE_ERR) + "）" : ""}，显示的是 15 分钟一次的状态</span>` : "实时部分还没接（Cloudflare 建好以后有）");
-    el.innerHTML = parts.join(" · ");
+      if (ps.length) parts.push("价格 " + ps.join("；"));
+    } else if (RD.live) parts.push(`<span class="stale">实时价格取不到${LIVE_ERR ? "（" + esc(LIVE_ERR) + "）" : ""}，显示的是 15 分钟一次的状态</span>`);
+    const asof = [`美股截至 ${d2(RAW.asof)} 收盘`];
+    if ((FR.credit || []).length) asof.push(`信用利差截至 ${d2(FR.credit[0].date)}`);
+    if (FR.flow) asof.push(`CFTC ${d2(FR.flow.asof)} 那期`);
+    el.innerHTML = parts.join(" · ") + "<br>" + asof.join(" · ");
   }
   (function narr() {
     const N = RD.narr, el = $("narr"); if (!N || !el) return;
@@ -251,7 +332,14 @@
   times(); mkts(); live();
   setInterval(() => { times(); }, 30e3);
   setInterval(live, 60e3);
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) live(); });
+  // 页面开着放久了，回到前台时整页重新载入（2026-10-29）：生成超过 20 分钟、在线、这台设备记住了钥匙（不用再输密码），5 分钟最多一次
+  const stale = () => { try { return Date.now() - (RD.built || Date.now()) > 20 * 60e3 && navigator.onLine && window.QX_KEY && localStorage.getItem("qx-page-key")
+    && Date.now() - (+sessionStorage.getItem("qx-reload") || 0) > 5 * 60e3; } catch (e) { return false; } };
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    if (stale()) { try { sessionStorage.setItem("qx-reload", Date.now()); } catch (e) {} location.reload(); return; }
+    live();
+  });
 
   // ---------- 小信号和仓位（第四轮第 3 步，qx/smallsignal.py、qx/positioning.py；口径.md 第十一节）
   (function sig() {
@@ -372,7 +460,7 @@
 
   // ---------- K 线（照「科技情绪全景」）
   const KL = (function () {
-    const LS = "qx-kline-v1", LSD = "qx-draw-v1";
+    const LS = "qx-kline-v2", LSD = "qx-draw-v1";          // v2（2026-10-29）：前台默认只画 200 日线、色带、恐慌热度副图
     const ld = (k, dflt) => { try { const v = JSON.parse(localStorage.getItem(k) || "null"); return v == null ? dflt : v; } catch (e) { return dflt; } };
     const sv = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
     const SYMS = (RAW.chart || []).filter(s => s.rows && s.rows.length > 30);
@@ -380,7 +468,7 @@
     const MA_COL = { 5: ["#c98a00", "#e8b23a"], 10: ["#c2457a", "#ed93b1"], 20: ["#6250d6", "#a49cf0"], 50: ["#2a78d6", "#5b9be6"], 100: ["#178f66", "#3cc794"], 200: ["#d9561f", "#f08a5d"] };
     const XCOL = [["#7a6f5c", "#b5a98f"], ["#4d7c8a", "#86b6c4"], ["#8a5a44", "#c9967e"], ["#5c6b2e", "#a3b56a"]];
     const SUBS = [["heat", "恐慌热度（四行色块）"], ["fomc", "下次议息会降息概率"], ["sell", "抛售恐慌"], ["price", "定价恐慌"], ["pos", "仓位恐慌"], ["credit", "信用压力"], ["rsi", "RSI"], ["vix", "VIX"], ["t3", "VIX 期限结构"], ["breadth", "成分股广度"], ["none", "不显示"]];
-    const cfg = Object.assign({ sym: SYMS[0].k, n: 252, mas: DEF_MA.slice(), on: { 5: 0, 10: 0, 20: 1, 50: 1, 100: 0, 200: 1 }, sub: "heat", mk: true, smk: true, bg: true, sw: true, redUp: false }, ld(LS, {}));
+    const cfg = Object.assign({ sym: SYMS[0].k, n: 252, mas: DEF_MA.slice(), on: { 5: 0, 10: 0, 20: 0, 50: 0, 100: 0, 200: 1 }, sub: "heat", mk: false, smk: false, bg: true, sw: false, redUp: false }, ld(LS, {}));
     if (!SYMS.some(s => s.k === cfg.sym)) cfg.sym = SYMS[0].k;
     if (ld(LS, null) == null && window.innerWidth < 560) cfg.n = 126;      // 手机第一次打开默认 6 个月
     if (!SUBS.some(s => s[0] === cfg.sub)) cfg.sub = "heat";
@@ -426,7 +514,7 @@
       const TK = { peak: [{ t: "恐慌高峰", side: "turn", col: "fear" }], ebb: [{ t: "恐慌退潮", side: "risk", st: 4 }], retest: [{ t: "二次探底", side: "turn", col: "violet", ol: 1 }], lead: [{ t: "参与度先走", side: "risk", col: "watch", ol: 1 }] };
       if (cfg.mk) for (const [d, k] of RAW.turns || []) for (const m of TK[k] || []) add(barDate(d), Object.assign({}, m));
       if (cfg.smk) for (const [d, w] of cur.opt || []) add(barDate(d), { t: "gamma " + w, side: w === "转负" ? "turn" : "risk", col: w === "转负" ? "alert" : "ok", ol: 1 });
-      for (const [d, t] of cur.judge || []) add(barDate(d), { t, side: "risk", col: "accent" });
+      if (cfg.mk) for (const [d, t] of cur.judge || []) add(barDate(d), { t, side: "risk", col: "accent" });   // 判断日只在打开标签时画（判断卡和雷达分开）
     }
     const view = { n: 252, end: 0 };
     const G = { W: 300, H: 400, L: 2, R: 240, pH: 280, vTop: 290, vH: 60, sTop: 360, sH: 100, barW: 1, first: 0, i0: 0, i1: 0, lo: 0, hi: 1, sub: null };
@@ -742,18 +830,24 @@
         <div class="kpc"><h4>区间里的标签</h4>${sigs.length ? `<div class="chips">${sigs.join("")}</div>` : "<p>没有。</p>"}</div>
         <div class="kpc"><h4>延伸到今天</h4>${b < L ? `<div class="big num">${fmtP(pNow)}</div><p>现价 ${fmtP(B[L].c)}，在线${dNow >= 0 ? "上方" : "下方"} ${fmt(Math.abs(dNow), 1)}%</p>` : "<p>终点就是最新一天。</p>"}</div></div>`;
     }
+    function dayLine(i) {
+      const el = $("kday"), b = B[i]; if (!el || !b) return;
+      const pv = B[i - 1], ch = pv ? (b.c / pv.c - 1) * 100 : null, vr = hasVol && isFinite(V50[i]) && V50[i] > 0 ? b.v / V50[i] : null;
+      el.innerHTML = `那一天：<b>${+b.d.slice(5, 7)}/${+b.d.slice(8, 10)} 周${"日一二三四五六"[new Date(b.d + "T12:00:00").getDay()]}</b> 收 <b class="num">${fmtP(b.c)}</b>${ch == null ? "" : `，<b${cP(ch)}>${sgn(ch, 1)}%</b>`}${vr == null ? "" : `，量是 50 日均量的 ${fmt(vr, 1)} 倍`}${i === B.length - 1 ? "<small>　点图上哪天，这一行就换成那天</small>" : ` <button type="button" class="jd" data-act="latest">回到最新一天</button>`}`;
+    }
     function panel() {
       const el = $("kpanel"); let html;
       if (previewI != null && !(sel && sel.type === "draw")) { el.innerHTML = dayPanel(previewI); return; }
       if (sel && sel.type === "draw") { const dw = draws().find(x => x.id === sel.id); html = dw ? (dw.type === "h" ? hPanel(dw) : tPanel(dw)) : null; if (!dw) sel = null; }
       if (!html) html = dayPanel(sel && sel.type === "day" ? clampI(sel.i) : B.length - 1);
       el.innerHTML = html;
+      dayLine(previewI != null ? previewI : sel && sel.type === "day" ? clampI(sel.i) : B.length - 1);
     }
     let toolsOpen = matchMedia("(min-width: 700px)").matches;     // 手机上默认收起（第四轮验收：工具栏 370 px 把图挤出两屏），宽屏默认展开
     function toolbar() {
       const on = c => c ? " on" : "";
       $("ktools").innerHTML = `
-        <div class="kgrp ksyms" role="group" aria-label="品种">${(RAW.kmore || []).length ? `<select class="kmore" id="kmore" aria-label="扫描范围里的其他标的"><option value="">更多（${RAW.kmore.length} 个）…</option>${RAW.kmore.map(x => `<option value="${esc(x.k)}"${x.k === cfg.sym ? " selected" : ""}>${esc(x.cls ? x.cls + " · " : "")}${esc(x.n)}</option>`).join("")}</select>` : ""}${SYMS.filter(s => !s.more).map(s => `<button type="button" class="kbtn${on(s.k === cfg.sym)}" data-sym="${esc(s.k)}">${esc(s.n)}</button>`).join("")}</div>
+        <div class="kgrp ksyms" role="group" aria-label="品种"><b style="font-size:15px">${esc((SYMS.find(s => s.k === cfg.sym) || {}).n || "")}</b><select class="kmore" id="kmore" aria-label="换品种"><option value="">换品种 ›</option><optgroup label="常看">${SYMS.filter(s => !s.more).map(s => `<option value="${esc(s.k)}">${esc(s.n)}</option>`).join("")}</optgroup>${[...new Set((RAW.kmore || []).map(x => x.cls || "其他"))].map(c => `<optgroup label="${esc(c)}">${RAW.kmore.filter(x => (x.cls || "其他") === c).map(x => `<option value="${esc(x.k)}">${esc(x.n)}</option>`).join("")}</optgroup>`).join("")}</select></div>
         <details class="kmt" id="kmt"${toolsOpen ? " open" : ""}><summary>工具：时间范围、画线、均线、副图</summary><div class="ktools2">
         <div class="kgrp" role="group" aria-label="时间范围">${[[63, "3月"], [126, "6月"], [252, "1年"], [756, "3年"], [0, "全部"]].map(([n, t]) => `<button type="button" class="kbtn${on(cfg.n === n)}" data-rng="${n}">${t}</button>`).join("")}<button type="button" class="kbtn" data-zoom="0.8" aria-label="放大">＋</button><button type="button" class="kbtn" data-zoom="1.25" aria-label="缩小">－</button></div>
         <div class="kgrp" role="group" aria-label="画线工具"><span class="kl">画线</span>${[["pick", "点选"], ["h", "水平线"], ["t", "趋势线"]].map(([k, t]) => `<button type="button" class="kbtn${on(tool === k)}" data-tool="${k}">${t}</button>`).join("")}<button type="button" class="kbtn" data-act="clear">${clearArm ? "再点一次确认" : "清除画线"}</button></div>
@@ -776,7 +870,7 @@
     async function loadMore(k) {
       const x = (RAW.kmore || []).find(y => y.k === k); if (!x) return null;
       const have = SYMS.find(s => s.k === k); if (have) return have;
-      const r = await fetch("k/" + x.f, { cache: "force-cache" }); if (!r.ok) throw new Error("HTTP " + r.status);
+      const r = await fetch("k/" + x.f + (x.v ? "?v=" + x.v : ""), { cache: "force-cache" }); if (!r.ok) throw new Error("HTTP " + r.status);   // 带上最后一根日线的日期，旧缓存不会冒充新图
       let txt;
       if (window.QX_KEY) {
         const b = new Uint8Array(await r.arrayBuffer()), key = await crypto.subtle.importKey("raw", window.QX_KEY, "AES-GCM", false, ["decrypt"]);
@@ -808,6 +902,7 @@
         toolbar(); schedule();
       }
     });
+    $("kday").addEventListener("click", e => { if (e.target.closest("[data-act=latest]")) { sel = null; previewI = null; setRange(cfg.n); panel(); schedule(); } });
     $("kpanel").addEventListener("click", e => { const t = e.target.closest("button[data-act]"); if (!t) return;
       if (t.dataset.act === "del") { allDraws[cfg.sym] = draws().filter(x => x.id !== t.dataset.id); saveDraws(); sel = null; panel(); schedule(); }
       if (t.dataset.act === "latest") { sel = null; setRange(cfg.n); panel(); schedule(); } });

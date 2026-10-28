@@ -76,7 +76,7 @@ def write_k(D, site_dir=None, password=None, preview_dir=None):
         if preview_dir:
             os.makedirs(os.path.join(preview_dir, "k"), exist_ok=True)
             open(os.path.join(preview_dir, "k", f), "w", encoding="utf-8").write(txt)
-        out.append({"k": x["k"], "n": x["n"], "f": f, "cls": coverage.CLASS.get(s, "")})
+        out.append({"k": x["k"], "n": x["n"], "f": f, "v": D[s].index[-1].strftime("%Y%m%d"), "cls": coverage.CLASS.get(s, "")})   # v：最后一根日线，页面按它取，旧缓存不会冒充新图
     return out
 
 
@@ -122,15 +122,24 @@ def group_facts(D, R):
     return out
 
 
-def ice(D):
+def ice(D, t=None):
+    """信用分档利差（家在基本面"融资环境"，2026-10-29）。和规则用同一个观测日：FRED 次一个观测日才能用（smallsignal.series）。
+    5 日变化的偏高 / 少见按口径十一；三年里的位置只放后台（FRED 只给 3 年，是滚动的，不进规则）。"""
+    from qx import smallsignal as SS
+    t = pd.Timestamp(t) if t is not None else None
     out = {}
     for sid, nm in ICE:
         if sid not in D:
             continue
-        d = D[sid]["c"]
-        d3 = d[d.index >= d.index[-1] - pd.Timedelta(days=3 * 365)]
-        out[nm] = dict(now=_num(d.iloc[-1] * 100, 0), m1=_num(d.iloc[-21] * 100, 0), lo=_num(d3.min() * 100, 0), hi=_num(d3.max() * 100, 0),
-                       date=d.index[-1].strftime("%Y-%m-%d"))
+        s, _ = SS.series(D, sid, t) if t is not None else (D[sid]["c"].dropna(), True)
+        if s is None or len(s) < 22:
+            continue
+        ch5 = SS.change(s, True, SS.N5)
+        f5 = SS.rarity(ch5)
+        d3 = s[s.index >= s.index[-1] - pd.Timedelta(days=3 * 365)]
+        out[nm] = dict(sid=sid, now=_num(s.iloc[-1] * 100, 0), m1=_num(s.iloc[-21] * 100, 0), c5=_num(ch5.iloc[-1], 0), f5=_num(f5, 4),
+                       lvl5=SS._level(f5, False), up=bool(ch5.iloc[-1] > 0),
+                       lo=_num(d3.min() * 100, 0), hi=_num(d3.max() * 100, 0), date=s.index[-1].strftime("%Y-%m-%d"))
     return out
 
 
@@ -257,5 +266,11 @@ def build(D, aaii, R, write=False):
     wu, wt = os.environ.get("WORKER_URL", "").strip(), os.environ.get("WORKER_READ_TOKEN", "").strip()
     radar["live"] = {"url": wu, "token": wt} if wu and wt else None          # 只读令牌，放在加密页里（口径.md 第十节）
     radar["built"] = int(datetime.now(timezone.utc).timestamp() * 1000)
-    return dict(flash=fl, radar=radar, asof=days[-1].strftime("%Y-%m-%d"), updated=now.strftime("%Y-%m-%d %H:%M"), today=today(D, R, opt, hap, jud), judge=jud["cards"], fb=notify.feedback_topic() or None, options=opt, happen={k: hap[k] for k in ("news", "pm", "calendar", "day")}, chart=ch, daily=daily, turns=turns,
-                groups=group_facts(D, R), ice=ice(D), cnn=cnn(), status=status(D, aaii, meta), stnames=NAMES, momwords=MOM_WORDS)
+    td, ic = today(D, R, opt, hap, jud), ice(D, days[-1])
+    try:
+        from qx import front as FR                         # 前台五样（第四轮五样方案，口径十四）：只挑已算好的结果按五样摆
+        fr = FR.build(D, R, radar, td, hap, ic, events.load())
+    except Exception as e:
+        fr = {"err": type(e).__name__}
+    return dict(flash=fl, radar=radar, front=fr, asof=days[-1].strftime("%Y-%m-%d"), updated=now.strftime("%Y-%m-%d %H:%M"), today=td, judge=jud["cards"], fb=notify.feedback_topic() or None, options=opt, happen={k: hap[k] for k in ("news", "pm", "calendar", "day")}, chart=ch, daily=daily, turns=turns,
+                groups=group_facts(D, R), ice=ic, cnn=cnn(), status=status(D, aaii, meta), stnames=NAMES, momwords=MOM_WORDS)

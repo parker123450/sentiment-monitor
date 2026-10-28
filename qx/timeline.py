@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
 
-from qx import store, events as EV
+from qx import clock, store, events as EV
 
 OUT = os.path.join(store.HERE, "timeline.json")
 REG = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "登记", "timeline.toml")
@@ -118,16 +118,16 @@ def nasdaq(get, today, days=35):
         if d.weekday() >= 5:
             continue
         try:
-            j = json.loads(get(EV.ECON_URL.format(d.isoformat()), timeout=30, ua=EV.JSON_UA))
-            for r in ((j.get("data") or {}).get("rows") or []):
+            q = d + timedelta(days=1)                                 # 查 q 得到 q 前一天的事件（events.econ_rows）
+            j = json.loads(get(EV.ECON_URL.format(q.isoformat()), timeout=30, ua=EV.JSON_UA))
+            for r, ed, utc in EV.econ_rows((j.get("data") or {}).get("rows") or [], q):
                 for country, rx, nm in EV.ECON:
                     if nm in SKIP:
                         continue
                     if r.get("country") == country and re.search(rx, r.get("eventName") or ""):
-                        # 纳斯达克的时间字段口径不清（10-27 核对过对不上），美国的按惯例写美东时间，日韩央行只写日期
-                        bj = _bj(d, "10:00" if "ISM" in nm else "08:30") if country == "United States" else d.isoformat()
-                        out.append(dict(date=d.isoformat(), bj=bj, kind="macro", title=nm, src="纳斯达克宏观日历", url=EV.ECON_URL.format(d.isoformat())))
-                        last_macro = d
+                        bj = utc.astimezone(clock.SH).strftime("%Y-%m-%d %H:%M") if utc else ed.isoformat()
+                        out.append(dict(date=ed.isoformat(), bj=bj, kind="macro", title=nm, src="纳斯达克宏观日历", url=EV.ECON_URL.format(q.isoformat())))
+                        last_macro = max(last_macro, ed)
                         break
         except Exception:
             pass

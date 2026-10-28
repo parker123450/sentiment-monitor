@@ -231,7 +231,7 @@ def class3(D, t, pos):
 # ================================================================ 第 4 类
 def class4(D, t, days=EARN_DAYS, quarters=4):
     from qx import earn
-    rs = [r for r in earn.rows() if r.get("seen") and pd.Timestamp(r["seen"]) <= t and r.get("basis") == earn.BASIS]   # 日度波动按全部历史算的行（口径第十二节 2026-10-28）
+    rs = [r for r in earn.rows() if r.get("seen") and pd.Timestamp(r["seen"]) <= t and earn.in_sample(r)]   # 日度波动按全部历史算、公布前市值 ≥ 200 亿（口径十二 2026-10-28、10-29）
     out, rep = [], []
     for r in rs:
         try:

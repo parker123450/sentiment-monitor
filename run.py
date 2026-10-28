@@ -17,6 +17,7 @@
   python run.py rules           # 导出给 Worker 的规则（data/out/rules.json）
   python run.py seal-scenarios  # 本机 ../判断/scenarios/*.json（三种走向原文，不进仓库）加密成 cards/scenarios/*.enc
   python run.py replay [起] [止] # 小信号和仓位回放（每天只用截到那天能看到的数据重算），写 data/private/replay.csv（加密存，日志只打条数）
+  python run.py earn-recap      # 财报反应：给没有"公布前市值"的行补上（入选 ≥ 200 亿美元看它，口径十二 2026-10-29）
   python run.py earn-refresh    # 财报反应：2026-10-28 以前按"前 504 天"算日度波动的行，按全部历史重算（别和正在写这个文件的进程同时跑）
 """
 import csv, json, os, shutil, sys, time
@@ -181,9 +182,14 @@ def auto():
         cands = flash.run(log=log)                      # 快讯：取、去重、打标签、"第一次"；回补跑完以后才给推送候选
     except Exception as e:
         log(f"  ! 快讯出错：{type(e).__name__}")
+    try:                                                # 快讯取到就推，不等日线和页面（2026-10-29）
+        if notify.push_flash(cands, log=log) is not None:
+            cands = []
+    except Exception as e:
+        log(f"  ! 快讯推送出错：{type(e).__name__}（留到最后和别的一起推）")
     check = write = False
     if do["daily"] in ("us", "us_late"):
-        got = fetch.daily(log=log)
+        got = fetch.daily(log=log, full=False if do["daily"] == "us_late" else None)   # 美东 20:30 那次只补晚到的，不再全量重下（按 UTC 日期算会当成新的一天）
         st = fetch.read_state()
         if got["ok"] >= 0.8 * got["n"]:                  # 大部分没取到就不算做完，下次再来
             st["us_late" if do["daily"] == "us_late" else "us_done"] = last_us
@@ -288,6 +294,9 @@ def main():
     elif cmd == "earn-refresh":
         from qx import earn
         earn.refresh(log=log)
+    elif cmd == "earn-recap":
+        from qx import earn
+        earn.recap(log=log)
         ok = True
     elif cmd == "selftest":
         D, aaii = store.load_all()

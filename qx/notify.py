@@ -197,6 +197,26 @@ def new_cards(st, cards):
     return [] if prev is None else [c for c in cards if c["key"] not in set(prev)]
 
 
+def push_flash(flash, log=print):
+    """快讯候选取到就推（2026-10-29：原来要等下日线、生成页面都做完，交易日下日线那两次要晚 20 多分钟）。
+    上限、去重、渠道照旧，走同一个 deliver。第一次运行（还没有推送记录）不推，交给 push() 一起只记不推。"""
+    if not flash:
+        return 0
+    st = _state()
+    if st is None:
+        return None
+    now = datetime.now(timezone.utc)
+    msgs = [dict(key=x["key"], title=x["title"], body=f"{x['body']}\n（{x['src']}）", pri=4 if x["kind"] == "first" else 3) for x in flash]
+    n = 0
+    if channels() or worker_on():
+        n = deliver(msgs, st, now, log)
+    else:
+        for m in msgs:
+            st["sent"][m["key"]] = now.isoformat(timespec="minutes")
+    _save(st)
+    return n
+
+
 def push(data, ok, log=print, flash=None):
     """data：export.build 的结果；ok：自检有没有过；flash：qx.flash.run() 给的快讯候选。"""
     st = _state()

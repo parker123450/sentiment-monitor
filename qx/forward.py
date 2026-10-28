@@ -137,8 +137,12 @@ def _check(D, t, c, narr_res):
         return hit, f"{b['name']} 20 日折算 {b['z']:+.2f}"
     if k == "flash_first":
         from qx import flash
-        start = (pd.Timestamp(t, tz="UTC") - pd.Timedelta(days=c["days"])).isoformat()
-        end = (pd.Timestamp(t, tz="UTC") + pd.Timedelta(days=1)).isoformat()
+        vf = flash.first_valid_from()                       # 口径十三 2026-10-29 补：和推送同一道闸，闸没开以前的"第一次"不算
+        end_t = pd.Timestamp(t, tz="UTC") + pd.Timedelta(days=1)
+        if vf is None or end_t <= pd.Timestamp(vf):
+            return False, "快讯的“第一次”还不算数（回补没跑完，实时也没满 30 天）"
+        start = max(pd.Timestamp(t, tz="UTC") - pd.Timedelta(days=c["days"]), pd.Timestamp(vf)).isoformat()
+        end = end_t.isoformat()
         hits = [r for r in flash.load_rows() if start <= flash.visible(r) < end and any(f"{e}:{c['line']}" in r["first"].split("|") for e in c["ents"])]
         return bool(hits), (hits[0]["t"][:60] if hits else "最近没有")
     return False, "不认识的规则"
