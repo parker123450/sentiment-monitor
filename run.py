@@ -12,7 +12,7 @@
   python run.py daily           # 马上下载一次日线（不管时间）
   python run.py selftest        # 只跑自检
   python run.py pack <文件> / unpack <文件>   # data/ 下的小文件加密打包 / 解开（data 分支只放这一个加密文件）
-  python run.py backfill        # 快讯回补过去 30 天（谷歌新闻按日期搜，每分钟 1 次，约 3 小时；跑完才开始推"第一次"）
+  python run.py backfill        # 快讯回补过去 30 天（谷歌新闻按日期搜路透，每分钟 1 次，约 4 小时；按日期回来的够九成才开始推"第一次"，不然等实时取满 30 天）
   python run.py pushtest        # 测试推送：正文写发送时间，看手机上的到达时间
   python run.py rules           # 导出给 Worker 的规则（data/out/rules.json）
   python run.py seal-scenarios  # 本机 ../判断/scenarios/*.json（三种走向原文，不进仓库）加密成 cards/scenarios/*.enc
@@ -249,8 +249,7 @@ def main():
         crypt.unpack_dir(sys.argv[2], store.HERE, crypt.data_key())
         ok = True
     elif cmd == "backfill":
-        n = flash.backfill(log=log)
-        log(f"回补：{n} 次查询，跑完了，开始推\"第一次\"")
+        flash.backfill(log=log)
         ok = True
     elif cmd == "pushtest":
         ok = notify.pushtest(log=log) > 0

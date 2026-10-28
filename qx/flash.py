@@ -434,52 +434,89 @@ def set_state(**kw):
     store.write_atomic(STATE, json.dumps(st, ensure_ascii=False))
 
 
-def run(log=print, now=None):
-    """每次运行：取、并进、返回推送候选（回补没跑完时返回空的，只标不推）。"""
+def pushes_on(now=None):
+    """"第一次"从什么时候开始推（口径第九节）：回补跑完、而且谷歌新闻确实按日期给了结果；或者实时取满 30 天（那时"过去 30 天"全是实时看到的）。
+    → 原因（字符串）或 None（还只标不推）。"""
     now = now or datetime.now(timezone.utc)
+    st = _state()
+    if st.get("backfill_done"):
+        return "回补"
+    if st.get("live_since") and now - datetime.fromisoformat(st["live_since"]) >= timedelta(days=FIRST_DAYS):
+        return "实时取满 30 天"
+    return None
+
+
+def run(log=print, now=None):
+    """每次运行：取、并进、返回推送候选（"第一次"还不能推时返回空的，只标不推）。"""
+    now = now or datetime.now(timezone.utc)
+    if not _state().get("live_since"):
+        set_state(live_since=now.isoformat(timespec="minutes"))
     got = fetch_routes(now.timestamp(), log)
     new = ingest(got, now)
     log(f"  快讯：新条目 {len(new)} 条，其中打上标签的 {sum(1 for r in new if r['ents'] or r['lines'])} 条")
-    if not _state().get("backfill_done"):
+    if not pushes_on(now):
         return []
     return candidates(now)
 
 
-BACKFILL_SITES = ["reuters.com", "bloomberg.com", "wsj.com", "ft.com", "cnbc.com", "asia.nikkei.com"]
+# 回补（2026-10-28 验收时实测）：谷歌新闻 RSS 一次查询里 OR 超过 5 个左右（几个词 × 几个网站）就不认 after: before:，
+# 返回的是别的日子的稿子——原来的写法（十几个名字 × 6 个网站）一条都没按日期回来，跑完却照样记成"回补完了"。
+# 现在：只查路透（实时那边也是路透最多），每次最多 4 个名字；一天几十条的大公司两个一组、一天一查，其余四个一组、两天一查（一次最多给 100 条）。
+# 约 225 次查询，每分钟 1 次，约 4 小时。每次查询核对返回的稿子是不是在要的日子里；按日期回来的不到九成就不算回补完（还是等实时取满 30 天再推）。
+BACKFILL_SITE = "reuters.com"
+BACKFILL_HEAVY = {"microsoft", "google", "amazon", "meta", "nvidia", "oracle", "samsung", "tsmc"}
+_TICKER_OK = {"TSMC", "ASML", "SMIC", "IREN", "AMD", "AWS"}             # 全大写、但标题里就这么写的公司名
+
+
+def backfill_plan(reg, end, days=FIRST_DAYS):
+    """→ [(名字列表, 起, 止), ...]：每个观察名单主体取英文名（股票代码不要）；大公司每个取两个名字、两家一组、一天一查，其余每个取一个、四家一组、两天一查。"""
+    names = {}
+    for x in reg["ent"]:
+        if not x.get("watch"):
+            continue
+        en = [a for a in x["alias"] if re.match(r"^[\x00-\x7f]+$", a) and (not re.fullmatch(r"[A-Z]{3,5}", a) or a in _TICKER_OK)]
+        if en:
+            names[x["id"]] = [f'"{a}"' if " " in a else a for a in en[: 2 if x["id"] in BACKFILL_HEAVY else 1]]
+    heavy = [v for k, v in names.items() if k in BACKFILL_HEAVY]
+    light = [v for k, v in names.items() if k not in BACKFILL_HEAVY]
+    groups = [(sum(heavy[i:i + 2], []), 1) for i in range(0, len(heavy), 2)] + [(sum(light[i:i + 4], []), 2) for i in range(0, len(light), 4)]
+    out = []
+    for terms, step in groups:
+        for k in range(days, 0, -step):
+            a = end - timedelta(days=k)
+            out.append((terms, a, min(a + timedelta(days=step), end)))
+    return out
 
 
 def backfill(days=FIRST_DAYS, log=print, sleep=60, now=None):
-    """回补过去 30 天：谷歌新闻按日期搜（after: before:），观察名单的主体分几组，每分钟 1 次请求，跑完为止。"""
+    """回补过去 30 天（谷歌新闻按日期搜路透，见上面的说明），跑完为止。按日期回来的够九成才记"回补完了"，"第一次"从那以后开始推。"""
     from qx.fetch import get, UA
     now = now or datetime.now(timezone.utc)
-    reg = registry(bj_day(now))
-    W = [x for x in reg["ent"] if x.get("watch")]
-    chunks, cur = [], []
-    for x in W:
-        names = [a for a in x["alias"] if re.match(r"^[\x00-\x7f]+$", a) and len(a) > 3][:2]   # 英文别名，太短的（股票代码）不搜
-        if len(" OR ".join(cur + names)) > 180:
-            chunks.append(cur)
-            cur = []
-        cur += [f'"{a}"' if " " in a else a for a in names]
-    if cur:
-        chunks.append(cur)
-    site = " OR ".join("site:" + s for s in BACKFILL_SITES)
-    n = 0
-    for d in range(days, 0, -1):
-        day = (now - timedelta(days=d)).date()
-        got = []
-        for ch in chunks:
-            q = f"({' OR '.join(ch)}) ({site}) after:{day} before:{day + timedelta(days=1)}"
-            try:
-                xml = get(GN.format(q=urllib.parse.quote(q)), timeout=30, ua=UA)
-                got += parse_rss(xml, {"id": "R3:backfill", "kind": "rss", "src": ""})
-            except Exception as e:
-                log(f"  ! 回补 {day} 没取到：{type(e).__name__}")
-            n += 1
-            time.sleep(sleep)
-        new = ingest({"回补": [dict(x, src=x["src"]) for x in got]}, now, backfill=True)
-        log(f"  回补 {day}：{len(new)} 条")
-    set_state(backfill_done=now.isoformat(timespec="minutes"), backfill_queries=n)
+    plan = backfill_plan(registry(bj_day(now)), now.date(), days)
+    n = bad = err = capped = 0
+    for terms, a, b in plan:
+        q = f"({' OR '.join(terms)}) site:{BACKFILL_SITE} after:{a} before:{b}"
+        try:
+            got = parse_rss(get(GN.format(q=urllib.parse.quote(q)), timeout=30, ua=UA), {"id": "R3:backfill", "kind": "rss", "src": ""})
+            days_ = [datetime.fromtimestamp(x["pub"], timezone.utc).date() for x in got if x.get("pub")]
+            inw = sum(a - timedelta(days=1) <= d <= b for d in days_)          # 时区差一天以内算在窗口里
+            if got and inw < 0.5 * len(got):
+                bad += 1                                                        # 谷歌新闻没按日期给（这一次不算数）
+            capped += len(got) >= 100
+            ingest({"回补": got}, now, backfill=True)
+        except Exception as e:
+            err += 1
+            log(f"  ! 回补 {a} 没取到：{type(e).__name__}")
+        n += 1
+        if n % 20 == 0:
+            log(f"  回补：{n}/{len(plan)} 次查询（没按日期 {bad}，没取到 {err}，到 100 条封顶 {capped}）")
+        time.sleep(sleep)
+    good = n and (bad + err) <= 0.1 * n
+    if good:
+        set_state(backfill_done=now.isoformat(timespec="minutes"), backfill_queries=n, backfill_bad=bad, backfill_err=err, backfill_capped=capped)
+    else:
+        set_state(backfill_failed=now.isoformat(timespec="minutes"), backfill_queries=n, backfill_bad=bad, backfill_err=err, backfill_capped=capped)
+    log(f"  回补：{n} 次查询，没按日期 {bad}，没取到 {err}，封顶 {capped}；" + ("算回补完了，开始推\"第一次\"" if good else "不算回补完（等实时取满 30 天再推）"))
     return n
 
 
@@ -511,8 +548,8 @@ def sync(log=print, extra_state=None):
         return False
     try:
         st = {"rules": {"flash": rules(), "push": notify.rules()}, **(extra_state or {})}
-        if _state().get("backfill_done"):
-            st["backfill_done"] = _state()["backfill_done"]
+        if pushes_on():                                       # Worker 也按同一条：回补完了或者实时取满 30 天才推"第一次"
+            st["backfill_done"] = _state().get("backfill_done") or _state().get("live_since")
         _worker("/state", st)
         last = {}
         for r in sorted(load_rows(), key=visible):
