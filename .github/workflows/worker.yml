@@ -44,8 +44,14 @@ jobs:
         run: |
           [ -n "$CLOUDFLARE_API_TOKEN" ] && [ -n "$CLOUDFLARE_ACCOUNT_ID" ] || { echo "还没加 Cloudflare 的 Secret"; exit 1; }
           grep -q 'TO-BE-SET' wrangler.toml && { echo "先跑 worker-setup.yml 建 D1"; exit 1; } || true
-      - run: npx --yes wrangler@4 d1 migrations apply qx-radar --remote
-      - run: npx --yes wrangler@4 deploy
+      # wrangler 的输出里有 workers.dev 子域名（带账号名）和账号 ID：公开仓库的日志谁都能看，只打"好了 / 没成功"，出错时打遮过的最后几行
+      - name: 建表、部署
+        run: |
+          mask() { sed -E 's#[A-Za-z0-9._-]+\.workers\.dev#***.workers.dev#g; s#[0-9a-fA-F]{32}#***#g; s#[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+#***@***#g'; }
+          npx --yes wrangler@4 d1 migrations apply qx-radar --remote > /tmp/m.log 2>&1 || { echo "建表没成功："; tail -n 20 /tmp/m.log | mask; exit 1; }
+          echo "建表：好了"
+          npx --yes wrangler@4 deploy > /tmp/d.log 2>&1 || { echo "部署没成功："; tail -n 20 /tmp/d.log | mask; exit 1; }
+          echo "部署：好了"
       - name: 写入令牌和推送渠道的钥匙（不回显）
         env:
           READ_TOKEN: ${{ secrets.WORKER_READ_TOKEN }}
@@ -58,5 +64,5 @@ jobs:
         run: |
           for k in READ_TOKEN WRITE_TOKEN BRIEF_TOKEN INGEST_TOKEN NTFY_TOPIC WECOM_KEY BARK_KEY; do
             v="${!k}"; [ -n "$v" ] || continue
-            printf '%s' "$v" | npx --yes wrangler@4 secret put "$k" >/dev/null && echo "写入 $k"
+            if printf '%s' "$v" | npx --yes wrangler@4 secret put "$k" > /tmp/s.log 2>&1; then echo "写入 $k"; else echo "写入 $k 没成功"; exit 1; fi
           done

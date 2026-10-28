@@ -5,6 +5,8 @@
 # GitHub 的定时用 UTC，负载高时会晚 5–30 分钟、偶尔跳过一次。新仓库的定时有时要等一阵才开始触发。
 # Secrets：PAGE_PASSWORD（网页密码，用户自己设）、DATA_KEY（加密数据的钥匙，本机 ~/.config/qx/data_key 有一份）、
 #          NTFY_TOPIC（推送频道，本机 ~/.config/qx/ntfy_topic）、FEEDBACK_TOPIC（页面发试用记录的频道，本机 ~/.config/qx/feedback_topic）。
+#          第四轮（雷达）可选，没加就是空的、相应的功能不开：WORKER_URL、WORKER_WRITE_TOKEN、WORKER_READ_TOKEN（Cloudflare Worker）、
+#          WECOM_KEY、BARK_KEY（另外两个推送渠道）、SEC_CONTACT（SEC 要的联系邮箱）。
 
 name: 每 15 分钟
 
@@ -34,8 +36,19 @@ jobs:
       DATA_KEY: ${{ secrets.DATA_KEY }}
       NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
       FEEDBACK_TOPIC: ${{ secrets.FEEDBACK_TOPIC }}
+      WORKER_URL: ${{ secrets.WORKER_URL }}
+      WORKER_WRITE_TOKEN: ${{ secrets.WORKER_WRITE_TOKEN }}
+      WORKER_READ_TOKEN: ${{ secrets.WORKER_READ_TOKEN }}
+      WECOM_KEY: ${{ secrets.WECOM_KEY }}
+      BARK_KEY: ${{ secrets.BARK_KEY }}
+      SEC_CONTACT: ${{ secrets.SEC_CONTACT }}
       GH_TOKEN: ${{ github.token }}
     steps:
+      - name: 遮住 Worker 的主机名（workers.dev 子域名里有账号，公开日志里不出现）
+        run: |
+          h=$(printf '%s' "$WORKER_URL" | sed -E 's#^[A-Za-z]+://##; s#/.*$##')
+          if [ -n "$h" ]; then echo "::add-mask::$h"; fi
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
