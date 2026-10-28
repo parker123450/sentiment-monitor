@@ -9,7 +9,7 @@
   财报：观察名单的公司，纳斯达克财报日历（只有已经公布日期的，约 1 个月内）
   手动登记的（选举、上市、融资事件）：登记/timeline.toml
 """
-import html, json, os, re, tomllib
+import html, json, os, re, time, tomllib
 from datetime import date, datetime, timedelta, timezone
 
 import pandas as pd
@@ -131,6 +131,7 @@ def nasdaq(get, today, days=35):
                         break
         except Exception:
             pass
+        time.sleep(1)                                                 # 数据接口每次至少隔 1 秒（口径第八节）
         try:
             j = json.loads(get(EV.EARN_URL.format(d.isoformat()), timeout=30, ua=EV.JSON_UA))
             for r in ((j.get("data") or {}).get("rows") or []):
@@ -139,6 +140,7 @@ def nasdaq(get, today, days=35):
                                     kind="earnings", title=f"{r.get('name') or r['symbol']} 财报", sym=r["symbol"], src="纳斯达克财报日历", url=EV.EARN_URL.format(d.isoformat())))
         except Exception:
             pass
+        time.sleep(1)
     return out, last_macro
 
 
