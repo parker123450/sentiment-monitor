@@ -35,10 +35,18 @@ NAMES = dict(COLD)
 
 
 def chains(day=None):
+    """推演链的登记表。day：只要那天在用的版本（since ≤ day、还没到 until）；不给 day 是全部版本（只给页面列登记表用）。"""
     with open(CHAINS, "rb") as f:
         R = tomllib.load(f)
     ok = lambda x: (not day or x.get("since", R["since"]) <= day) and (not x.get("until") or not day or day < x["until"])
     return dict(R, chain=[c for c in R.get("chain", []) if ok(c)])
+
+
+def chains_at(t):
+    """t 那天在用的推演链；登记以前的日子（回放）用第一版。"""
+    with open(CHAINS, "rb") as f:
+        first = tomllib.load(f)["since"]
+    return chains(max(pd.Timestamp(t).strftime("%Y-%m-%d"), first))
 
 
 def _late(k):
@@ -84,12 +92,12 @@ def _level(frac, linked):
     return "少见" if frac <= (RARE_LINKED if linked else RARE) else "偏高" if frac <= HIGH else None
 
 
-def universe():
+def universe(CH=None):
     xs = list(COLD)
     for s in C.SCAN:
         if C.CLASS.get(s) in ("利率", "汇率", "商品", "信用", "波动"):
             xs.append((s, C.NAME.get(s, s)))
-    for ch in chains()["chain"]:
+    for ch in (CH or chains())["chain"]:
         for L in ch["links"]:
             for s in L["series"]:
                 xs.append((s, NAMES.get(s) or C.NAME.get(s, s)))
@@ -120,18 +128,18 @@ def one(D, k, t):
                 asof=ch.index[-1].strftime("%Y-%m-%d"))
 
 
-def _link_of(k):
-    for ch in chains()["chain"]:
+def _link_of(k, CH=None):
+    for ch in (CH or chains())["chain"]:
         for i, L in enumerate(ch["links"]):
             if k in L["series"]:
                 return ch, i
     return None, None
 
 
-def chain_state(D, t, cache):
+def chain_state(D, t, cache, R=None):
     """每条链：每一环最近 20 个交易日里最后一次"亮"的日子；往下走到第几环；下一环看什么。"""
     t = pd.Timestamp(t)
-    R = chains()
+    R = R or chains_at(t)
     days = pd.bdate_range(end=t, periods=R["window"])
     out = []
     for ch in R["chain"]:
@@ -177,7 +185,7 @@ def firsts(t, hours=24):
     t = pd.Timestamp(t, tz="UTC") if pd.Timestamp(t).tzinfo is None else pd.Timestamp(t)
     end = (t + pd.Timedelta(days=1)).isoformat()                    # 收盘日 t 当天看到的都算
     start = (t - pd.Timedelta(hours=hours)).isoformat()
-    W = flash.watch_ids()
+    W = flash.watch_ids(max(t.strftime("%Y-%m-%d"), flash.registry()["since"]))   # 那天在用的观察名单（登记以前用第一版）
     out = []
     for r in flash.load_rows():
         v = flash.visible(r)
@@ -222,11 +230,12 @@ def compute(D, t, pos=None):
     pos = pos if pos is not None else PS.compute(D, t)
     crowd = {c["market"]: c["word"] for c in pos["crowd"]}
     sig = []
-    for k, nm in universe():
+    CH = chains_at(t)                                         # t 那天在用的推演链版本
+    for k, nm in universe(CH):
         x = one(D, k, t)
         if not x or not x["level"]:
             continue
-        ch, i = _link_of(k)
+        ch, i = _link_of(k, CH)
         nxt, against = None, False
         if ch is not None:
             st = ch["links"][i]["stress"][ch["links"][i]["series"].index(k)]
@@ -244,7 +253,7 @@ def compute(D, t, pos=None):
                         next=(f"和{ch['name']}登记的压力方向相反" if ch and against else f"{ch['name']}的下一环：{nxt['name']}（{nxt['check']}）" if nxt else
                               f"{ch['name']}的最后一环" if ch else "没有登记在推演链里"), asym=asym))
     sig.sort(key=lambda x: x["frac"])
-    return dict(asof=t.strftime("%Y-%m-%d"), signals=sig, chains=chain_state(D, t, {}), firsts=firsts(t), mismatch=mismatch(D, t))
+    return dict(asof=t.strftime("%Y-%m-%d"), signals=sig, chains=chain_state(D, t, {}, CH), firsts=firsts(t), mismatch=mismatch(D, t))
 
 
 def values(res):

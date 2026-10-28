@@ -164,7 +164,7 @@ def _health_series(D, p, t):
 
 def class2(D, t, replay_years=2):
     out, rep = [], []
-    for b in NR.registry()["basket"]:
+    for b in NR.registry_at(t)["basket"]:                           # t 那天在用的篮子版本
         if not b.get("pair"):
             continue
         p = b["pair"][0]

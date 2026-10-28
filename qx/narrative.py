@@ -27,6 +27,12 @@ def registry(day=None):
     return dict(R, basket=[b for b in R.get("basket", []) if ok(b)], control=[c for c in R.get("control", []) if ok(c)])
 
 
+def registry_at(t):
+    """t 那天在用的登记版本（since ≤ t、还没到 until）。登记以前的日子（回放）用第一版：不拿后来加的版本去算过去。"""
+    first = registry()["since"]
+    return registry(max(pd.Timestamp(t).strftime("%Y-%m-%d"), first))
+
+
 def _series(D, k, t):
     """收盘价序列截到 t（FRED 只要 t 以前的观测：第二天才公布）。HYG/IEF 这类写法是两个序列相除。"""
     if "/" in k:
@@ -83,7 +89,7 @@ def _level(frac, R):
 
 def compute(D, t):
     t = pd.Timestamp(t)
-    R = registry(t.strftime("%Y-%m-%d") if t >= pd.Timestamp(registry()["since"]) else None)   # 登记以前的日子（回放）用第一版
+    R = registry_at(t)
     out = []
     for b in R["basket"] + [dict(c, control_group=True) for c in R["control"]]:
         zs = {m: _z20(D, m, t) for m in b["members"]}
