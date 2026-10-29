@@ -116,6 +116,8 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
         bad.append(("快讯", ["第一次"]))
     if not parity_check(log):
         bad.append(("和 Worker 对拍", ["打标签、第一次或推送规则"]))
+    if not event_check(log):
+        bad.append(("期权拆财报", ["event_move"]))
     return not bad
 
 
@@ -150,6 +152,25 @@ def parity_check(log=print):
     ok &= good
     log(f"  和 Worker 对拍（推送规则 {len(C['steps'])} 步）：" + ("一致" if good else "不一致"))
     return ok
+
+
+def event_check(log=print):
+    """期权拆"财报这一下"（口径十四.9）：拿一条答案已知的曲线算回去——平常每天 2%、财报那一下 8%，
+    11-02（周一）取数，11-04 盘后发、反应日 11-05，到期日 11-06、11-13；还要认出"第一个到期日太远""只有一个到期日"拆不出来。"""
+    from datetime import date
+    from qx import cboe
+    day, ev = 0.02 ** 2, 0.08 ** 2
+    v1, v2 = 4 * day + ev, 9 * day + ev                      # 11-02 收盘到 11-06 收盘 4 个交易日，到 11-13 9 个
+    iv = lambda v, cal: round((v * 365 / cal) ** 0.5 * 100, 6)
+    c = {"date": "2026-11-02", "curve": [["2026-11-06", 4, iv(v1, 4)], ["2026-11-13", 11, iv(v2, 11)]]}
+    r = cboe.event_move(c, date(2026, 11, 5))
+    r2 = cboe.event_move(c, date(2026, 11, 5), two=True)
+    good = bool(r) and abs(r["sd"] - 0.08) < 1e-6 and abs(r["day"] - 0.02) < 1e-6 and abs(r["med"] - 0.08 * cboe.MED_Z) < 1e-6 \
+        and bool(r2) and abs(r2["sd"] - (ev + day) ** 0.5) < 1e-6 \
+        and cboe.event_move({"date": "2026-11-02", "curve": [["2026-11-20", 18, 60.0], ["2026-12-18", 46, 50.0]]}, date(2026, 11, 5)) is None \
+        and cboe.event_move({"date": "2026-11-02", "curve": [["2026-11-06", 4, 60.0]]}, date(2026, 11, 5)) is None
+    log("  期权拆财报（已知答案的曲线）：" + ("一致" if good else "不一致"))
+    return good
 
 
 def flash_check(rng, log=print, n=3):

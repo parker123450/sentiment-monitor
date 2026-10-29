@@ -260,7 +260,8 @@
     const what = e => e.kind === "earnings" ? `${esc(e.name || e.sym)} 财报` : esc(e.title);
     const extra = e => { const a = [];
       if (e.pm) a.push(`Polymarket：不变 ${pct(e.pm.hold)} · 降息 ${pct(e.pm.cut)} · 加息 ${pct(e.pm.hike)}${e.pm.stale ? "（上次的）" : ""}`);
-      if ((e.implied || []).length) a.push("期权定价：" + e.implied.map(x => `${x.sym} ±${(x.move * 100).toFixed(1)}%（到 ${x.exp}）`).join("、"));
+      if ((e.implied || []).length) a.push(e.implied[0].ev ? `期权算的财报这一下：一半机会超过 ±${(e.implied[0].move * 100).toFixed(1)}%`
+                                          : "期权定价：" + e.implied.map(x => `${x.sym} ±${(x.move * 100).toFixed(1)}%（到 ${x.exp}）`).join("、"));
       if (e.kind === "macro" && e.note) a.push(esc(e.note));
       return a.length ? `<small>${a.join("；")}</small>` : ""; };
     const short = n => String(n || "").replace(/,? (Inc\.?|Corp(oration)?\.?|Holdings?.*|N\.V\.|plc|PLC|Ltd\.?|Limited|Company.*|Technology.*|Incorporated|Co\.?)$/,"").replace(/,$/, "");
@@ -269,7 +270,7 @@
       for (const d of days) {
         const ev = C.filter(e => e.date === d), er = ev.filter(e => e.kind === "earnings");
         for (const e of ev.filter(e => e.kind !== "earnings")) out.push(`<tr><td class="d">${md(d)} ${wk(d)}<small>${esc(e.time || "")}</small></td><td>${what(e)}${extra(e)}</td></tr>`);
-        if (er.length) out.push(`<tr><td class="d">${md(d)} ${wk(d)}</td><td>财报：${er.map(e => `${esc(short(e.name || e.sym))}<span style="color:var(--ink-3)">（${esc(e.time)}${(e.implied || []).length ? "，期权定价 ±" + (e.implied[0].move * 100).toFixed(1) + "%" : ""}）</span>`).join("、")}</td></tr>`);
+        if (er.length) out.push(`<tr><td class="d">${md(d)} ${wk(d)}</td><td>财报：${er.map(e => `${esc(short(e.name || e.sym))}<span style="color:var(--ink-3)">（${esc(e.time)}${(e.implied || []).length ? "，期权：一半机会超过 ±" + (e.implied[0].move * 100).toFixed(1) + "%" : ""}）</span>`).join("、")}</td></tr>`);
       }
       return out.join("");
     }

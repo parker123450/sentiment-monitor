@@ -449,12 +449,53 @@ def intraday(log=print):
     log(f"盘中报价：{len(quotes) - len(bad)}/{len(quotes)}" + (f"（没取到 {' '.join(bad)}）" if bad else ""))
 
 
+EARN_CHAIN_DAYS, EARN_CHAIN_KEEP = 5, 40
+
+
+def earn_chain_symbols(today=None):
+    """未来 5 个交易日发财报、市值 ≥ 2,000 亿美元（events.BIG_CAP）、不在常驻名单里的公司（口径十四.9）。"""
+    import pandas as pd
+    from qx import clock, events as EV
+    d0 = pd.Timestamp(today or datetime.now(timezone.utc).astimezone(clock.NY).date())
+    end = d0 + pd.tseries.offsets.BDay(EARN_CHAIN_DAYS)
+    have = {s for s, _ in CHAIN_SYMBOLS}
+    out = {}
+    for e in EV.load().get("events", []):
+        if e.get("kind") == "earnings" and e.get("sym") and (e.get("cap") or 0) >= EV.BIG_CAP and d0 < pd.Timestamp(e["date"]) <= end and e["sym"] not in have:
+            out.setdefault(e["sym"], e.get("name") or e["sym"])
+    return sorted(out.items())
+
+
 def options(log=print, archive_dir=None):
-    """期权链：每个标的一行摘要（同一天覆盖，收盘后定下来）；archive_dir 不为空时同时把完整期权链存成 gz（收盘后一天一次）。"""
-    snaps = cboe.option_snapshots(CHAIN_SYMBOLS, os.path.join(store.HERE, OPTIONS_FILE), log=log,
-                                  latest_path=os.path.join(store.HERE, "chains_latest.json"), archive_dir=archive_dir)
+    """期权链：每个标的一行摘要（同一天覆盖，收盘后定下来）；archive_dir 不为空时同时把完整期权链存成 gz（收盘后一天一次）。
+    收盘后那一次另外取未来 5 个交易日发财报的大市值公司（摘要存 options_earn.csv，到期日曲线进 chains_latest.json 给日历、第 5 类卡用，完整链和常驻的一起存档；口径十四.9）。"""
+    latest = os.path.join(store.HERE, "chains_latest.json")
+    snaps = cboe.option_snapshots(CHAIN_SYMBOLS, os.path.join(store.HERE, OPTIONS_FILE), log=log, latest_path=latest, archive_dir=archive_dir)
     log("期权链：" + " ".join(f"{m['symbol']} iv30={m['iv30']:.1f}" for m in snaps if m.get("iv30")))
+    if archive_dir:
+        try:
+            extra = earn_chain_symbols()
+            if extra:
+                more = cboe.option_snapshots(extra, os.path.join(store.HERE, "options_earn.csv"), log=log, latest_path=latest, archive_dir=archive_dir)
+                log(f"期权链（财报前的大市值公司）：{len(more)}/{len(extra)} 个")
+            _prune_chains(latest)
+        except Exception as e:
+            log(f"  ! 财报前的期权链出错：{type(e).__name__}")
     return snaps
+
+
+def _prune_chains(p, keep=EARN_CHAIN_KEEP):
+    """chains_latest.json 里不在常驻名单、最近一次已经是 40 天以前的去掉（财报前才取的那些，不让文件一直变大）。"""
+    import pandas as pd
+    try:
+        j = json.load(open(p, encoding="utf-8"))
+    except Exception:
+        return
+    have = {s for s, _ in CHAIN_SYMBOLS}
+    cut = (pd.Timestamp.now() - pd.Timedelta(days=keep)).strftime("%Y-%m-%d")
+    k = {s: v for s, v in j.items() if s in have or str(v.get("date") or v.get("asof") or "")[:10] >= cut}
+    if len(k) < len(j):
+        store.write_atomic(p, json.dumps(k, ensure_ascii=False))
 
 
 def quick(log=print, opt=False, archive_dir=None, cal=False, fund=False):

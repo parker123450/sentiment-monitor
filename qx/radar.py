@@ -5,7 +5,7 @@
   2 信用和股价背离  篮子 20 日折算涨跌 和 配对信用的 20 日"健康度"（= −压力，按自己全部历史的 20 日变化标准差折算）方向相反，且差 ≥ 1
   3 拥挤和出清      仓位读数到"偏高"（自己历史同方向 5% 以外）标"拥挤"；之后对应价格反着走 ≥ 1 个周度波动，标"开始出清"
   4 消息反应不对称  超预期但反应日跌 ≥ 1 个日度波动："好消息不涨"；反过来"坏消息不跌"。市值 ≥ 200 亿美元、本季发财报的美股
-  5 事件定价偏差    期权给的财报幅度 ÷ 最近 4 次实际幅度中位数 ≥ 1.5 或 ≤ 0.67；Polymarket 一天变 15 个百分点以上而相关价格没动
+  5 事件定价偏差    期权给的财报幅度 ÷ 最近 4 次实际幅度中位数 ≥ 1.5 或 ≤ 0.67（2026-10-29 起两边怎么算见口径十四.9）；Polymarket 一天变 15 个百分点以上而相关价格没动
   6 跨市场传导      登记的几组：前一个按日度波动折算动了 ≥ 2，后一个之后的交易时段同向折算涨跌不到一半，标"没跟上"；休市的不算
 每张卡五栏：为什么现在、哪里算错、空间、用什么做、时间窗口。只列满足条件的，不写"还差多少"。卡上写"情景，不是买卖建议"。
 回放：第 2 类列最近 2 年，第 4 类列最近 4 个季度；第 1、3、5、6 类写"数据从几号起攒，到几号才够回放"，卡上标"还没有回放"。
@@ -292,17 +292,46 @@ def class4(D, t, days=EARN_DAYS, quarters=4):
 
 
 # ================================================================ 第 5 类
+def _num(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _react_day(d, tm):
+    """财报反应日：盘前发的当天；盘后发的、时间未定的下一个交易日（和 qx/happen.py 的日历一样）。"""
+    from qx import clock
+    r = d if tm == "盘前" else d + pd.Timedelta(days=1)
+    while not clock.is_trading_day(r.date()):
+        r += pd.Timedelta(days=1)
+    return r
+
+
+def _past_move(r, tm):
+    """过去一次财报的实际涨跌，按这家公司下一次登记的时间挑：盘前看当天（r0），盘后看下一个交易日（r1），时间未定看两天合计。"""
+    r0, r1 = _num(r.get("r0")), _num(r.get("r1"))
+    if tm == "盘前":
+        return r0
+    if tm == "盘后":
+        return r1
+    if r0 is not None and r1 is not None:
+        return r0 + r1
+    return _num(r.get("ret")) if r.get("time") == "time-not-supplied" else None
+
+
 def class5(D, t):
-    from qx import earn, events as EV, store
+    """期权给的财报幅度 ÷ 最近 4 次实际幅度的中位数（口径十二第 5 条；2026-10-29 起按十四.9 的新版本算）。"""
+    from qx import cboe, earn, events as EV, store
     out = []
     try:
         chains = json.load(open(os.path.join(store.HERE, "chains_latest.json"), encoding="utf-8"))
     except Exception:
         chains = {}
     past = {}
-    for r in earn.rows():
-        if pd.Timestamp(r["seen"]) <= t:
-            past.setdefault(r["sym"], []).append(abs(float(r["ret"])))
+    for r in sorted(earn.rows(), key=lambda r: r["date"]):
+        if pd.Timestamp(r["seen"]) <= t and pd.Timestamp(r["date"]) + pd.tseries.offsets.BDay(2) <= t:   # 当天和下一个交易日都收盘了
+            past.setdefault(r["sym"], []).append(r)
     for e in EV.load().get("events", []):
         if e.get("kind") != "earnings" or not e.get("sym"):
             continue
@@ -310,18 +339,24 @@ def class5(D, t):
         if not (t < d <= t + pd.tseries.offsets.BDay(5)):
             continue
         c = chains.get(e["sym"])
-        hist = past.get(e["sym"], [])[-4:]
-        if not c or not c.get("curve") or len(hist) < 4:
+        if not c or pd.Timestamp(str(c.get("date") or c.get("asof") or "9999")[:10]) > t:
+            continue                                                      # 期权链是 t 以后取的（原则 3）
+        tm = e.get("time")
+        two = tm not in ("盘前", "盘后")
+        react = _react_day(d, tm)
+        hist = [abs(x) for x in (_past_move(r, tm) for r in past.get(e["sym"], [])) if x is not None][-4:]
+        if len(hist) < 4:
             continue
-        exp_iv = next(((exp, iv) for exp, dte, iv in c["curve"] if pd.Timestamp(exp) >= d), None)
-        if not exp_iv:
+        em = cboe.event_move(c, react.date(), two=two)
+        if not em:
             continue
-        days = max(1, (pd.Timestamp(exp_iv[0]) - pd.Timestamp(c.get("date") or c["asof"])).days)
-        implied = exp_iv[1] / 100 * np.sqrt(days / 365)
-        ratio = implied / float(np.median(hist))
+        med = float(np.median(hist))
+        ratio = em["med"] / med
         if ratio >= IMPLIED_HI or ratio <= IMPLIED_LO:
+            which = "当天加下一天两天合计（时间未定）" if two else ("盘后发，看下一个交易日" if tm == "盘后" else "盘前发，看当天")
             out.append(_card(5, e["sym"] + e["date"], f"{e['sym']}：期权给的财报幅度{'偏大' if ratio >= 1 else '偏小'}",
-                             f"期权给 ±{implied * 100:.1f}%（到 {exp_iv[0]}），最近 4 次实际幅度中位数 {np.median(hist) * 100:.1f}%，比值 {ratio:.2f}。",
+                             f"期权算的财报这一下（拆掉平常每天的波动）：一半机会超过 ±{em['med'] * 100:.1f}%（到 {em['exp']}）；"
+                             f"最近 4 次实际幅度（{which}）中位数 {med * 100:.1f}%，比值 {ratio:.2f}。",
                              "财报后实际幅度落在两者之间。", "还没有回放（期权链从 2026-10-19 起攒）。", f"{e['sym']} 期权（跨式 / 宽跨式）", f"到 {e['date']} 财报",
                              tail(np.log(ratio) / np.log(IMPLIED_HI) * 2), t.strftime("%Y-%m-%d"), replay=False))
     return out

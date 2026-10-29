@@ -280,6 +280,43 @@ def chain_metrics(sym, j=None):
             "prob": probs(by_exp, spot), "unusual": sorted(unusual, key=lambda u: -u["usd"])[:UNUSUAL_TOP], **positioning(pos_rows, spot)}
 
 
+EVENT_NEAR = 7               # 财报反应日以后第一个到期日最多晚 7 天（没有周期权的，月度到期日里混进的平常波动和别的事太多，不拆）
+MED_Z = 0.6745               # 正态下"一半机会超过"的幅度 = 0.6745 个标准差
+
+
+def _bdays(a, b):
+    """a 收盘到 b 收盘之间的交易日数（只去掉周末）。"""
+    import numpy as np
+    return int(np.busday_count(a + timedelta(days=1), b + timedelta(days=1)))
+
+
+def event_move(c, react, two=False):
+    """期权给的"财报这一下"多大（口径十四.9）。c = chains_latest.json 里一个标的（curve = [[到期日, 天数, 平值隐含波动 %], …]），react = 反应日。
+    取反应日当天或以后的头两个到期日，按"平常每个交易日的方差不变、财报那一下单独一份"拆开：
+      总方差 V = (隐含波动)² × 自然日 / 365；平常每天 = (V2 − V1) ÷ (两个到期日之间的交易日数)；财报这一下 = V1 − 平常每天 × (取数那天到第一个到期日的交易日数)。
+    two=True（过去几次只有"当天加下一天"两天合计）：再加一天平常的方差，两边才是同一个东西。
+    拆不出来（反应日以后不到两个到期日、第一个到期日比反应日晚 7 天以上、算出来 ≤ 0）返回 None。
+    → dict(sd, med = sd × 0.6745，"一半机会超过"的幅度, day = 平常一天的标准差, exp, exp2)"""
+    import numpy as np
+    if not c or not c.get("curve"):
+        return None
+    asof = date.fromisoformat(str(c.get("date") or c["asof"])[:10])
+    after = [(date.fromisoformat(e), iv / 100) for e, dte, iv in c["curve"] if date.fromisoformat(e) >= react and date.fromisoformat(e) > asof]
+    if len(after) < 2 or (after[0][0] - react).days > EVENT_NEAR:
+        return None
+    (e1, s1), (e2, s2) = after[:2]
+    v1, v2 = s1 * s1 * (e1 - asof).days / 365, s2 * s2 * (e2 - asof).days / 365
+    n1, n12 = _bdays(asof, e1), _bdays(e1, e2)
+    if n1 <= 0 or n12 <= 0:
+        return None
+    day = (v2 - v1) / n12
+    ev = v1 - day * n1 + (day if two else 0.0)
+    if day < 0 or ev <= 0:
+        return None
+    sd = float(np.sqrt(ev))
+    return dict(sd=sd, med=sd * MED_Z, day=float(np.sqrt(day)), exp=e1.isoformat(), exp2=e2.isoformat())
+
+
 HIST_COLS = ["date", "symbol", "spot", "iv30", "term", "skew25", "pc_vol", "pc_oi", "vol", "p_dn20", "p_dn10", "p_up10", "p_up20", "p_dte", "p_sd",
              "gex", "flip", "cwall", "pwall", "magnet"]                     # 后五列 2026-10-23 加（口径.md 四）
 

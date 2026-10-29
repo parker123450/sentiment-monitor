@@ -19,6 +19,7 @@
   python run.py replay [起] [止] # 小信号和仓位回放（每天只用截到那天能看到的数据重算），写 data/private/replay.csv（加密存，日志只打条数）
   python run.py earn-recap      # 财报反应：给没有"公布前市值"的行补上（入选 ≥ 200 亿美元看它，口径十二 2026-10-29）
   python run.py earn-refresh    # 财报反应：2026-10-28 以前按"前 504 天"算日度波动的行，按全部历史重算（别和正在写这个文件的进程同时跑）
+  python run.py earn-split      # 财报反应：给旧行补上公布当天、下一个交易日分开的涨跌（第 5 类卡用，口径十四.9）
 """
 import csv, json, os, shutil, sys, time
 from datetime import datetime, timezone, timedelta
@@ -166,6 +167,7 @@ def auto():
         try:                                            # 财报反应（第四轮第 4 步第 4 类卡）：补最近 5 天
             from qx import earn
             earn.fetch(datetime.now(timezone.utc).date() - timedelta(days=5), log=log)
+            earn.split(log=log, limit=20)               # 旧行补分开的两天（口径十四.9），每天最多 20 个代码
         except Exception as e:
             log(f"  ! 财报反应出错：{type(e).__name__}")
     if do["opt"]:
@@ -297,6 +299,10 @@ def main():
     elif cmd == "earn-recap":
         from qx import earn
         earn.recap(log=log)
+        ok = True
+    elif cmd == "earn-split":
+        from qx import earn
+        earn.split(log=log)
         ok = True
     elif cmd == "selftest":
         D, aaii = store.load_all()

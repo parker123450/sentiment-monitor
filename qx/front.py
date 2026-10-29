@@ -285,7 +285,7 @@ def h48(cal, now=None):
                 s += "；期权给 " + "、".join(f"{x['sym']} ±{x['move'] * 100:.1f}%" for x in e.get("implied") or []) + "）" if e.get("implied") else "）"
             txt.append(s)
         if er:
-            nm = "、".join(short_name(e.get("name") or e.get("sym")) + (f"（期权 ±{e['implied'][0]['move'] * 100:.1f}%）" if e.get("implied") else "") for e in er)
+            nm = "、".join(short_name(e.get("name") or e.get("sym")) + (f"（期权：一半机会超过 ±{e['implied'][0]['move'] * 100:.1f}%）" if e.get("implied") else "") for e in er)
             txt.append(f"{nm} 财报")
         dt = date.fromisoformat(dd)
         out.setdefault(dd, dict(day=f"{dt.month}/{dt.day} 周{WEEK[dt.weekday()]}", items=[]))["items"].append(dict(at=lab, text="；".join(txt)))
