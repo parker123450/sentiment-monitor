@@ -445,6 +445,13 @@ def triggers(D, t, radar, today, hap, R):
             for i, x in enumerate(w["signals"]):
                 if x.get("first") == t.strftime("%Y-%m-%d"):
                     trig["fund"].append(dict(src="scen", key=f"scen:{S['id']}:{w['id']}:{i}", title=f"三种走向 · {S['name']}：{w['name']}的信号先出现（{x['text']}）· 登记的假设，不是买卖建议"))
+    # 8) 宏观公布值对预期（口径十四.10）：上一个交易日以后、到今天公布的，每个公布时刻一行，只在公布那天
+    try:
+        from qx import macro
+        for x in macro.between(tp, t):
+            trig["fund"].append(dict(src="macro", key=x["key"], title=x["title"], date=x["date"]))
+    except Exception:
+        pass
     return trig, tp.strftime("%Y-%m-%d")
 
 

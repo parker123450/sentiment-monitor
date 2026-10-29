@@ -20,6 +20,7 @@
   python run.py earn-recap      # 财报反应：给没有"公布前市值"的行补上（入选 ≥ 200 亿美元看它，口径十二 2026-10-29）
   python run.py earn-refresh    # 财报反应：2026-10-28 以前按"前 504 天"算日度波动的行，按全部历史重算（别和正在写这个文件的进程同时跑）
   python run.py earn-split      # 财报反应：给旧行补上公布当天、下一个交易日分开的涨跌（第 5 类卡用，口径十四.9）
+  python run.py macro-backfill  # 宏观公布值对预期：纳斯达克宏观日历从 2010 年起回补（约 4,400 个工作日、两次请求开始至少隔 1 秒，断了接着取；口径十四.10）
 """
 import csv, json, os, shutil, sys, time
 from datetime import datetime, timezone, timedelta
@@ -170,6 +171,11 @@ def auto():
             earn.split(log=log, limit=20)               # 旧行补分开的两天（口径十四.9），每天最多 20 个代码
         except Exception as e:
             log(f"  ! 财报反应出错：{type(e).__name__}")
+        try:                                            # 宏观公布值对预期（口径十四.10）：重取最近 5 个工作日
+            from qx import macro
+            macro.update(log=log)
+        except Exception as e:
+            log(f"  ! 宏观公布值出错：{type(e).__name__}")
     if do["opt"]:
         st["opt_ts"] = time.time()
     if do["archive"]:
@@ -303,6 +309,10 @@ def main():
     elif cmd == "earn-split":
         from qx import earn
         earn.split(log=log)
+        ok = True
+    elif cmd == "macro-backfill":
+        from qx import macro
+        macro.backfill(log=log)
         ok = True
     elif cmd == "selftest":
         D, aaii = store.load_all()
