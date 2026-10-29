@@ -104,7 +104,8 @@ def flows(D, t, pos):
     from qx import positioning as PS
     if not pos:
         return None
-    cf = [r for r in pos["readings"] if r["src"] == "CFTC"]
+    cf = [r for r in pos["readings"] if r["src"] == "CFTC" and r.get("crowd", True)]
+    on = pos.get("tff_on")                                # 往期按本期用的同一个口径算（口径十四.6：版本换了不算市场变了）
     if not cf:
         return None
     asof = max(r["asof"] for r in cf)
@@ -116,7 +117,7 @@ def flows(D, t, pos):
         dd = d - timedelta(days=7 * n)
         seen = PS.cftc_pub(dd)
         try:
-            hist.append({c["market"]: c["word"] for c in PS.compute(D, pd.Timestamp(seen))["crowd"]})
+            hist.append({c["market"]: c["word"] for c in PS.compute(D, pd.Timestamp(seen), tff=on)["crowd"]})
         except Exception:
             break
     prev = hist[0] if hist else {}
@@ -136,18 +137,22 @@ def flows(D, t, pos):
             while k - 1 < len(hist) and hist[k - 1].get(mk) == w:
                 k += 1
             still.append(dict(market=mk, word=w, runs=k))
-    prev_rows = {r["name"]: r for r in PS.compute(D, pd.Timestamp(PS.cftc_pub(d - timedelta(days=7))))["readings"] if r["src"] == "CFTC"} if hist else {}
+    prev_rows = {r["name"]: r for r in PS.compute(D, pd.Timestamp(PS.cftc_pub(d - timedelta(days=7))), tff=on)["readings"] if r["src"] == "CFTC"} if hist else {}
     nums = []
     for r in cf:
         if r["market"] in {x["market"] for x in still + changed}:
             p = prev_rows.get(r["name"])
-            nums.append(dict(market=r["market"], name=r["name"], now=r["value"], prev=p["value"] if p else None, pos=_f(r["pos"], 2) if r["pos"] is not None else None))
+            nums.append(dict(market=r["market"], name=r["name"], lab=PS.TFF[r["code"]][0] + r["who"] if r.get("tff") else r["market"],
+                             now=r["value"], prev=p["value"] if p else None, pos=_f(r["pos"], 2) if r["pos"] is not None else None))
     for x in still:
         ns = [n for n in nums if n["market"] == x["market"] and n["prev"] is not None]
         x["dir"] = None if not ns else ("加" if all((n["now"] - n["prev"]) * (1 if x["word"] == "挤在多头" else -1) > 0 for n in ns)
                                          else "减" if all((n["now"] - n["prev"]) * (1 if x["word"] == "挤在多头" else -1) < 0 for n in ns) else "有加有减")
     calm = sorted({mk for mk, w in word.items() if not hot(w) and w not in ("数据不够",) and mk not in {c["market"] for c in changed}})
-    return dict(asof=asof, pub=pub, changed=changed, still=still, nums=nums, calm=[dict(market=m, word=word[m]) for m in calm if m in ("美股", "美债", "美股波动")])
+    tff = [dict(code=r["code"], name={"13874A": "标普", "209742": "纳指"}[r["code"]], who=r["who"], now=r["value"], pos=_f(r["pos"], 2) if r["pos"] is not None else None, chg=r["chg"])
+           for r in pos["readings"] if r.get("tff") and r["code"] in ("13874A", "209742")]       # 美股期指谁在场上（TFF，口径十四.6）：常驻
+    return dict(asof=asof, pub=pub, changed=changed, still=still, nums=nums, calm=[dict(market=m, word=word[m]) for m in calm if m in ("美股", "美债", "美股波动")],
+                tff=tff, tff_on=on)
 
 
 # ================================================================ ④ 预期
@@ -423,7 +428,16 @@ def triggers(D, t, radar, today, hap, R):
                 trig[home[c["cls"]]].append(dict(src="card", key="card:" + c["key"], title=f"{c['cls_name']}：{c['title']}", why=c.get("why")))
     except Exception:
         pass
-    # 6) 三种走向的信号先出现（口径十三，first 是最近一个收盘日）
+    # 6) CFTC 周变化少见（口径十四.6）：这一期刚看到（前一个交易日还看不到），只看进"挤在哪边"的读数
+    try:
+        if pos and pos_p is not None:
+            had = {(r["name"], r["asof"]) for r in pos_p["readings"] if r["src"] == "CFTC"}
+            for r in pos["readings"]:
+                if r["src"] == "CFTC" and r.get("crowd", True) and r.get("wk") == "少见" and (r["name"], r["asof"]) not in had:
+                    trig["flow"].append(dict(src="cftc_wk", key=f"cftc_wk:{r['name']}", title=f"CFTC {r['asof'][5:]} 那期：{r['name'].replace(' ÷ 总持仓', '')}一周{'升' if r['chg'] > 0 else '降'}了 {abs(r['chg']):.1f} 个百分点到 {r['value']}%（少见，历史上 {r['wk_frac'] * 100:.1f}% 的周变化同方向更大）"))
+    except Exception:
+        pass
+    # 7) 三种走向的信号先出现（口径十三，first 是最近一个收盘日）
     for S in ((radar.get("fwd") or {}).get("scenarios") or []):
         for w in S["ways"]:
             for x in w["signals"]:

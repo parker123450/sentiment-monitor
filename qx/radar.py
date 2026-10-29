@@ -210,8 +210,8 @@ def class2(D, t, replay_years=2):
 def class3(D, t, pos):
     out = []
     for r in pos["readings"]:
-        if r.get("pos") is None or not (r["pos"] >= 1 - CROWD or r["pos"] <= CROWD):
-            continue
+        if r.get("pos") is None or not (r["pos"] >= 1 - CROWD or r["pos"] <= CROWD) or not r.get("crowd", True):
+            continue                                                  # 只作对照的读数（旧分类的股指、美债，口径十四.6）不出卡
         side = PS.side(dict(r, pos=r["pos"]))
         crowded_long = (r["pos"] >= 1 - CROWD) == r["long_is_crowded"]
         px = CROWD_PRICE.get(r["market"])

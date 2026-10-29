@@ -135,7 +135,11 @@
         const calm = (F.calm || []).map(x => `${esc(x.market)}${esc(x.word)}`);
         h += `<p class="hl">期货仓位（CFTC ${d2(F.asof)} 那期，${d2(F.pub)} 公布）：${[...ch, ...st, ...calm].join("；") || "没有挤在一边的市场"}</p>`;
         const ns = F.nums || [];
-        if (ns.length) h += `<div class="rw">${ns.map(x => `${esc(x.market)} ${x.prev == null ? "" : x.prev + "% → "}<b>${x.now}%</b>${x.pos == null ? "" : `（历史位置 ${Math.round(x.pos * 100)}%）`}`).join(" · ")}<small>　投机净多 ÷ 总持仓</small></div>`;
+        if (ns.length) h += `<div class="rw">${ns.map(x => `${esc(x.lab || x.market)} ${x.prev == null ? "" : x.prev + "% → "}<b>${x.now}%</b>${x.pos == null ? "" : `（历史位置 ${Math.round(x.pos * 100)}%）`}`).join(" · ")}<small>　净多 ÷ 总持仓</small></div>`;
+        const TF = F.tff || [];
+        if (TF.length) { const vb = x => x.chg == null || x.chg === 0 ? "没变" : x.now >= 0 ? (x.chg > 0 ? "加多 " : "减多 ") + Math.abs(x.chg).toFixed(1) : (x.chg > 0 ? "空头回补 " : "加空 ") + Math.abs(x.chg).toFixed(1);
+          const by = {}; for (const x of TF) (by[x.name] = by[x.name] || []).push(x);
+          h += `<div class="rw">美股期指谁在场上：${Object.entries(by).map(([n, xs]) => `${esc(n)} ${xs.map(x => `${esc(x.who)} <b>${x.now}%</b>（${x.pos == null ? "—" : Math.round(x.pos * 100) + "%"}，${vb(x)}）`).join(" · ")}`).join("；")}<small>　TFF 分类的净多 ÷ 总持仓，括号里是历史位置、这一期变化${F.tff_on ? "" : "；10-29 起股指、美债看它判断挤不挤"}</small></div>`; }
       }
       put("flow", h + trg(T.flow)); }
     // ④ 预期

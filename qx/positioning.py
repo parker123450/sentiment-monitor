@@ -2,6 +2,7 @@
 
 取数（每天一次，run.py 按时间判断；每个文件都带"能看到的时间" pub，按它截断；攒起来以后新取到的行，pub 不早于取到的那天）：
   CFTC 每周持仓（publicreporting.cftc.gov，Legacy 期货）：非商业（投机）多空，2006 年起。数据截至周二，周五美东 15:30 公布 → pub = 周二 + 3 天。
+  CFTC TFF（同一个接口，金融期货分类，期货）：资管、杠杆基金的多空，2006 年起；股指、美债期货"挤在哪边"2026-10-29 起改看它（口径十四.6）。
   杠杆 ETF：Direxion 每天的 SOXL / SOXS 份额（CSV 第一行 Shares Outstanding），从 10-27 起攒；pub = 取到的时间。
   空头仓位：纳斯达克的 short-interest（每月两次结算日；FINRA 约 8 个工作日后公布）→ pub = 结算日 + 11 天（保守）。
   日本国债：财务省 jgbcm_all.csv（全量）+ jgbcm.csv（当月）；pub = 那一天的下一天（收盘后才出）。
@@ -20,6 +21,7 @@ CFTC_CSV = os.path.join(store.HERE, "cftc.csv")
 LETF_CSV = os.path.join(store.HERE, "letf.csv")
 SI_CSV = os.path.join(store.HERE, "short_interest.csv")
 JGB_CSV = os.path.join(store.HERE, "jgb.csv")
+TFF_CSV = os.path.join(store.HERE, "cftc_tff.csv")
 UA_NAMED = {"User-Agent": "qx-radar/1.0 (+https://github.com/parker123450/sentiment-monitor)"}
 JSON_UA = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}      # 纳斯达克：面板现有来源原来的请求头
 EDGE, MIN_OBS = 0.10, 104                                                   # 挤在哪边：10% 以外；至少 104 个观测（周度 2 年）才和历史比
@@ -30,6 +32,15 @@ CFTC = {"13874A": ("标普 500 期货", "美股"), "209742": ("纳指 100 期货
         "097741": ("日元期货", "日元"), "099741": ("欧元期货", "欧元"), "098662": ("美元指数期货", "美元"),
         "067651": ("WTI 原油期货", "原油"), "023651": ("天然气期货", "天然气"), "088691": ("黄金期货", "黄金"), "085692": ("铜期货", "铜"),
         "002602": ("玉米期货", "农产品"), "005602": ("大豆期货", "农产品"), "001602": ("小麦期货", "农产品"), "133741": ("比特币期货", "加密")}
+# TFF 分类（口径十四.6，2026-10-29 起用）：旧分类把股指、美债期货的人分错了（标普在旧分类里"投机"位置 21%，TFF 里资管 94%、杠杆基金 11%）。
+# 这几个合约的"挤在哪边"从 TFF_FROM 起改看资管、杠杆基金各自的净多 ÷ 总持仓；旧分类的读数照样算、照样显示，只作对照。
+TFF = {"13874A": ("标普 500 期货", "美股"), "209742": ("纳指 100 期货", "美股"),
+       "043602": ("10 年美债期货", "美债"), "042601": ("2 年美债期货", "美债"), "020601": ("长期美债期货", "美债")}
+TFF_WHO = (("am", "资管"), ("lev", "杠杆基金"))
+TFF_FROM = "2026-10-29"
+# CFTC 周变化"少见"（口径十四.6）：一期对上一期的净多 ÷ 总持仓变化，在它以前全部历史里同方向至少一样极端的 ≤ 1%（汇率、商品 0.5%，和口径十一的联动市场一样）
+WK_RARE, WK_RARE_LINKED = 0.01, 0.005
+WK_LINKED = {"日元", "欧元", "美元", "原油", "天然气", "黄金", "铜", "农产品"}
 SI_WATCH = ["NVDA", "AMD", "AVGO", "MU", "TSM", "ORCL", "CRWV", "NBIS", "IREN", "MSFT", "META", "SMCI", "COIN", "MSTR", "TSLA"]
 
 
@@ -118,6 +129,34 @@ def fetch_cftc(log=print):
     return n
 
 
+def fetch_tff(log=print):
+    from qx.fetch import get
+    old = _rows(TFF_CSV)
+    since = max((r["date"] for r in old), default="2006-01-01")
+    codes = ",".join(f"'{c}'" for c in TFF)
+    q = (f"$select=cftc_contract_market_code,report_date_as_yyyy_mm_dd,open_interest_all,asset_mgr_positions_long,asset_mgr_positions_short,"
+         f"lev_money_positions_long,lev_money_positions_short"
+         f"&$where=cftc_contract_market_code in({codes}) AND report_date_as_yyyy_mm_dd > '{since}'&$order=report_date_as_yyyy_mm_dd&$limit=50000")
+    url = "https://publicreporting.cftc.gov/resource/gpe5-46if.json?" + urllib.parse.quote(q, safe="=&$'(),")
+    j = json.loads(get(url, timeout=120, ua=UA_NAMED))
+    have = {(r["code"], r["date"]) for r in old}
+    seen = _seen_day(bool(old))
+    n = 0
+    for x in j:
+        d = x["report_date_as_yyyy_mm_dd"][:10]
+        k = (x["cftc_contract_market_code"], d)
+        if k in have:
+            continue
+        old.append({"code": k[0], "date": d, "pub": _pub(cftc_pub(date.fromisoformat(d)), seen), "oi": x.get("open_interest_all", ""),
+                    "am_long": x.get("asset_mgr_positions_long", ""), "am_short": x.get("asset_mgr_positions_short", ""),
+                    "lev_long": x.get("lev_money_positions_long", ""), "lev_short": x.get("lev_money_positions_short", "")})
+        have.add(k)
+        n += 1
+    _write(TFF_CSV, ["code", "date", "pub", "oi", "am_long", "am_short", "lev_long", "lev_short"], sorted(old, key=lambda r: (r["date"], r["code"])))
+    log(f"  CFTC TFF：新 {n} 行（共 {len(old)}）")
+    return n
+
+
 def fetch_letf(log=print):
     from qx.fetch import get
     rows = _rows(LETF_CSV)
@@ -195,7 +234,7 @@ def fetch_jgb(log=print, full=None):
 
 
 def fetch_all(log=print):
-    for f in (fetch_cftc, fetch_letf, fetch_si, fetch_jgb):
+    for f in (fetch_cftc, fetch_tff, fetch_letf, fetch_si, fetch_jgb):
         try:
             f(log=log)
         except Exception as e:
@@ -208,7 +247,7 @@ def _df(p, t, date_col="date"):
     if not r:
         return pd.DataFrame()
     d = pd.DataFrame(r)
-    if p == CFTC_CSV:                                   # 已经存下的行也按真实公布日截（取两者里晚的那个）
+    if p in (CFTC_CSV, TFF_CSV):                        # 已经存下的行也按真实公布日截（取两者里晚的那个）
         fix = d["date"].map(lambda s: cftc_pub(date.fromisoformat(s[:10])).isoformat())
         d["pub"] = np.where(fix > d["pub"].str[:10], fix, d["pub"])
     d = d[pd.to_datetime(d["pub"].str[:10]) <= pd.Timestamp(t)]
@@ -232,7 +271,19 @@ def _pos(hist, x):
     return float((h < x).mean() + 0.5 * (h == x).mean())
 
 
-def cftc_readings(t):
+def _wk(net, market):
+    """一期对上一期的变化（百分点）和"少见"（口径十四.6）：同方向至少一样极端（含相等）的占比，至少 MIN_OBS 期。"""
+    ch = net.diff().dropna()
+    if not len(ch):
+        return None, None, None
+    x, h = float(ch.iloc[-1]), ch.iloc[:-1]
+    if len(h) < MIN_OBS or x == 0:
+        return round(x * 100, 1), None, None
+    frac = float((h >= x).mean()) if x > 0 else float((h <= x).mean())
+    return round(x * 100, 1), frac, "少见" if frac <= (WK_RARE_LINKED if market in WK_LINKED else WK_RARE) else None
+
+
+def cftc_readings(t, tff_on=False):
     d = _df(CFTC_CSV, t)
     out = []
     if d.empty:
@@ -247,8 +298,35 @@ def cftc_readings(t):
             continue
         p = _pos(net.iloc[:-1], float(net.iloc[-1]))
         nm, mk = CFTC[code]
+        chg, frac, wk = _wk(net, mk)
+        crowd = not (tff_on and code in TFF)
         out.append(dict(src="CFTC", name=nm + " 投机净多 ÷ 总持仓", market=mk, value=round(float(net.iloc[-1]) * 100, 1), unit="%", pos=p,
-                        asof=g["date"].iloc[-1], pub=g["pub"].iloc[-1], n=len(net), long_is_crowded=True))
+                        asof=g["date"].iloc[-1], pub=g["pub"].iloc[-1], n=len(net), long_is_crowded=True, code=code, chg=chg, wk_frac=frac, wk=wk,
+                        crowd=crowd, note=None if crowd else "旧分类，2026-10-29 起只作对照，挤在哪边看 TFF"))
+    return out
+
+
+def tff_readings(t, tff_on=False):
+    """TFF：资管、杠杆基金各自的净多 ÷ 总持仓，和自己当天以前全部历史比位置。tff_on 以前只显示，不进"挤在哪边"。"""
+    d = _df(TFF_CSV, t)
+    out = []
+    if d.empty:
+        return out
+    for code, g in d.groupby("code"):
+        if code not in TFF:
+            continue
+        g = g.sort_values("date")
+        oi = pd.to_numeric(g["oi"], errors="coerce")
+        nm, mk = TFF[code]
+        for k, who in TFF_WHO:
+            net = ((pd.to_numeric(g[k + "_long"], errors="coerce") - pd.to_numeric(g[k + "_short"], errors="coerce")) / oi).dropna()
+            if len(net) < 2:
+                continue
+            chg, frac, wk = _wk(net, mk)
+            out.append(dict(src="CFTC", name=f"{nm} {who}净多 ÷ 总持仓（TFF）", market=mk, value=round(float(net.iloc[-1]) * 100, 1), unit="%",
+                            pos=_pos(net.iloc[:-1], float(net.iloc[-1])), asof=g["date"].iloc[-1], pub=g["pub"].iloc[-1], n=len(net), long_is_crowded=True,
+                            code=code, who=who, tff=True, chg=chg, wk_frac=frac, wk=wk, crowd=tff_on,
+                            note=None if tff_on else "TFF 分类 2026-10-29 起才用来判断挤在哪边"))
     return out
 
 
@@ -330,14 +408,18 @@ def side(r):
     return ("多头" if hi else "空头") if r["long_is_crowded"] else ("空头" if hi else "多头")
 
 
-def compute(D, t):
+def compute(D, t, tff=None):
+    """tff：股指、美债期货的"挤在哪边"用不用 TFF。None 按日子（TFF_FROM 起用，口径十四.6）；前台拿本期和往期比时传本期用的那个，前后同一个口径。"""
     t = pd.Timestamp(t)
-    R = cftc_readings(t) + letf_readings(t) + si_readings(t) + panel_readings(D, t)
+    tff_on = (t >= pd.Timestamp(TFF_FROM)) if tff is None else bool(tff)
+    R = cftc_readings(t, tff_on) + tff_readings(t, tff_on) + letf_readings(t) + si_readings(t) + panel_readings(D, t)
     for r in R:
         r["side"] = side(r)
+        r.setdefault("crowd", True)
     by = {}
     for r in R:
-        by.setdefault(r["market"], []).append(r)
+        if r["crowd"]:
+            by.setdefault(r["market"], []).append(r)
     crowd = []
     for mk, rs in by.items():
         ss = [r["side"] for r in rs if r["side"] is not None]
@@ -352,7 +434,7 @@ def compute(D, t):
         else:
             word = "方向不一致"
         crowd.append(dict(market=mk, word=word, n=len(ss), of=len(rs)))
-    return dict(asof=t.strftime("%Y-%m-%d"), readings=R, crowd=crowd, trend=trend_est(D, t))
+    return dict(asof=t.strftime("%Y-%m-%d"), readings=R, crowd=crowd, trend=trend_est(D, t), tff_on=tff_on)
 
 
 def values(res):
