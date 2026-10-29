@@ -152,7 +152,7 @@ def flows(D, t, pos):
     tff = [dict(code=r["code"], name={"13874A": "标普", "209742": "纳指"}[r["code"]], who=r["who"], now=r["value"], pos=_f(r["pos"], 2) if r["pos"] is not None else None, chg=r["chg"])
            for r in pos["readings"] if r.get("tff") and r["code"] in ("13874A", "209742")]       # 美股期指谁在场上（TFF，口径十四.6）：常驻
     return dict(asof=asof, pub=pub, changed=changed, still=still, nums=nums, calm=[dict(market=m, word=word[m]) for m in calm if m in ("美股", "美债", "美股波动")],
-                tff=tff, tff_on=on)
+                tff=tff, tff_on=on, letf=pos.get("letf"))
 
 
 # ================================================================ ④ 预期

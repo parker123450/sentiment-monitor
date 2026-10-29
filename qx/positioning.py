@@ -3,7 +3,9 @@
 取数（每天一次，run.py 按时间判断；每个文件都带"能看到的时间" pub，按它截断；攒起来以后新取到的行，pub 不早于取到的那天）：
   CFTC 每周持仓（publicreporting.cftc.gov，Legacy 期货）：非商业（投机）多空，2006 年起。数据截至周二，周五美东 15:30 公布 → pub = 周二 + 3 天。
   CFTC TFF（同一个接口，金融期货分类，期货）：资管、杠杆基金的多空，2006 年起；股指、美债期货"挤在哪边"2026-10-29 起改看它（口径十四.6）。
-  杠杆 ETF：Direxion 每天的 SOXL / SOXS 份额（CSV 第一行 Shares Outstanding），从 10-27 起攒；pub = 取到的时间。
+  杠杆 ETF：Direxion 每天的 SOXL / SOXS 份额（CSV 第一行 Shares Outstanding），从 10-26 起攒；pub = 取到的时间。
+    2026-10-29 起（口径十四.7）：日期记 CSV 里的 TradeDate（原来记成取到的那天）；份额是 TradeDate 前一个交易日收盘后的，
+    同时存那一天的收盘价快照（以后合股、拆股调整历史价格，存下的金额不跟着变）；连着两天的份额差 × 收盘价 = 那一天的净申赎美元。
   空头仓位：纳斯达克的 short-interest（每月两次结算日；FINRA 约 8 个工作日后公布）→ pub = 结算日 + 11 天（保守）。
   日本国债：财务省 jgbcm_all.csv（全量）+ jgbcm.csv（当月）；pub = 那一天的下一天（收盘后才出）。
 计算 compute(D, t)：每个读数在自己当天以前全部历史里的位置（原则 2）；"挤在哪边"：同一市场能取到的读数全部在同一侧 10% 以外才写，否则"方向不一致"。
@@ -15,7 +17,7 @@ from datetime import date, datetime, timedelta, timezone
 import numpy as np
 import pandas as pd
 
-from qx import store
+from qx import clock, store
 
 CFTC_CSV = os.path.join(store.HERE, "cftc.csv")
 LETF_CSV = os.path.join(store.HERE, "letf.csv")
@@ -41,6 +43,10 @@ TFF_FROM = "2026-10-29"
 # CFTC 周变化"少见"（口径十四.6）：一期对上一期的净多 ÷ 总持仓变化，在它以前全部历史里同方向至少一样极端的 ≤ 1%（汇率、商品 0.5%，和口径十一的联动市场一样）
 WK_RARE, WK_RARE_LINKED = 0.01, 0.005
 WK_LINKED = {"日元", "欧元", "美元", "原油", "天然气", "黄金", "铜", "农产品"}
+# SOXL / SOXS（口径十四.7，2026-10-29 起用）：半导体"挤在哪边"改看金额比（份额比会跟着价格自己动，合股后整个变样），份额比只作对照；
+# 份额一天变了 1.8 倍以上按合股 / 拆股处理，那天不算申赎
+LETF_FROM, SPLIT = "2026-10-29", 1.8
+LETF_COLS = ["date", "pub", "soxl", "soxs", "flow_day", "px_soxl", "px_soxs"]
 SI_WATCH = ["NVDA", "AMD", "AVGO", "MU", "TSM", "ORCL", "CRWV", "NBIS", "IREN", "MSFT", "META", "SMCI", "COIN", "MSTR", "TSLA"]
 
 
@@ -157,6 +163,22 @@ def fetch_tff(log=print):
     return n
 
 
+def _prev_td(d):
+    """d 前一个美股交易日（ISO 字符串）。"""
+    x = date.fromisoformat(d[:10]) - timedelta(days=1)
+    while not clock.is_trading_day(x):
+        x -= timedelta(days=1)
+    return x.isoformat()
+
+
+def _close_on(sym, d):
+    f = store.load([sym]).get(sym)
+    if f is None:
+        return ""
+    v = f["c"][f.index == pd.Timestamp(d)]
+    return round(float(v.iloc[0]), 4) if len(v) else ""
+
+
 def fetch_letf(log=print):
     from qx.fetch import get
     rows = _rows(LETF_CSV)
@@ -165,14 +187,19 @@ def fetch_letf(log=print):
     for s in ("SOXL", "SOXS"):
         txt = get(f"https://www.direxion.com/holdings/{s}.csv", timeout=30, ua=UA_NAMED)
         m = re.search(r"Shares Outstanding:\s*([\d,]+)", txt)
-        d = re.search(r'^"?(\d{1,2}/\d{1,2}/\d{4})', txt.splitlines()[2] if len(txt.splitlines()) > 2 else "", re.M)
+        d = re.search(r'^"(\d{1,2}/\d{1,2}/\d{4})', txt, re.M)             # 持仓表第一行的 TradeDate（原来看第 3 行，那行是份额，一直没取到日期）
         if m:
             got[s] = int(m.group(1).replace(",", ""))
             got["trade"] = datetime.strptime(d.group(1), "%m/%d/%Y").date().isoformat() if d else ""
     if "SOXL" in got and "SOXS" in got:
         key = got.get("trade") or now[:10]
         rows = [r for r in rows if r["date"] != key] + [{"date": key, "pub": now, "soxl": got["SOXL"], "soxs": got["SOXS"]}]
-        _write(LETF_CSV, ["date", "pub", "soxl", "soxs"], sorted(rows, key=lambda r: r["date"]))
+    for r in rows:                                     # 份额对应的那天（TradeDate 前一个交易日）和那天的收盘价；价格还没下到的下次再补
+        r["flow_day"] = r.get("flow_day") or _prev_td(r["date"])
+        for s in ("soxl", "soxs"):
+            if not r.get("px_" + s):
+                r["px_" + s] = _close_on(s.upper(), r["flow_day"])
+    _write(LETF_CSV, LETF_COLS, sorted(rows, key=lambda r: r["date"]))
     log(f"  杠杆 ETF 份额：{'取到' if 'SOXL' in got else '没取到'}（共 {len(rows)} 天）")
 
 
@@ -330,17 +357,66 @@ def tff_readings(t, tff_on=False):
     return out
 
 
-def letf_readings(t):
+def _letf(t):
     d = _df(LETF_CSV, t)
     if d.empty:
+        return d
+    d = d.sort_values("date").reset_index(drop=True)
+    if "flow_day" not in d:
+        d["flow_day"] = ""
+    d["flow_day"] = [f if isinstance(f, str) and f else _prev_td(x) for f, x in zip(d["flow_day"], d["date"])]
+    for c in ("soxl", "soxs", "px_soxl", "px_soxs"):
+        d[c] = pd.to_numeric(d[c], errors="coerce") if c in d else np.nan
+    return d
+
+
+def letf_readings(t, v2_on=False):
+    d = _letf(t)
+    if d.empty:
         return []
-    d = d.sort_values("date")
-    bull, bear = pd.to_numeric(d["soxl"]), pd.to_numeric(d["soxs"])
+    out = []
+    bull, bear = d["soxl"], d["soxs"]
     ratio = (bull / (bull + bear)).dropna()
     p = _pos(ratio.iloc[:-1], float(ratio.iloc[-1]))
-    return [dict(src="Direxion", name="SOXL 份额 ÷（SOXL + SOXS）", market="半导体", value=round(float(ratio.iloc[-1]) * 100, 1), unit="%", pos=p,
-                 asof=d["date"].iloc[-1], pub=d["pub"].iloc[-1][:10], n=len(ratio), long_is_crowded=True,
-                 note=None if p is not None else f"从 {d['date'].iloc[0]} 起攒，{len(ratio)} 天，满 {MIN_OBS} 天才和历史比")]
+    out.append(dict(src="Direxion", name="SOXL 份额 ÷（SOXL + SOXS）", market="半导体", value=round(float(ratio.iloc[-1]) * 100, 1), unit="%", pos=p,
+                    asof=d["flow_day"].iloc[-1], pub=d["pub"].iloc[-1][:10], n=len(ratio), long_is_crowded=True, crowd=not v2_on,
+                    note="份额比，2026-10-29 起只作对照，挤在哪边看金额比" if v2_on else None if p is not None else f"从 {d['date'].iloc[0]} 起攒，{len(ratio)} 天，满 {MIN_OBS} 天才和历史比"))
+    mv_l, mv_s = bull * d["px_soxl"], bear * d["px_soxs"]
+    g = pd.DataFrame(dict(r=mv_l / (mv_l + mv_s), day=d["flow_day"])).dropna()
+    if len(g):
+        p = _pos(g["r"].iloc[:-1], float(g["r"].iloc[-1]))
+        out.append(dict(src="Direxion", name="SOXL 金额 ÷（SOXL + SOXS 金额）", market="半导体", value=round(float(g["r"].iloc[-1]) * 100, 1), unit="%", pos=p,
+                        asof=g["day"].iloc[-1], pub=d["pub"].iloc[-1][:10], n=len(g), long_is_crowded=True, crowd=v2_on,
+                        note=(None if p is not None else f"从 {g['day'].iloc[0]} 起攒，{len(g)} 天，满 {MIN_OBS} 天才和历史比")
+                        if v2_on else "金额比 2026-10-29 起才用来判断挤在哪边"))
+    return out
+
+
+def letf_flow(t):
+    """最近一天的净申赎（美元）：连着两个交易日都有份额才算；份额一天变了 1.8 倍以上按合股 / 拆股处理，不算（口径十四.7）。"""
+    d = _letf(t)
+    xs = []
+    for i in range(1, len(d)):
+        a, b = d.iloc[i - 1], d.iloc[i]
+        if a["flow_day"] != _prev_td(b["flow_day"]):
+            continue
+        x = dict(day=b["flow_day"], pub=b["pub"][:10])
+        for s in ("soxl", "soxs"):
+            q = b[s] / a[s] if a[s] else np.nan
+            if not np.isfinite(q) or q >= SPLIT or q <= 1 / SPLIT:
+                x["split"] = s.upper()
+                x[s] = None
+            else:
+                x[s] = None if pd.isna(b["px_" + s]) else round(float((b[s] - a[s]) * b["px_" + s]) / 1e8, 2)      # 亿美元
+        x["net"] = None if x["soxl"] is None or x["soxs"] is None else round(x["soxl"] - x["soxs"], 2)          # 钱往做多那边为正
+        xs.append(x)
+    if not xs:
+        return None
+    nets = pd.Series([x["net"] for x in xs], dtype=float).dropna()
+    last = xs[-1]
+    last["n"] = len(nets)
+    last["pos"] = _pos(nets.iloc[:-1], float(nets.iloc[-1])) if last["net"] is not None and len(nets) else None
+    return last
 
 
 def si_readings(t):
@@ -412,7 +488,7 @@ def compute(D, t, tff=None):
     """tff：股指、美债期货的"挤在哪边"用不用 TFF。None 按日子（TFF_FROM 起用，口径十四.6）；前台拿本期和往期比时传本期用的那个，前后同一个口径。"""
     t = pd.Timestamp(t)
     tff_on = (t >= pd.Timestamp(TFF_FROM)) if tff is None else bool(tff)
-    R = cftc_readings(t, tff_on) + tff_readings(t, tff_on) + letf_readings(t) + si_readings(t) + panel_readings(D, t)
+    R = cftc_readings(t, tff_on) + tff_readings(t, tff_on) + letf_readings(t, t >= pd.Timestamp(LETF_FROM)) + si_readings(t) + panel_readings(D, t)
     for r in R:
         r["side"] = side(r)
         r.setdefault("crowd", True)
@@ -434,7 +510,7 @@ def compute(D, t, tff=None):
         else:
             word = "方向不一致"
         crowd.append(dict(market=mk, word=word, n=len(ss), of=len(rs)))
-    return dict(asof=t.strftime("%Y-%m-%d"), readings=R, crowd=crowd, trend=trend_est(D, t), tff_on=tff_on)
+    return dict(asof=t.strftime("%Y-%m-%d"), readings=R, crowd=crowd, trend=trend_est(D, t), tff_on=tff_on, letf=letf_flow(t))
 
 
 def values(res):
@@ -445,4 +521,6 @@ def values(res):
         v["挤:" + c["market"]] = c["word"]
     for x in res["trend"]:
         v["趋势:" + x["sym"]] = x["score"]
+    for k, x in (res.get("letf") or {}).items():
+        v["申赎:" + k] = x
     return v

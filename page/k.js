@@ -139,7 +139,9 @@
         const TF = F.tff || [];
         if (TF.length) { const vb = x => x.chg == null || x.chg === 0 ? "没变" : x.now >= 0 ? (x.chg > 0 ? "加多 " : "减多 ") + Math.abs(x.chg).toFixed(1) : (x.chg > 0 ? "空头回补 " : "加空 ") + Math.abs(x.chg).toFixed(1);
           const by = {}; for (const x of TF) (by[x.name] = by[x.name] || []).push(x);
-          h += `<div class="rw">美股期指谁在场上：${Object.entries(by).map(([n, xs]) => `${esc(n)} ${xs.map(x => `${esc(x.who)} <b>${x.now}%</b>（${x.pos == null ? "—" : Math.round(x.pos * 100) + "%"}，${vb(x)}）`).join(" · ")}`).join("；")}<small>　TFF 分类的净多 ÷ 总持仓，括号里是历史位置、这一期变化${F.tff_on ? "" : "；10-29 起股指、美债看它判断挤不挤"}</small></div>`; }
+          h += `<div class="rw">美股期指谁在场上：${Object.entries(by).map(([n, xs]) => `${esc(n)} ${xs.map(x => `${esc(x.who)} <b>${String(x.now).replace("-", "−")}%</b>（${x.pos == null ? "—" : Math.round(x.pos * 100) + "%"}，${vb(x)}）`).join(" · ")}`).join("；")}<small>　TFF 分类的净多 ÷ 总持仓，括号里是历史位置、这一期变化${F.tff_on ? "" : "；10-29 起股指、美债看它判断挤不挤"}</small></div>`; }
+        const L = F.letf;
+        if (L) h += `<div class="rw">SOXL / SOXS ${d2(L.day)} 净申赎：${["soxl", "soxs"].map(k => `${k.toUpperCase()} ${L[k] == null ? "不算" : `<b>${s1(L[k])}</b> 亿美元`}`).join("、")}${L.net == null ? "" : `；合起来钱往${L.net >= 0 ? "做多" : "做空"}那边 ${Math.abs(L.net).toFixed(1)} 亿${L.pos == null ? "" : `（历史位置 ${Math.round(L.pos * 100)}%）`}`}<small>　份额差 × 收盘价${L.split ? `；${esc(L.split)} 份额一天变了 1.8 倍以上，按合股或拆股处理，这天不算` : ""}${L.pos == null ? `；满 104 天才和历史比（${L.n} 天）` : ""}</small></div>`;
       }
       put("flow", h + trg(T.flow)); }
     // ④ 预期
