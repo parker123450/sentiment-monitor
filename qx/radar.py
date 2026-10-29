@@ -37,8 +37,15 @@ OPPOSITE = {("^TNX", "XLRE"), ("^TNX", "KRE"), ("^TNX", "IWM"), ("CL=F", "JETS")
 
 # ================================================================ 工具
 def tail(z):
-    """|z| 个标准差以外的双尾比例（正态近似，第 4、6 类排序用；第 1、2、3 类直接数历史）。"""
+    """|z| 个标准差以外的双尾比例（正态近似；2026-10-29 起只剩第 5 类期权幅度在用，第 4、6 类改成直接数历史，口径十四.5）。"""
     return math.erfc(abs(z) / math.sqrt(2))
+
+
+def emp(x, hist):
+    """同方向至少这么极端的比例 = (k + 1) / (n + 1)，k 是 hist 里同方向、不比 x 小的个数（口径十四.5 R1；+1 让样本少时不会算出 0）。"""
+    h = np.asarray([v for v in hist if np.isfinite(v)], dtype=float)
+    k = int((h >= x).sum() if x > 0 else (h <= x).sum())
+    return (k + 1) / (len(h) + 1)
 
 
 def _close(D, k, t):
@@ -232,7 +239,12 @@ def class3(D, t, pos):
 def class4(D, t, days=EARN_DAYS, quarters=4):
     from qx import earn
     rs = [r for r in earn.rows() if r.get("seen") and pd.Timestamp(r["seen"]) <= t and earn.in_sample(r)]   # 日度波动按全部历史算、公布前市值 ≥ 200 亿（口径十二 2026-10-28、10-29）
-    out, rep = [], []
+    out, rep, zs = [], [], []
+    for r in rs:
+        try:
+            zs.append((r["react_day"], float(r["ret"]) / float(r["dvol"])))
+        except (TypeError, ValueError, ZeroDivisionError):
+            pass
     for r in rs:
         try:
             sp, ret, dv = float(r["surprise"]), float(r["ret"]), float(r["dvol"])
@@ -247,7 +259,8 @@ def class4(D, t, days=EARN_DAYS, quarters=4):
         if pd.Timestamp(r["react_day"]) >= t - pd.tseries.offsets.BDay(days):
             out.append(_card(4, r["sym"] + r["date"], f"{r['sym']}：{kind}",
                              f"{r['name']} {r['date']} 财报超预期 {sp:+.1f}%，反应日（{r['react_day']}）{x['ret']:+.1f}%，是它日度波动的 {abs(x['z']):.1f} 倍。",
-                             "股价收复（或跌破）财报前一天的收盘价。", "", f"{r['sym']} 正股或期权", "10 个交易日", tail(x["z"]), r["react_day"]))
+                             "股价收复（或跌破）财报前一天的收盘价。", "", f"{r['sym']} 正股或期权", "10 个交易日",
+                             emp(ret / dv, [z for d, z in zs if d < r["react_day"]]), r["react_day"], rare_ok=False))   # 和反应日以前所有公司的财报反应日比；不算"十年少见"（口径十四.5 R1）
     q0 = (t - pd.DateOffset(months=3 * quarters)).strftime("%Y-%m-%d")
     rep = [x for x in rep if x["date"] >= q0]
     tally = {}
@@ -315,7 +328,8 @@ def class6(D, t):
         if sL is None:
             continue
         bpL = lead in C.BP
-        zL = _ret(sL, bp=bpL) / (float((sL.diff() * 100 if bpL else np.log(sL).diff()).iloc[:-1].std()) or np.nan)     # 全部历史（原则 2）
+        hL = (sL.diff() * 100 if bpL else np.log(sL).diff()).iloc[:-1].dropna()
+        zL = _ret(sL, bp=bpL) / (float(hL.std()) or np.nan)     # 全部历史（原则 2）
         if not np.isfinite(zL) or abs(zL) < LEAD_Z:
             continue
         dL = sL.index[-1]
@@ -332,7 +346,7 @@ def class6(D, t):
             out.append(_card(6, f"{lead}>{f}", f"{nm}：{C.NAME.get(f, f)}没跟上",
                              f"{C.NAME.get(lead, lead)} {dL.strftime('%m-%d')} 动了 {zL:+.1f} 个日度波动；{C.NAME.get(f, f)} 之后的交易日（{sF.index[i].strftime('%m-%d')}）{zF:+.1f}，不到一半{'（方向还相反）' if np.sign(zF) != want else ''}。",
                              f"{C.NAME.get(f, f)}之后几天补上同方向的波动，或者{C.NAME.get(lead, lead)}自己回吐。", "还没有回放（传导关系 2026-10-27 登记）。",
-                             f"{C.NAME.get(f, f)}", "1–5 个交易日", tail(zL), sF.index[i].strftime("%Y-%m-%d"), replay=False))
+                             f"{C.NAME.get(f, f)}", "1–5 个交易日", emp(_ret(sL, bp=bpL), hL.values), sF.index[i].strftime("%Y-%m-%d"), replay=False))   # 前一个自己的全部历史里同方向至少这么大的比例（R1）
     return out
 
 
@@ -351,7 +365,7 @@ def compute(D, t, pos=None, sig=None, pm_items=None):
         if s is not None and abs(_ret(s) / _dvol(s)) < 0.5:
             cards.append(_card(5, x["key"], x["title"], "预测市场概率一天变了 15 个百分点以上，标普 ETF 当天动得不到半个日度波动。",
                                "概率回到原来的位置，或者相关价格补上波动。", "还没有回放（预测市场从 2026-10-23 起攒）。", "相关的期货或 ETF", "1–5 个交易日",
-                               0.05, t.strftime("%Y-%m-%d"), replay=False))
+                               0.05, t.strftime("%Y-%m-%d"), replay=False, push_key=f"{x['key']}|{x['date']}"))   # 推送用"今天变了什么"同一个编号（R3）
     cards.sort(key=lambda c: c["rank"])
     return dict(asof=t.strftime("%Y-%m-%d"), cards=cards, replay={2: rep2, 4: rep4[-60:], "tally4": tally4},
                 pending={k: f"数据从 {v} 起攒，攒满一年（{(pd.Timestamp(v) + pd.DateOffset(years=1)).strftime('%Y-%m-%d')}）才够回放" for k, v in REPLAY_FROM.items()})

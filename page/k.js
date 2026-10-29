@@ -120,7 +120,7 @@
       put("emo", h + trg(T.emo)); }
     // ② 价格位置
     { let h = head("price", "②", "价格位置"); const P = FR.pos || [], S = P.find(x => x.k === "^SOX");
-      if (S) h += `<p class="hl">费城半导体离一年高点 ${s1(S.dd)}%（${d2(S.hi_date)} 收盘 ${n0(S.hi)}）；收盘 ${n0(S.close)}，在 200 日线${S.d200 >= 0 ? "上方" : "下方"} ${Math.abs(S.d200).toFixed(1)}%${S.d200 < 0 ? "；在线下时，60 天内再跌一大段的比例历来高 7–8 个百分点（只说风险，不说方向）" : ""}</p>`;
+      if (S) h += `<p class="hl">费城半导体离一年高点 ${s1(S.dd)}%（${d2(S.hi_date)} 收盘 ${n0(S.hi)}${FR.ddv_pct != null ? `；按长期波动折算，历史上约 ${Math.round(FR.ddv_pct)}% 的日子比这更深` : ""}）；收盘 ${n0(S.close)}，在 200 日线${S.d200 >= 0 ? "上方" : "下方"} ${Math.abs(S.d200).toFixed(1)}%${S.d200 < 0 ? "；在线下时，60 天内再跌一大段的比例历来高 7–8 个百分点（只说风险，不说方向）" : ""}</p>`;
       if (P.length) h += `<table class="ptab"><tr><th></th><th>离一年高点</th><th>离 200 日线</th></tr>${P.map(x => `<tr><td>${esc(x.name)}</td><td class="num">${s1(x.dd)}%</td><td class="num">${s1(x.d200)}%${x.below_since ? `<small>（${d2(x.below_since)} 跌破，第 ${x.below_days} 天）</small>` : ""}</td></tr>`).join("")}</table>`;
       const N = FR.ends;
       if (N) { const m = xs => xs.map(([n, z]) => `${esc(n)} ${s1(z)}`).join("、");

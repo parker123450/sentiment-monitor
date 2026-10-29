@@ -457,6 +457,13 @@ def build(D, R, radar, today, hap, ice, cal):
         out["trig"], out["since"] = triggers(D, t, radar, today, hap, R)
     except Exception as e:
         out["trig"], out["trig_err"] = {k: [] for k, _ in PILLARS}, type(e).__name__
+    try:                                                  # 旧终端检验过的规则（qx/oldrules.py，口径十四.4）：20 个交易日里第一次进入那天出一行
+        from qx import oldrules
+        xs, out["ddv_pct"] = oldrules.today(D, t)
+        for x in xs:
+            out["trig"][x["pillar"]].append(dict(src="old", key=x["key"], title=x["title"], why=x["why"]))
+    except Exception as e:
+        out["old_err"] = type(e).__name__
     for c in out.get("cross200") or []:                   # 跌破 200 日线（旧终端 risk below200，能衡量风险）那天出一行
         out["trig"]["price"].append(dict(src="ma200", key="ma200:" + c["k"], title=f"{c['name']}收盘跌破 200 日线（{c['ma200']}）；在线下时，60 天内再跌一大段的比例历来高 7–8 个百分点（只说风险，不说方向）"))
     return out

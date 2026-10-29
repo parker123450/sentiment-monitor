@@ -197,6 +197,34 @@ def new_cards(st, cards):
     return [] if prev is None else [c for c in cards if c["key"] not in set(prev)]
 
 
+def card_msg(cards, st, msgs, now):
+    """同一次运行新满足的卡合成一条（口径十四.5 R2，2026-10-29 起）：算 1 条名额，合进来的都记成推过；全部是十年少见才不占名额。
+    推送编号用卡的 push_key（预测市场卡和"今天变了什么"同一个，R3），没有就用卡的 key；这次前面的消息或 24 小时内已经推过的编号先去掉
+    （不然合成的这条整条会被去重挡掉）。第 4 类（财报）不算十年少见（R1）。没有要推的返回 None。"""
+    cut = (now - timedelta(hours=REPEAT_H)).isoformat(timespec="minutes")
+    have = {k for m in msgs for k in [m["key"]] + list(m.get("also") or [])}
+    xs = []
+    for c in cards:
+        k = c.get("push_key") or c["key"]
+        if k in have or st.get("sent", {}).get(k, "") >= cut:
+            continue
+        have.add(k)
+        r = c["rank"]
+        xs.append(dict(c, _k=k, _rare=r is not None and c.get("rare_ok", True) and r <= 2 / 2520,
+                       _n10=None if r is None or not c.get("rare_ok", True) else r * 2520))
+    if not xs:
+        return None
+    xs.sort(key=lambda c: (c["cls"], c["rank"] if c["rank"] is not None else 1))
+    if len(xs) == 1:
+        c = xs[0]
+        title, body = f"{c['cls_name']}：{c['title']}", f"{c['why']}\n哪里算错：{c['wrong']}"
+    else:
+        title = f"新卡 {len(xs)} 张"
+        body = "\n".join(f"· {c['cls_name']}：{c['title']}" for c in xs[:8]) + ("\n……" if len(xs) > 8 else "")
+    return dict(key=xs[0]["_k"], title=title, body=body, pri=3, rare=all(c["_rare"] for c in xs),
+                n10=min((c["_n10"] for c in xs if c["_n10"] is not None), default=None), also=[c["_k"] for c in xs[1:]])
+
+
 def push_flash(flash, log=print):
     """快讯候选取到就推（2026-10-29：原来要等下日线、生成页面都做完，交易日下日线那两次要晚 20 多分钟）。
     上限、去重、渠道照旧，走同一个 deliver。第一次运行（还没有推送记录）不推，交给 push() 一起只记不推。"""
@@ -257,9 +285,9 @@ def push(data, ok, log=print, flash=None):
         for x in fw.get("new") or []:
             msgs.append(dict(key=x["key"], title=x["title"], body=x["body"], pri=4))
     if cards is not None and ok:              # 机会和风险卡（第四轮第 4 步）：只推新满足的
-        for c in new_cards(st, cards):
-            msgs.append(dict(key=c["key"], title=f"{c['cls_name']}：{c['title']}", body=f"{c['why']}\n哪里算错：{c['wrong']}", pri=3,
-                             rare=c["rank"] is not None and c["rank"] <= 2 / 2520, n10=None if c["rank"] is None else c["rank"] * 2520))
+        m = card_msg(new_cards(st, cards), st, msgs, now)
+        if m:
+            msgs.append(m)
     if not ok and st.get("selftest_fail") != today:
         st["selftest_fail"] = today
         msgs.append(dict(key=f"selftest|{today}", title="雷达 · 自检没过", body="截断重算和全量不一致，网页这次没有发布。看 GitHub Actions 的日志。", pri=4, cap=False))
