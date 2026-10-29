@@ -273,8 +273,17 @@ def class4(D, t, days=EARN_DAYS, quarters=4):
     for r in rs:
         q = pd.Timestamp(r["date"]).to_period("Q").strftime("%Y Q%q")
         total[q] = total.get(q, 0) + 1
+    beat = {}                                                       # 超预期财报的反应中位数（口径十四.8）：反应 ÷ 日度波动
+    for r in rs:
+        try:
+            if float(r["surprise"]) > 0:
+                beat.setdefault(pd.Timestamp(r["date"]).to_period("Q").strftime("%Y Q%q"), []).append(float(r["ret"]) / float(r["dvol"]))
+        except (TypeError, ValueError, ZeroDivisionError):
+            continue
     for q in tally:
         tally[q]["家数"] = total.get(q, 0)
+        xs = beat.get(q, [])
+        tally[q]["超预期家数"], tally[q]["超预期中位"] = len(xs), round(float(np.median(xs)), 2) if xs else None
     for c in out:
         q = pd.Timestamp(c["date"]).to_period("Q").strftime("%Y Q%q")
         g = tally.get(q, {})

@@ -152,7 +152,8 @@
       const H = FR.h48 || [];
       if (H.length) h += `<div class="rw"><b>接下来 48 小时</b>（北京时间）${H.map(d => `<div class="h48"><span class="d">${esc(d.day)}</span> ${d.items.map(x => `${esc(x.at)} ${esc(x.text)}`).join("；")}</div>`).join("")}</div>`;
       const R = FR.react;
-      if (R) h += `<div class="rw">财报反应：${esc(R.word)}已报 ${R.n} 家，好消息不涨 ${R.bad}、坏消息不跌 ${R.good}（好消息不涨占 ${R.share}%${R.past_n ? `，以往 ${R.past_n} 季 ${R.past_lo}–${R.past_hi}%` : ""}）</div>`;
+      const s2 = x => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(2);
+      if (R) h += `<div class="rw">财报反应：${esc(R.word)}已报 ${R.n} 家，好消息不涨 ${R.bad}、坏消息不跌 ${R.good}（好消息不涨占 ${R.share}%${R.past_n ? `，以往 ${R.past_n} 季 ${R.past_lo}–${R.past_hi}%` : ""}）${R.beat_med != null ? `；超预期的 ${R.beat_n} 家反应中位数 ${s2(R.beat_med)} 个日度波动${R.beat_past_n ? `（以往 ${R.beat_past_n} 季 ${s2(R.beat_lo)} 到 ${s2(R.beat_hi)}）` : ""}` : ""}</div>`;
       put("expect", h + trg(T.expect)); }
     // ⑤ 基本面
     { let h = head("fund", "⑤", "基本面"); const E = FR.season, W = FR.tw, C = FR.credit || [], Y = FR.y10;

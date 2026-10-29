@@ -202,8 +202,10 @@ def reaction(cards):
     share = lambda g: g["好消息不涨"] / g["家数"] * 100 if g.get("家数") else None
     past = [share(T[q]) for q in qs[:-1] if share(T[q]) is not None]
     g = T[cur]
+    bm = [T[q]["超预期中位"] for q in qs[:-1] if T[q].get("超预期中位") is not None]
     return dict(q=cur, word=QUARTER_WORD.get(int(cur[-1]), cur), n=g.get("家数"), bad=g["好消息不涨"], good=g["坏消息不跌"], share=_f(share(g)),
-                past_lo=_f(min(past)) if past else None, past_hi=_f(max(past)) if past else None, past_n=len(past))
+                past_lo=_f(min(past)) if past else None, past_hi=_f(max(past)) if past else None, past_n=len(past),
+                beat_n=g.get("超预期家数"), beat_med=g.get("超预期中位"), beat_lo=min(bm) if bm else None, beat_hi=max(bm) if bm else None, beat_past_n=len(bm))
 
 
 WEEK = "一二三四五六日"
