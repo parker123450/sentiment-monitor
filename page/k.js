@@ -617,7 +617,7 @@
       G.barW = (G.R - G.L) / view.n; G.first = view.end - view.n + 1;
       G.i0 = Math.max(0, Math.floor(G.first)); G.i1 = Math.min(B.length - 1, Math.ceil(view.end));
       const sub = subDef(T); G.sub = sub;
-      const vFrac = hasVol ? 0.13 : 0, sFrac = sub ? (sub.heat ? 0.17 : 0.22) : 0;
+      const vFrac = hasVol ? 0.13 : 0, sFrac = sub ? (sub.heat ? Math.max(0.17, (24 + HEATROWS.length * 14) / plotH) : 0.22) : 0;   // 热度四行每行至少 14 px（手机上图矮了，行名会叠）
       G.pH = Math.round(plotH * (1 - vFrac - sFrac)) - (hasVol ? 6 : 0) - (sub ? 6 : 0);
       G.vTop = G.pH + 8; G.vH = hasVol ? Math.round(plotH * vFrac) : 0;
       G.sTop = G.vTop + G.vH + (hasVol ? 8 : 0); G.sH = sub ? plotH - G.sTop : 0;
@@ -732,7 +732,7 @@
             const a = v >= 90 ? 0.95 : v >= 70 ? 0.5 : v >= 50 ? 0.2 : 0.06;
             g.fillStyle = `rgba(${HR},${a})`; g.fillRect(xOf(i) - bw / 2, y0 + 1, bw + 0.6, rh - 2); }
           g.font = "700 11px " + fb; g.textAlign = "left"; g.textBaseline = "middle";
-          const tw = g.measureText(nm).width + 8; g.fillStyle = DARK ? "rgba(27,31,34,.85)" : "rgba(255,255,255,.85)"; g.fillRect(G.L + 2, y0 + rh / 2 - 8, tw, 16);
+          const tw = g.measureText(nm).width + 8; g.fillStyle = DARK ? "rgba(27,31,34,.85)" : "rgba(255,255,255,.85)"; g.fillRect(G.L + 2, y0 + rh / 2 - Math.min(8, rh / 2), tw, Math.min(16, rh));
           g.fillStyle = T.ink; g.fillText(nm, G.L + 6, y0 + rh / 2 + 0.5); g.textBaseline = "alphabetic";
         });
       } else if (sub) {
