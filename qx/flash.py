@@ -396,7 +396,7 @@ def block(now=None):
         vias = sorted({(r["src"], next((x["via"] for x in ROUTES if x["id"] == r["route"].split(":")[0] or x["id"] == r["route"]), "")) for r in ev})
         items.append(dict(_pub=r0["pub"], t=r0["t"], url=r0["id"], pub=_bj(r0["pub"]), seen=_bj(min(r["seen"] for r in ev)), src=[f"{s} · 经{v}" if v else s for s, v in vias],
                           ents=[en.get(e, e) for e in ents], lines=[LINE_NAME.get(x, x) for x in lines], first=[f"{en.get(k.split(':')[0], k)} × {LINE_NAME.get(k.split(':')[1], '')}" for k in firsts_],
-                          n=len({r['src'] for r in ev})))
+                          n=len({r['src'] for r in ev}), k=[f"first:{k}" for k in firsts_] + ["spread:" + NW.key(r0["t"])]))   # k：推送编号，点开推送跳到这一条
     items = [{k: v for k, v in x.items() if k != "_pub"} for x in sorted(items, key=lambda x: x["_pub"], reverse=True)]
     H = _health()
     t = time.time()

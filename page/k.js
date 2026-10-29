@@ -102,12 +102,12 @@
     const s1 = x => x == null ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(1);
     const s0 = x => x == null ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(Math.round(x));
     const head = (id, no, nm) => `<div class="ph"><h2>${no} ${nm}</h2><a href="#b-${id}" data-back="b-${id}">全部 ›</a></div>`;
-    const trg = xs => (xs || []).map(x => `<div class="trg">${esc(x.title)}${x.why ? `<small>${esc(x.why)}</small>` : ""}</div>`).join("");
+    const trg = xs => (xs || []).map(x => `<div class="trg"${x.key ? ` data-k="${esc(x.key)}"` : ""}>${esc(x.title)}${x.why ? `<small>${esc(x.why)}</small>` : ""}</div>`).join("");
     const put = (id, html) => { const el = $("p-" + id); if (el) el.innerHTML = html; };
     const T = FR.trig || {};
     // 顶上：判断卡（只在错的条件第一次出现、要人看的事两个交易日内）
     const tl = $("tline"), J = FR.judge || [];
-    if (tl && J.length) { tl.hidden = false; tl.innerHTML = J.map(x => `<a class="tg2" href="#b-more" data-back="b-more">${esc(x.title)} → 我的判断</a>`).join(""); }
+    if (tl && J.length) { tl.hidden = false; tl.innerHTML = J.map(x => `<a class="tg2" href="#b-more" data-back="b-more" data-k="${esc(x.key)}">${esc(x.title)} → 我的判断</a>`).join(""); }
     // ① 情绪
     { const E = FR.emo; let h = head("emo", "①", "情绪");
       if (E) {
@@ -180,7 +180,7 @@
   (function today() {
     const T = RAW.today, el = $("today"); if (!T || !el) return;
     const wk = d => "周" + "日一二三四五六"[new Date(d + "T12:00:00").getDay()];
-    const card = x => `<div class="it${x.us ? " us" : ""}"><div class="it-h"><span>${x.n10 == null ? esc(x.hist || "") : `过去 10 年 ${x.n10 < 1 ? "不到 1" : Math.round(x.n10)} 次`}</span>${x.live ? `<span class="it-tag">${esc(x.state || "盘中")}</span>` : ""}<span>${md(x.date)}</span></div>
+    const card = x => `<div class="it${x.us ? " us" : ""}" data-k="${esc(x.key + "|" + x.date)}"><div class="it-h"><span>${x.n10 == null ? esc(x.hist || "") : `过去 10 年 ${x.n10 < 1 ? "不到 1" : Math.round(x.n10)} 次`}</span>${x.live ? `<span class="it-tag">${esc(x.state || "盘中")}</span>` : ""}<span>${md(x.date)}</span></div>
       <div class="it-t">${esc(x.title)}</div>${(x.facts || []).length ? `<ul>${x.facts.map(f => `<li>${esc(f)}</li>`).join("")}</ul>` : ""}${x.mean ? `<p class="it-m"><b>说明什么：</b>${esc(x.mean)}</p>` : ""}${(x.news || []).length ? `<div class="nwh">同一时间的新闻（程序按关键词配的，可能不是原因）</div><ul class="nw">${x.news.map(n => `<li><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.t)}</a><small>${esc(n.src)} · ${esc(n.ago)}</small></li>`).join("")}</ul>` : ""}</div>`;
     let html = `<h2>今天变了什么<small>${md(T.asof)} 收盘${T.items.some(x => x.live) ? " · 含盘中" : ""}，越少见越靠前</small></h2>`;
     const TOP3 = 3;                                   // 第四轮第 2 步：首屏只放最少见的 3 条（规则不变，只改显示）
@@ -286,6 +286,41 @@
   const bj = ms => new Date(ms + 8 * 3600e3).toISOString().slice(11, 16);
   const bjd = ms => { const s = new Date(ms + 8 * 3600e3).toISOString(); return `${+s.slice(5, 7)}/${+s.slice(8, 10)} ${s.slice(11, 16)}`; };
   let LIVE = null, LIVE_ERR = null;
+  // 24 小时内推过的（口径十四.11）：Worker 的推送记录（/live 带回，公开的快讯、涨跌才带标题）和 Worker 连不上时云端直接发的记录（RD.pushed），按编号去重；
+  // 没带标题的用页面上那一条的字
+  function pushed() {
+    const cut = Date.now() - 24 * 3600e3, by = new Map();
+    for (const x of [].concat((LIVE && LIVE.pushed) || [], RD.pushed || [])) if (x && x.key && x.at > cut && !(by.has(x.key) && by.get(x.key).title)) by.set(x.key, x);
+    return [...by.values()].sort((a, b) => b.at - a.at);
+  }
+  function pushTitle(x) {
+    if (x.title) return x.title;
+    const el = findK(x.key), t = el && (el.matches(".trg") ? el.firstChild : el.querySelector(".it-t, summary b, a") || el);
+    if (t && t.textContent.trim()) return t.textContent.trim().slice(0, 80);
+    return { selftest: "雷达 · 自检没过", stale: "雷达 · 数据没更新", digest: "没推的几件（合成一条）", move: "盘中少见的涨跌", first: "快讯：第一次", spread: "快讯：几家同时报道" }[x.key.split(/[:|]/)[0]] || "推送";
+  }
+  // 推送点开跳到那一条（#k=编号）：触发行、今天变了什么、机会和风险卡、快讯带 data-k / data-ks；前台有的先跳前台
+  function findK(k) {
+    const q = x => `[data-k="${CSS.escape(x)}"],[data-ks~="${CSS.escape(x)}"]`, b = k.split("|")[0];
+    const els = [k, b, "card:" + k, "card:" + b].flatMap(x => [...document.querySelectorAll(q(x))]);
+    return els.find(e => !e.closest("#back")) || els[0] || null;
+  }
+  function jumpK() {
+    const m = /^#k=(.+)$/.exec(location.hash); if (!m) return;
+    let k; try { k = decodeURIComponent(m[1]); } catch (e) { return; }
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}   // 刷新不再跳
+    const el = findK(k) || $({ first: "flash", spread: "flash", move: "mkts" }[k.split(":")[0]] || "");
+    if (!el || el.hidden) return;
+    if (el.closest("#back")) openBack(null);
+    for (let d = el.closest("details"); d; d = d.parentElement && d.parentElement.closest("details")) d.open = true;
+    el.classList.add("hit"); setTimeout(() => el.classList.remove("hit"), 6000);
+    requestAnimationFrame(() => el.scrollIntoView({ block: "center" }));
+  }
+  document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("[data-pushl]"); if (!a) return; e.preventDefault();
+    const el = $("pushl"); if (!el) return;
+    el.hidden = !el.hidden; if (el.hidden) return;
+    el.innerHTML = pushed().map(x => `<a href="#k=${encodeURIComponent(x.key)}">${bj(x.at)} · ${esc(pushTitle(x))}</a>`).join("") +
+      `<p class="knote">北京时间。点一条跳到页面上那一条；合并成一条推的（"今天要知道的 N 件""新卡 N 张"）跳到第一件。</p>`; });
   function zword(z) { const a = Math.abs(z); return z == null ? "—" : (z < 0 ? "−" : "+") + a.toFixed(1); }
   function times() {
     const el = $("times"), ck = $("clock"); if (!el) return;
@@ -303,6 +338,8 @@
     const asof = [`美股截至 ${d2(RAW.asof)} 收盘`];
     if ((FR.credit || []).length) asof.push(`信用利差截至 ${d2(FR.credit[0].date)}`);
     if (FR.flow) asof.push(`CFTC ${d2(FR.flow.asof)} 那期`);
+    const pu = pushed();
+    if (pu.length) asof.push(`<a href="#" class="pu" data-pushl>24 小时内推过 ${pu.length} 条 ›</a>`);
     el.innerHTML = parts.join(" · ") + "<br>" + asof.join(" · ");
   }
   (function narr() {
@@ -383,7 +420,7 @@
     el.hidden = false;
     const cs = K.cards || [];
     const pc = f => f == null ? "—" : f < 0.001 ? "不到 0.1%" : (f * 100).toFixed(f < 0.1 ? 1 : 0) + "%";
-    const one = c => `<details class="cd"><summary><span class="ns">${esc(c.cls_name)} · ${md(c.date)} · 少见程度 ${pc(c.rank)}${c.replayed ? "" : " · 还没有回放"}</span><b>${esc(c.title)}</b></summary>` +
+    const one = c => `<details class="cd" data-k="${esc("card:" + c.key)}"><summary><span class="ns">${esc(c.cls_name)} · ${md(c.date)} · 少见程度 ${pc(c.rank)}${c.replayed ? "" : " · 还没有回放"}</span><b>${esc(c.title)}</b></summary>` +
       `<dl><dt>为什么现在</dt><dd>${esc(c.why)}</dd><dt>哪里算错</dt><dd>${esc(c.wrong)}</dd><dt>空间</dt><dd>${esc(c.space || "—")}</dd><dt>用什么做</dt><dd>${esc(c.use)}</dd><dt>时间窗口</dt><dd>${esc(c.window)}</dd></dl>` +
       `<div class="ns">${esc(c.note)}</div></details>`;
     let h = `<h2>机会和风险<small>截至 ${md(K.asof)} · 满足条件的 ${cs.length} 张，按少见程度排，点开看五栏</small></h2>`;
@@ -424,7 +461,7 @@
   (function () {
     const F = RAW.flash, el = $("flash"); if (!F || !el) return;
     el.hidden = false;
-    const it = x => `<div class="fli"><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.t)}</a>` +
+    const it = x => `<div class="fli" data-ks="${esc((x.k || []).join(" "))}"><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.t)}</a>` +
       `<div class="fm">${x.src.map(esc).join("；")} · 发布 ${esc(x.pub)}，看到 ${esc(x.seen)}（北京）${x.n > 1 ? ` · ${x.n} 家` : ""}</div>` +
       `<div>${x.first.map(f => `<span class="tg first">第一次：${esc(f)}</span>`).join("")}${x.ents.map(e => `<span class="tg">${esc(e)}</span>`).join("")}${x.lines.map(l => `<span class="tg">${esc(l)}</span>`).join("")}</div></div>`;
     const top = F.items.slice(0, F.top), more = F.items.slice(F.top);
@@ -963,4 +1000,6 @@
     };
   })();
   document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("[data-jump]"); if (b) KL.jump(b.dataset.jump); });
+  addEventListener("hashchange", jumpK);
+  jumpK();
 })();

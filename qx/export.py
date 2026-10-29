@@ -266,6 +266,11 @@ def build(D, aaii, R, write=False):
     wu, wt = os.environ.get("WORKER_URL", "").strip(), os.environ.get("WORKER_READ_TOKEN", "").strip()
     radar["live"] = {"url": wu, "token": wt} if wu and wt else None          # 只读令牌，放在加密页里（口径.md 第十节）
     radar["built"] = int(datetime.now(timezone.utc).timestamp() * 1000)
+    try:
+        from qx import notify as NT
+        radar["pushed"] = NT.recent()                     # Worker 连不上时云端直接发的（口径十四.11）
+    except Exception:
+        radar["pushed"] = []
     td, ic = today(D, R, opt, hap, jud), ice(D, days[-1])
     try:
         from qx import front as FR                         # 前台五样（第四轮五样方案，口径十四）：只挑已算好的结果按五样摆

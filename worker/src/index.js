@@ -5,7 +5,7 @@
 //   2-59/5 * * * *    第 2、7、12…分：开盘中的市场取价 → 查 Actions 给的少见表 → 十年少见的推送
 //   0 0 * * *         每天：清 30 天前的快讯、7 天前的推送记录；合成"没推的 N 件"
 // 接口（四把令牌按路径限权，比较用常数时间）：
-//   GET  /live      READ_TOKEN    页面现取：价格、状态时点、快讯、各条路健康、最新的定时文字
+//   GET  /live      READ_TOKEN    页面现取：价格、状态时点、快讯、各条路健康、最新的定时文字、24 小时内推过的编号
 //   POST /state     WRITE_TOKEN   Actions 推来规则、少见表、各市场时刻
 //   POST /firsts    WRITE_TOKEN   Actions 推来白名单（彭博、WSJ 等）的（主体:线, 看到时间）
 //   GET  /news      WRITE_TOKEN   Actions 取回快讯存档（?since=毫秒）
@@ -21,6 +21,7 @@ import { newsJobs, parse, sparkUrl, parseSpark } from "./sources.js";
 const ORIGIN = "https://parker123450.github.io";
 const SITE = "https://parker123450.github.io/sentiment-monitor/";
 const KEEP_DAYS = 30, SHOW_H = 2, FAIL_STOP = 5, STOP_H = 1, RARE_PUSH = 2;
+const PUB_TITLE = /^(first|spread|move|digest):/;
 const PUSH_RULES = { day_cap: 6, day_start_bj: 8, repeat_h: 24, rare_n10: 2 };   // 默认；Actions 推来的 rules.push 覆盖
 
 const json = (x, status = 200, h = {}) => new Response(JSON.stringify(x), { status, headers: { "content-type": "application/json; charset=utf-8", ...h } });
@@ -57,10 +58,10 @@ function claudeLink(title, body) {
 }
 
 async function send(env, m) {
-  const link = claudeLink(m.title, m.body), jobs = [];
+  const link = claudeLink(m.title, m.body), jobs = [], site = SITE + (m.key ? "#k=" + encodeURIComponent(m.key) : "");   // 点开跳到页面上的那一条
   const post = (u, b) => fetch(u, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
-  if (env.NTFY_TOPIC) jobs.push(post("https://ntfy.sh", { topic: env.NTFY_TOPIC, title: m.title, message: m.body, priority: m.pri || 3, click: SITE, actions: [{ action: "view", label: "发给 Claude", url: link }] }));
-  if (env.WECOM_KEY) jobs.push(post(`https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=${env.WECOM_KEY}`, { msgtype: "markdown", markdown: { content: `**${m.title}**\n${m.body}\n[打开雷达](${SITE}) · [发给 Claude](${link})` } }));
+  if (env.NTFY_TOPIC) jobs.push(post("https://ntfy.sh", { topic: env.NTFY_TOPIC, title: m.title, message: m.body, priority: m.pri || 3, click: site, actions: [{ action: "view", label: "发给 Claude", url: link }] }));
+  if (env.WECOM_KEY) jobs.push(post(`https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=${env.WECOM_KEY}`, { msgtype: "markdown", markdown: { content: `**${m.title}**\n${m.body}\n[打开雷达](${site}) · [发给 Claude](${link})` } }));
   if (env.BARK_KEY) jobs.push(post(`https://api.day.app/${env.BARK_KEY}`, { title: m.title, body: m.body, url: link, group: "雷达", level: (m.pri || 3) >= 4 ? "timeSensitive" : "active" }));
   const rs = await Promise.allSettled(jobs);
   return rs.filter(r => r.status === "fulfilled" && r.value.ok).length;
@@ -76,7 +77,9 @@ async function pushAll(env, msgs, now) {
   await putState(env, "push", st, now).run();
   let n = 0;
   for (const m of out) n += (await send(env, m)) > 0;
-  if (out.length) await env.DB.batch(out.map(m => env.DB.prepare("INSERT OR REPLACE INTO pushlog (key, at, day, sent) VALUES (?, ?, ?, ?)").bind(m.key, now, pushDay(now, R.day_start_bj), 1)));
+  // 标题只记公开的（快讯、盘中涨跌、"没推的 N 件"这个数）；云端推来的今天变了什么、卡、判断不记，页面用自己那一条的字
+  if (out.length) await env.DB.batch(out.map(m => env.DB.prepare("INSERT OR REPLACE INTO pushlog (key, at, day, sent, title) VALUES (?, ?, ?, ?, ?)")
+    .bind(m.key, now, pushDay(now, R.day_start_bj), 1, PUB_TITLE.test(m.key) ? String(m.title).slice(0, 120) : null)));
   return n;
 }
 
@@ -163,13 +166,14 @@ async function daily(env, now) {
 
 // ---------------------------------------------------------------- 页面现取
 async function live(env, now) {
-  const [p, rules, markets, src, nw, br] = await Promise.all([
+  const [p, rules, markets, src, nw, br, pl] = await Promise.all([
     getState(env, "prices"), getState(env, "rules"), getState(env, "markets"),
     env.DB.prepare("SELECT * FROM sources").all(),
     env.DB.prepare("SELECT route, id, src, t, pub, seen, ents, lines, first FROM news WHERE seen > ? AND (ents != '' OR lines != '') ORDER BY pub DESC LIMIT 20").bind(now - SHOW_H * 3600e3).all(),
     env.DB.prepare("SELECT at, slot, text FROM brief ORDER BY at DESC LIMIT 1").first(),
+    env.DB.prepare("SELECT key, at, title FROM pushlog WHERE at > ? AND sent = 1 ORDER BY at DESC LIMIT 40").bind(now - 86400e3).all(),
   ]);
-  return { now, prices: p && p.v, prices_at: p && p.at, state_at: { rules: rules && rules.at, markets: markets && markets.at }, sources: src.results, news: nw.results, brief: br || null };
+  return { now, prices: p && p.v, prices_at: p && p.at, state_at: { rules: rules && rules.at, markets: markets && markets.at }, sources: src.results, news: nw.results, brief: br || null, pushed: pl.results };
 }
 
 // ---------------------------------------------------------------- 接口

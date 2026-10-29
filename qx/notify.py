@@ -85,21 +85,27 @@ def claude_link(title, body):
     return "https://claude.ai/new?q=" + urllib.parse.quote(q[:CLAUDE_MAX])
 
 
-def send(title, msg, priority=3, log=print):
+def page_link(key=None):
+    """点开推送跳到页面上的那一条（#k=编号；在后台的页面自己打开后台）。"""
+    return SITE + ("#k=" + urllib.parse.quote(key, safe="") if key else "")
+
+
+def send(title, msg, priority=3, log=print, key=None):
     """发到所有开着的渠道；返回发出去的渠道数。"""
     ch = channels()
     if not ch:
         return 0
     link = claude_link(title, msg)
+    site = page_link(key)
     n = 0
     for k, v in ch.items():
         try:
             if k == "ntfy":
-                body = {"topic": v, "title": title, "message": msg, "priority": priority, "click": SITE,
+                body = {"topic": v, "title": title, "message": msg, "priority": priority, "click": site,
                         "actions": [{"action": "view", "label": "发给 Claude", "url": link}]}
                 req = urllib.request.Request(NTFY, data=json.dumps(body).encode("utf-8"), headers={"Content-Type": "application/json"})
             elif k == "wecom":
-                body = {"msgtype": "markdown", "markdown": {"content": f"**{title}**\n{msg}\n[打开雷达]({SITE}) · [发给 Claude]({link})"}}
+                body = {"msgtype": "markdown", "markdown": {"content": f"**{title}**\n{msg}\n[打开雷达]({site}) · [发给 Claude]({link})"}}
                 req = urllib.request.Request(WECOM.format(v), data=json.dumps(body, ensure_ascii=False).encode("utf-8"), headers={"Content-Type": "application/json"})
             else:
                 body = {"title": title, "body": msg, "url": link, "group": "雷达", "level": "timeSensitive" if priority >= 4 else "active"}
@@ -182,11 +188,22 @@ def deliver(msgs, st, now=None, log=print):
             return n
     out, n_held = gate(st, msgs, now)
     n = 0
+    lg = [x for x in st.get("log") or [] if x["at"] > (now - timedelta(hours=48)).timestamp() * 1000]
     for m in dg + out:
-        n += send(m["title"], m["body"], m.get("pri", 3), log) > 0
+        if send(m["title"], m["body"], m.get("pri", 3), log, key=m.get("key")) > 0:
+            n += 1
+            lg.append({"key": m["key"], "at": int(now.timestamp() * 1000)})    # 顶栏"24 小时内推过"（口径十四.11）：只记编号，标题页面自己找
+    st["log"] = lg
     if dg or out or n_held:
         log(f"推送：{n} 条发出" + (f"，{n_held} 条超了上限攒到明早 08:00" if n_held else ""))
     return n
+
+
+def recent(now=None, hours=24):
+    """云端直接发（没有 Worker 或连不上）的 24 小时内推过的编号 → 页面顶栏；有 Worker 时由 Worker 的 /live 带回。"""
+    st = _state() or {}
+    cut = ((now or datetime.now(timezone.utc)) - timedelta(hours=hours)).timestamp() * 1000
+    return [x for x in st.get("log") or [] if x.get("at", 0) > cut]
 
 
 def new_cards(st, cards):

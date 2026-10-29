@@ -97,6 +97,10 @@ h2 { font-size: 18px; margin: 30px 0 6px; }
 .times { font-size: 12px; color: var(--ink-3); margin: 2px 0 0; line-height: 1.5; }
 .times b { color: var(--ink-2); font-weight: 600; }
 .times .stale { color: var(--alert); }
+.times .pu { color: var(--accent); text-decoration: none; white-space: nowrap; }
+.pushl { font-size: 13px; margin: 6px 0 0; padding: 6px 10px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+.pushl a { display: block; padding: 4px 0; color: var(--ink); text-decoration: none; border-bottom: 1px solid var(--grid); }
+.hit { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 h2 small { font-size: 12.5px; color: var(--ink-3); font-weight: 500; margin-left: 6px; }
 .narr { margin: 10px 0 4px; }
 .narr h2 { margin: 10px 0 6px; font-size: 20px; }
@@ -284,6 +288,7 @@ small { font-size: max(12px, .9em); }
 <main>
   <div class="top"><b>交易员雷达</b><span id="clock"></span></div>
   <div class="times" id="times"></div>
+  <div class="pushl" id="pushl" hidden></div>
   <div class="warn" id="warn" hidden></div>
   <div class="tl" id="tline" hidden></div>
 
