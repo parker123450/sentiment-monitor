@@ -102,14 +102,15 @@
     const s1 = x => x == null ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(1);
     const s0 = x => x == null ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(Math.round(x));
     const head = (id, no, nm) => `<div class="ph"><h2>${no} ${nm}</h2><a href="#b-${id}" data-back="b-${id}">全部 ›</a></div>`;
-    const tr1 = x => `<div class="trg"${x.key ? ` data-k="${esc(x.key)}"` : ""}>${esc(x.title)}${x.why ? `<small>${esc(x.why)}</small>` : ""}</div>`;
+    const dk = x => x.key && x.date ? ` data-ks="${esc(x.key + "|" + x.date)}"` : "";      // 带日期的推送编号（今天变了什么、判断）：只跳那一天的这一行
+    const tr1 = x => `<div class="trg"${x.key ? ` data-k="${esc(x.key)}"` : ""}${dk(x)}>${esc(x.title)}${x.why ? `<small>${esc(x.why)}</small>` : ""}</div>`;
     const TRG = 2;                                    // 五样方案第 7 步：每块的触发行最多露 2 行，其余折起来（只是显示上限）
     const trg = xs => (xs = xs || []).slice(0, TRG).map(tr1).join("") + (xs.length > TRG ? `<details class="trgm"><summary>再看 ${xs.length - TRG} 条</summary>${xs.slice(TRG).map(tr1).join("")}</details>` : "");
     const put = (id, html) => { const el = $("p-" + id); if (el) el.innerHTML = html; };
     const T = FR.trig || {};
     // 顶上：判断卡（只在错的条件第一次出现、要人看的事两个交易日内）
     const tl = $("tline"), J = FR.judge || [];
-    if (tl && J.length) { tl.hidden = false; tl.innerHTML = J.map(x => `<a class="tg2" href="#b-more" data-back="b-more" data-k="${esc(x.key)}">${esc(x.title)} → 我的判断</a>`).join(""); }
+    if (tl && J.length) { tl.hidden = false; tl.innerHTML = J.map(x => `<a class="tg2" href="#b-more" data-back="b-more" data-k="${esc(x.key)}"${dk(x)}>${esc(x.title)} → 我的判断</a>`).join(""); }
     // ① 情绪
     { const E = FR.emo; let h = head("emo", "①", "情绪");
       if (E) {
@@ -280,7 +281,7 @@
       (N.top && N.top.length ? `<ul class="nw">${N.top.map(li).join("")}</ul>` : `<p class="quiet">最近 24 小时没有和美股有关的要闻。</p>`) +
       (C.length ? `<h3 style="font-size:15px;margin:16px 0 4px">接下来 7 天</h3><table class="tbl cal">${calRows(C)}</table>` : "") +
       ((N.more || []).length ? `<details><summary>更多新闻（按话题）</summary>${N.more.map(g => `<p style="margin:10px 0 2px"><b>${esc(g.topic)}</b></p><ul class="nw">${g.items.map(li).join("")}</ul>`).join("")}</details>` : "") +
-      `<p class="knote">新闻只从路透、彭博、华尔街日报、金融时报、CNBC、日经亚洲、美联储、韩联社、CoinDesk 和华尔街见闻"重要"快讯里取。期权定价包含到期前的正常波动，偏大一点。</p>`;
+      `<p class="knote">新闻只从路透、彭博、华尔街日报、金融时报、CNBC、日经亚洲、美联储、韩联社、CoinDesk 和华尔街见闻"重要"快讯里取。期权：财报是反应日（时间未定的是当天加下一天）的涨跌，拆掉了别的日子平常的波动，写一半机会超过多少；议息会是到期以前的总幅度，包含到期前的正常波动，偏大一点。</p>`;
   })();
 
   // ---------- 雷达（第四轮第 2 步）：顶栏时点、市场在交易什么、各市场一行；有 Worker 时每 60 秒现取价格（/live）
@@ -295,23 +296,35 @@
     for (const x of [].concat((LIVE && LIVE.pushed) || [], RD.pushed || [])) if (x && x.key && x.at > cut && !(by.has(x.key) && by.get(x.key).title)) by.set(x.key, x);
     return [...by.values()].sort((a, b) => b.at - a.at);
   }
+  const TODAY_KINDS = ["stage", "line", "term", "trend", "rel", "small", "ivrv", "gamma", "pm"];
+  function pushCat(k) {           // 页面上已经没有那一条的写类别（口径十四.11）
+    const p = k.split(/[:|]/)[0];
+    if (/^c[1-6]$/.test(p)) return "机会和风险卡";
+    if (p === "move") return /:live\|/.test(k) ? "盘中少见的涨跌" : "今天变了什么";
+    if (TODAY_KINDS.includes(p)) return "今天变了什么";
+    return { selftest: "雷达 · 自检没过", stale: "雷达 · 数据没更新", digest: "没推的几件（合成一条）", first: "快讯：第一次", spread: "快讯：几家同时报道", judge: "我的判断", scen: "三种走向" }[p] || "推送";
+  }
   function pushTitle(x) {
     if (x.title) return x.title;
     const el = findK(x.key), t = el && (el.matches(".trg") ? el.firstChild : el.querySelector(".it-t, summary b, a") || el);
     if (t && t.textContent.trim()) return t.textContent.trim().slice(0, 80);
-    return { selftest: "雷达 · 自检没过", stale: "雷达 · 数据没更新", digest: "没推的几件（合成一条）", move: "盘中少见的涨跌", first: "快讯：第一次", spread: "快讯：几家同时报道" }[x.key.split(/[:|]/)[0]] || "推送";
+    return pushCat(x.key);
   }
-  // 推送点开跳到那一条（#k=编号）：触发行、今天变了什么、机会和风险卡、快讯带 data-k / data-ks；前台有的先跳前台
+  // 推送点开跳到那一条（#k=编号）：触发行、今天变了什么、机会和风险卡、快讯带 data-k / data-ks。按 原编号 → 加 card: 找，
+  // 同一个编号前台有的先跳前台；不去掉日期找（会跳到后来另一天同一类的那一条）
   function findK(k) {
-    const q = x => `[data-k="${CSS.escape(x)}"],[data-ks~="${CSS.escape(x)}"]`, b = k.split("|")[0];
-    const els = [k, b, "card:" + k, "card:" + b].flatMap(x => [...document.querySelectorAll(q(x))]);
-    return els.find(e => !e.closest("#back")) || els[0] || null;
+    const q = x => `[data-k="${CSS.escape(x)}"],[data-ks~="${CSS.escape(x)}"]`;
+    for (const x of [k, "card:" + k]) {
+      const els = [...document.querySelectorAll(q(x))];
+      if (els.length) return els.find(e => !e.closest("#back")) || els[0];
+    }
+    return null;
   }
   function jumpK() {
     const m = /^#k=(.+)$/.exec(location.hash); if (!m) return;
     let k; try { k = decodeURIComponent(m[1]); } catch (e) { return; }
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}   // 刷新不再跳
-    const el = findK(k) || $({ first: "flash", spread: "flash", move: "mkts" }[k.split(":")[0]] || "");
+    const el = findK(k) || $({ first: "flash", spread: "flash" }[k.split(":")[0]] || (/^move:[^|]*:live\|/.test(k) ? "mkts" : ""));
     if (!el || el.hidden) return;
     if (el.closest("#back")) openBack(null);
     for (let d = el.closest("details"); d; d = d.parentElement && d.parentElement.closest("details")) d.open = true;

@@ -2,7 +2,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { compile, tag, firsts, gate, digest, pushDay, rarity, candidates, moveMsgs } from "../src/rules.js";
+import { compile, tag, firsts, gate, digest, pushDay, rarity, candidates, moveMsgs, pubTitle } from "../src/rules.js";
 import { parseRss, parseTv, parseWscn, parseSpark, newsJobs, norm } from "../src/sources.js";
 
 const fx = n => readFileSync(new URL(`./fixtures/${n}`, import.meta.url), "utf8");
@@ -107,4 +107,9 @@ test("每 5 分钟轮一个谷歌新闻栏目", () => {
   const ids = [0, 5, 10, 15, 20].map(m => newsJobs(m)[2][0]);
   assert.deepEqual(ids, ["R3:markets", "R3:business", "R3:technology", "R3:world", "R3:markets"]);
   assert.equal(norm("https://a.com/x?y=1#z"), "https://a.com/x");
+});
+
+test("推送记录只记公开的标题", () => {
+  for (const k of ["first:nvda:credit", "spread:nvidiahalts", "digest:2026-10-29", "move:半导体:live|2026-10-29"]) assert.ok(pubTitle(k), k);
+  for (const k of ["move:半导体|2026-10-29", "c5:AMD2026-11-03", "judge:x:w:1|2026-10-29", "scen:ai:bust:2", "pm:x|2026-10-29", "stage:3|2026-10-29"]) assert.ok(!pubTitle(k), k);
 });

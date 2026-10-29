@@ -88,6 +88,10 @@ export function digest(st, now, startH = 8) {
   return out;
 }
 
+// 推送记录里记不记标题（口径十四.11）：只记公开的——快讯（第一次、几家同时报道）、盘中涨跌（move:{组}:live|日期）、"没推的 N 件"。
+// 收盘后的"今天变了什么"（move:{名字}|日期 等）、卡、判断、三种走向不记
+export const pubTitle = k => /^(first|spread|digest):/.test(k) || /^move:[^|]*:live\|/.test(k);
+
 // 盘中少见的涨跌 → 推送消息。S 是 Actions 推来的 markets（qx/markets.py 的 state()），quotes = {代码: {p, pc, at}}。
 // 收益率（rare[s].bp）按基点查表；只看涨的（up_only：VIX、VXN）跌了不算；key 和 qx/watch.py 的盘中版一样（move:{组}:live|{UTC 日期}），
 // 经同一个 /push 去重，Actions 15 分钟一次推的同一件事不会再推一遍。

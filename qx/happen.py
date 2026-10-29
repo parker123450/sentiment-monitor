@@ -187,13 +187,14 @@ def _implied(chains, sym, react):
 
 
 def _event_implied(chains, sym, react, tm):
-    """财报：期权算的"财报这一下"，拆掉平常每天的波动（口径十四.9，和第 5 类卡同一个算法）；拆不出来不写。"""
+    """财报：期权算的反应日（时间未定的两天合计）涨跌，拆掉别的日子平常的波动（口径十四.9，和第 5 类卡同一个算法）；拆不出来、已经过了反应日的不写。"""
     from qx import cboe
     em = cboe.event_move(chains.get(sym), react, two=tm not in ("盘前", "盘后"))
     return {"sym": sym, "exp": em["exp"][5:], "move": round(em["med"], 4), "ev": 1} if em else None
 
 
 def calendar_block(now=None):
+    from qx import cboe
     now = now or datetime.now(timezone.utc)
     d0 = now.astimezone(clock.NY).date()
     end = (d0 + timedelta(days=7)).isoformat()
@@ -201,7 +202,7 @@ def calendar_block(now=None):
         chains = json.load(open(os.path.join(store.HERE, "chains_latest.json"), encoding="utf-8"))
     except Exception:
         chains = {}
-    chains = {k: v for k, v in chains.items() if str(v.get("date") or v.get("asof") or "9999")[:10] <= d0.isoformat()}   # 那天以后取的不用（原则 3）
+    chains = {k: x for k, x in ((k, cboe.chain_at(v, d0.isoformat())) for k, v in chains.items()) if x}   # 那天以后取的不用（原则 3）
     out = []
     for e in EV.load().get("events", []):
         if not (d0.isoformat() <= e["date"] <= end):
@@ -213,9 +214,7 @@ def calendar_block(now=None):
         y = dict(e)
         d = date.fromisoformat(e["date"])
         if e["kind"] == "earnings":
-            react = d if e.get("time") == "盘前" else d + timedelta(days=1)    # 时间未定的看当天加下一天（口径十四.9）
-            while not clock.is_trading_day(react):
-                react += timedelta(days=1)
+            react = cboe.react_day(d, e.get("time"))                           # 时间未定的看当天加下一天（口径十四.9）
             im = _event_implied(chains, e.get("sym"), react, e.get("time"))
             y["implied"] = [im] if im else []
         elif e["kind"] == "fomc":

@@ -442,15 +442,15 @@ def triggers(D, t, radar, today, hap, R):
     # 7) 三种走向的信号先出现（口径十三，first 是最近一个收盘日）
     for S in ((radar.get("fwd") or {}).get("scenarios") or []):
         for w in S["ways"]:
-            for x in w["signals"]:
+            for i, x in enumerate(w["signals"]):
                 if x.get("first") == t.strftime("%Y-%m-%d"):
-                    trig["fund"].append(dict(src="scen", key=f"scen:{S['id']}:{w['id']}", title=f"三种走向 · {S['name']}：{w['name']}的信号先出现（{x['text']}）· 登记的假设，不是买卖建议"))
+                    trig["fund"].append(dict(src="scen", key=f"scen:{S['id']}:{w['id']}:{i}", title=f"三种走向 · {S['name']}：{w['name']}的信号先出现（{x['text']}）· 登记的假设，不是买卖建议"))
     return trig, tp.strftime("%Y-%m-%d")
 
 
 def judge_line(today):
     """判断卡只在两种情况出一行（五样方案三）：错的条件第一次出现、要人看的事两个交易日内。"""
-    return [dict(key=x["key"], title=x["title"]) for x in (today or {}).get("items") or [] if x.get("kind") == "judge" and (":w:" in x["key"] or ":e:" in x["key"])]
+    return [dict(key=x["key"], title=x["title"], date=x.get("date")) for x in (today or {}).get("items") or [] if x.get("kind") == "judge" and (":w:" in x["key"] or ":e:" in x["key"])]
 
 
 # ================================================================ 合起来

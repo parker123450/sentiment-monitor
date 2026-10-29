@@ -334,13 +334,55 @@ def candidates(now=None, rows=None, since_h=1):
             e, ln = k.split(":")
             if e in W and ln in ("credit", "geo"):
                 out.append(dict(kind="first", key=f"first:{k}", title=f"第一次：{name(e)} × {LINE_NAME.get(ln, ln)}", body=r["t"], src=r["src"], at=r["seen"]))
-    pool = [r for r in rows if r.get("seen") and r["seen"] >= (now - timedelta(hours=since_h + SPREAD_H)).isoformat(timespec="seconds")]
-    for ev in events(pool):
+    for key, ev in spreads(now, rows, since_h):
         srcs = {r["src"] for r in ev if r["src"] in WHITE}
-        if len(srcs) >= SPREAD_N and max(r["seen"] for r in ev) >= cut:
-            r0 = min(ev, key=visible)
-            out.append(dict(kind="spread", key="spread:" + NW.key(r0["t"]), title=f"{len(srcs)} 家同时报道", body=r0["t"], src="、".join(sorted(srcs)), at=r0["seen"]))
+        r0 = min(ev, key=visible)
+        out.append(dict(kind="spread", key=key, title=f"{len(srcs)} 家同时报道", body=r0["t"], src="、".join(sorted(srcs)), at=r0["seen"]))
     return out
+
+
+def spreads(now, rows, since_h=1):
+    """"几家同时报道"：→ [(推送编号, 这件事的行), ...]。最近 since_h + 1 小时看到的归成同一件事，3 家以上白名单来源、最近 since_h 小时有新的。
+    编号：和 24 小时内记下的某件事（remember_spreads）有同一篇稿子、而且最早看到的那条和那件推送时的标题算同一件事（词重合 ≥ 一半，和归事件一样）的，
+    沿用那件的编号（有几件的：那件编号取自的那条 rep 在这里面的先，再看同一篇稿子最多的）——持续报道的事，最早看到的那条出了这 2 小时以后标题跟着变，
+    原来会换个编号再推一次（2026-10-29 第四轮核实改正）。标题要像：两件相近的事归到过一起、稿子记在前一件下面，后一件自己传开了还能推。
+    标题不像、但 rep 在这里面，而且那件记下的稿子还在这 2 小时里的至少一半在这件里的，也算那件（后来并进来一条更早看到、标题不像的稿子，
+    比如晚一轮同步进来的路透稿，"最早看到的"换成了它）。2026-10-30 第五到七轮核实改正：只看 rep 在不在，另一件事把 rep 拉进来时会被当成那件、
+    推不出去；只数那件记下的稿子落在哪——这件新到的、晚到的稿子没被记下过，不算；归事件时同一件事被分成两半（只和最新的一条比），也还认得。
+    都没有的拿最早看到的那条的标题。"""
+    cut = (now - timedelta(hours=since_h)).isoformat(timespec="seconds")
+    pool = [r for r in rows if r.get("seen") and r["seen"] >= (now - timedelta(hours=since_h + SPREAD_H)).isoformat(timespec="seconds")]
+    day = (now - timedelta(hours=24)).isoformat(timespec="seconds")
+    known = [(k, v.get("rep"), set(v.get("ids", [])), NW.words(v.get("t", ""))) for k, v in sorted((_state().get("spread_ids") or {}).items()) if v.get("at", "") >= day]
+    pid = {f"{r['route']}\t{r['id']}" for r in pool}
+    out = []
+    for ev in events(pool):
+        if len({r["src"] for r in ev if r["src"] in WHITE}) < SPREAD_N or max(r["seen"] for r in ev) < cut:
+            continue
+        ids = {f"{r['route']}\t{r['id']}" for r in ev}
+        r0 = min(ev, key=visible)
+        w0 = NW.words(r0["t"])
+        like = lambda w: bool(w0 and w) and len(w0 & w) / min(len(w0), len(w)) >= NW.SAME
+        most = lambda rp, s: rp in ids and 2 * len(ids & s) >= len(s & pid)
+        hit = sorted((rp not in ids, -len(ids & s), k) for k, rp, s, w in known if ids & s and (like(w) or most(rp, s)))
+        out.append((hit[0][2] if hit else "spread:" + NW.key(r0["t"]), ev))
+    return out
+
+
+def remember_spreads(now, rows):
+    """推送候选里"几家同时报道"的每件事记下有哪些稿子（route\tid）、编号取自哪一条（rep）和它的标题（t；这两样第一次记下的为准），留 24 小时：
+    页面拿它把推送编号带到快讯块里同一件事那一条上（页面晚些时候重新归一遍，窗口不一样、新来的稿子会改变归法，对不上）；spreads() 拿它认持续报道的事、沿用编号。"""
+    cut = (now - timedelta(hours=24)).isoformat(timespec="seconds")
+    st = {k: v for k, v in (_state().get("spread_ids") or {}).items() if v.get("at", "") >= cut}
+    for key, ev in spreads(now, rows):
+        ids = {f"{r['route']}\t{r['id']}" for r in ev}
+        if key in st and not ids & set(st[key].get("ids", [])):
+            continue                                    # 标题前 40 个字归一后一样、却没有同一篇稿子的另一件事：编号一样，24 小时内推不出去，不并进来
+        r0 = min(ev, key=visible)
+        old = st.get(key, {})
+        st[key] = {"at": now.isoformat(timespec="seconds"), "rep": old.get("rep") or f"{r0['route']}\t{r0['id']}", "t": old.get("t") or r0["t"],
+                   "ids": sorted(ids | set(old.get("ids", [])))}
+    set_state(spread_ids=st)
 
 
 LINE_NAME = {"credit": "融资和信用", "industry": "产业进度", "geo": "地缘和政策", "rates": "利率和流动性", "positioning": "仓位和资金", "narrative": "情绪和叙事"}
@@ -385,19 +427,46 @@ def block(now=None):
     recent = [r for r in rows if r.get("seen") and visible(r) >= cut and r["pub"] >= cut]     # RSS 里常混着几天前的旧稿：按发布时间也要在窗口里
     reg = registry(bj_day(now))
     en = {x["id"]: x["name"] for x in reg["ent"]}
-    items = []
+    items, evs = [], []                                                         # evs：这一页归出来的每件事（打没打上标签都算）→ (稿子, 列出来的那一条 / None)
     for ev in events(recent):
         r0 = min(ev, key=lambda r: (r["pub"], r["seen"]))                       # 最早发布的那条当代表
         ents = sorted({e for r in ev for e in r["ents"].split("|") if e})
         lines = sorted({x for r in ev for x in r["lines"].split("|") if x})
         if not ents and not lines:
+            evs.append(({(r["route"], r["id"]) for r in ev}, None))
             continue                                                            # 没打上标签的只计数
         firsts_ = sorted({k for r in ev for k in r["first"].split("|") if k})
         vias = sorted({(r["src"], next((x["via"] for x in ROUTES if x["id"] == r["route"].split(":")[0] or x["id"] == r["route"]), "")) for r in ev})
         items.append(dict(_pub=r0["pub"], t=r0["t"], url=r0["id"], pub=_bj(r0["pub"]), seen=_bj(min(r["seen"] for r in ev)), src=[f"{s} · 经{v}" if v else s for s, v in vias],
                           ents=[en.get(e, e) for e in ents], lines=[LINE_NAME.get(x, x) for x in lines], first=[f"{en.get(k.split(':')[0], k)} × {LINE_NAME.get(k.split(':')[1], '')}" for k in firsts_],
-                          n=len({r['src'] for r in ev}), k=[f"first:{k}" for k in firsts_] + ["spread:" + NW.key(r0["t"])]))   # k：推送编号，点开推送跳到这一条
-    items = [{k: v for k, v in x.items() if k != "_pub"} for x in sorted(items, key=lambda x: x["_pub"], reverse=True)]
+                          n=len({r['src'] for r in ev}), k=[f"first:{k}" for k in firsts_], _own={"spread:" + NW.key(r["t"]) for r in ev}))
+        evs.append(({(r["route"], r["id"]) for r in ev}, items[-1]))
+    items.sort(key=lambda x: x["_pub"], reverse=True)
+    shown = {id(x) for x in items[:SHOW_N]}                                     # 块里最多显示 SHOW_N 条，排在后面没显示的不算列着
+    evs = [(e, x if x is not None and id(x) in shown else None) for e, x in evs]
+    # k：推送编号，点开推送跳到这一条。"几家同时报道"推送时拿最早看到的那条的标题当编号（那条可能发布得早、不在这块里），这里拿最早发布的当代表。
+    # 推送时记下了那件事有哪些稿子（remember_spreads）：编号取自的那条所在的那件事显示在这块里，就带在那一条上；
+    # 否则在这一页归出来的所有事里（没打上标签的、排在 SHOW_N 条以后的也算）看哪件和它重合最多（一样多的不认），那件显示着才带上，没显示或认不出就不带，跳快讯块。
+    # 没记下的（改以前推的）按每条自己的标题，两条都对得上的都不带
+    st = _state().get("spread_ids") or {}
+    own = {}
+    for x in items[:SHOW_N]:
+        for k in x["_own"] - set(st):
+            own[k] = own.get(k, 0) + 1
+    for x in items:
+        x["_spread"] = {k for k in x["_own"] - set(st) if own.get(k) == 1}
+    for key, v in st.items():
+        ids = {tuple(x.split("\t", 1)) for x in v.get("ids", [])}
+        rep = tuple(v["rep"].split("\t", 1)) if v.get("rep") else None
+        win = [e for e in evs if rep in e[0] and e[1] is not None]
+        if not win:
+            hit = sorted(((len(ids & e[0]), j) for j, e in enumerate(evs) if ids & e[0]), reverse=True)
+            win = [evs[hit[0][1]]] if hit and (len(hit) == 1 or hit[0][0] > hit[1][0]) else []
+        if win and win[0][1] is not None:
+            win[0][1]["_spread"].add(key)
+    for x in items:
+        x["k"] += sorted(x["_spread"])
+    items = [{k: v for k, v in x.items() if not k.startswith("_")} for x in items]
     H = _health()
     t = time.time()
     lag = lag_stats(rows, now=now)
@@ -466,7 +535,9 @@ def run(log=print, now=None):
     log(f"  快讯：新条目 {len(new)} 条，其中打上标签的 {sum(1 for r in new if r['ents'] or r['lines'])} 条")
     if not pushes_on(now):
         return []
-    return candidates(now)
+    rows = load_rows()
+    remember_spreads(now, rows)
+    return candidates(now, rows)
 
 
 # 回补（2026-10-28 验收时实测）：谷歌新闻 RSS 一次查询里 OR 超过 5 个左右（几个词 × 几个网站）就不认 after: before:，

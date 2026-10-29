@@ -300,12 +300,9 @@ def _num(x):
 
 
 def _react_day(d, tm):
-    """财报反应日：盘前发的当天；盘后发的、时间未定的下一个交易日（和 qx/happen.py 的日历一样）。"""
-    from qx import clock
-    r = d if tm == "盘前" else d + pd.Timedelta(days=1)
-    while not clock.is_trading_day(r.date()):
-        r += pd.Timedelta(days=1)
-    return r
+    """财报反应日（qx/cboe.py react_day，和 qx/happen.py 的日历、qx/earn.py 的实际涨跌一样）。"""
+    from qx import cboe
+    return pd.Timestamp(cboe.react_day(d.date(), tm))
 
 
 def _past_move(r, tm):
@@ -338,9 +335,9 @@ def class5(D, t):
         d = pd.Timestamp(e["date"])
         if not (t < d <= t + pd.tseries.offsets.BDay(5)):
             continue
-        c = chains.get(e["sym"])
-        if not c or pd.Timestamp(str(c.get("date") or c.get("asof") or "9999")[:10]) > t:
-            continue                                                      # 期权链是 t 以后取的（原则 3）
+        c = cboe.chain_at(chains.get(e["sym"]), t.strftime("%Y-%m-%d"))
+        if not c:
+            continue                                                      # t 收盘时还没有期权链（盘中重取的用上一个交易日那份；原则 3）
         tm = e.get("time")
         two = tm not in ("盘前", "盘后")
         react = _react_day(d, tm)
@@ -355,7 +352,7 @@ def class5(D, t):
         if ratio >= IMPLIED_HI or ratio <= IMPLIED_LO:
             which = "当天加下一天两天合计（时间未定）" if two else ("盘后发，看下一个交易日" if tm == "盘后" else "盘前发，看当天")
             out.append(_card(5, e["sym"] + e["date"], f"{e['sym']}：期权给的财报幅度{'偏大' if ratio >= 1 else '偏小'}",
-                             f"期权算的财报这一下（拆掉平常每天的波动）：一半机会超过 ±{em['med'] * 100:.1f}%（到 {em['exp']}）；"
+                             f"期权算的{'当天加下一天' if two else '反应日'}涨跌（拆掉别的日子平常的波动）：一半机会超过 ±{em['med'] * 100:.1f}%（到 {em['exp']}）；"
                              f"最近 4 次实际幅度（{which}）中位数 {med * 100:.1f}%，比值 {ratio:.2f}。",
                              "财报后实际幅度落在两者之间。", "还没有回放（期权链从 2026-10-19 起攒）。", f"{e['sym']} 期权（跨式 / 宽跨式）", f"到 {e['date']} 财报",
                              tail(np.log(ratio) / np.log(IMPLIED_HI) * 2), t.strftime("%Y-%m-%d"), replay=False))

@@ -156,7 +156,9 @@ def parity_check(log=print):
 
 def event_check(log=print):
     """期权拆"财报这一下"（口径十四.9）：拿一条答案已知的曲线算回去——平常每天 2%、财报那一下 8%，
-    11-02（周一）取数，11-04 盘后发、反应日 11-05，到期日 11-06、11-13；还要认出"第一个到期日太远""只有一个到期日"拆不出来。"""
+    11-02（周一）取数，11-04 盘后发、反应日 11-05，到期日 11-06、11-13：反应日涨跌 = √(8%² + 2%²)，两天合计 = √(8%² + 2 × 2%²)；
+    还要认出"第一个到期日太远""只有一个到期日""取数那天已经是反应日（两天合计的第一天，感恩节前一天也算）"拆不出来；
+    反应日要和实际涨跌那边是同一天。"""
     from datetime import date
     from qx import cboe
     day, ev = 0.02 ** 2, 0.08 ** 2
@@ -165,10 +167,36 @@ def event_check(log=print):
     c = {"date": "2026-11-02", "curve": [["2026-11-06", 4, iv(v1, 4)], ["2026-11-13", 11, iv(v2, 11)]]}
     r = cboe.event_move(c, date(2026, 11, 5))
     r2 = cboe.event_move(c, date(2026, 11, 5), two=True)
-    good = bool(r) and abs(r["sd"] - 0.08) < 1e-6 and abs(r["day"] - 0.02) < 1e-6 and abs(r["med"] - 0.08 * cboe.MED_Z) < 1e-6 \
-        and bool(r2) and abs(r2["sd"] - (ev + day) ** 0.5) < 1e-6 \
+    good = bool(r) and abs(r["sd"] - (ev + day) ** 0.5) < 1e-6 and abs(r["jump"] - 0.08) < 1e-6 and abs(r["day"] - 0.02) < 1e-6 \
+        and abs(r["med"] - (ev + day) ** 0.5 * cboe.MED_Z) < 1e-6 \
+        and bool(r2) and abs(r2["sd"] - (ev + 2 * day) ** 0.5) < 1e-6 \
+        and cboe.event_move(dict(c, date="2026-11-05"), date(2026, 11, 5)) is None \
+        and cboe.event_move(dict(c, date="2026-11-04"), date(2026, 11, 5), two=True) is None \
+        and cboe.event_move({"date": "2026-11-25", "curve": [["2026-11-27", 2, 60.0], ["2026-12-04", 9, 50.0]]}, date(2026, 11, 27), two=True) is None \
+        and cboe.chain_at(dict(c, date="2026-11-03", prev=c), "2026-11-02") is c \
         and cboe.event_move({"date": "2026-11-02", "curve": [["2026-11-20", 18, 60.0], ["2026-12-18", 46, 50.0]]}, date(2026, 11, 5)) is None \
         and cboe.event_move({"date": "2026-11-02", "curve": [["2026-11-06", 4, 60.0]]}, date(2026, 11, 5)) is None
+    # 反应日和 qx/earn.py 算实际涨跌的同一天（公布日是周末、假日的也算）；马丁·路德·金纪念日公布、时间未定的，前一个周五收盘的链能用
+    from datetime import timedelta
+    from qx import clock, earn
+    ds = [date(2025, 1, 2) + timedelta(days=i) for i in range(800)]
+    rs = [(d.isoformat(), 100 + i * 0.1) for i, d in enumerate(x for x in ds if clock.is_trading_day(x))]
+    code = {"盘前": "time-pre-market", "盘后": "time-after-hours", "时间未定": "time-not-supplied"}
+    for d in ("2026-01-16", "2026-01-17", "2026-01-19", "2026-04-02", "2026-04-03", "2026-11-05", "2026-11-25", "2026-11-26", "2026-12-24"):
+        for tm, tc in code.items():
+            x = earn._react_rows(rs, date.fromisoformat(d), tc)
+            good &= bool(x) and x[0] == cboe.react_day(date.fromisoformat(d), tm).isoformat()
+    good &= cboe.event_move(dict(c, date="2026-01-16", curve=[["2026-01-23", 7, 60.0], ["2026-01-30", 14, 50.0]]),
+                            cboe.react_day(date(2026, 1, 19), "时间未定"), two=True) is not None
+    # 分开的两天：日线从公布以后才开始的不算（不当成上市第一天）；元旦公布、日线从 1-2 开始的才是上市第一天（r0 na，r1 照算）
+    good &= all(isinstance(x, float) for x in earn._split(rs, "2026-11-05")) and earn._split(rs[10:], "2025-01-03") == (None, None) \
+        and earn._split(rs, "2025-01-01")[0] == "na" and isinstance(earn._split(rs, "2025-01-01")[1], float)
+    # 日线漏了一根（Yahoo 偶尔整天没有收盘价）：隔着洞不算，等补上
+    hole = lambda d: [x for x in rs if x[0] != d]
+    good &= earn._split(hole("2026-11-04"), "2026-11-05")[0] is None and earn._split(hole("2026-11-06"), "2026-11-05")[1] is None \
+        and earn._split(hole("2026-11-05"), "2026-11-05") == (None, None) and isinstance(earn._split(hole("2026-11-04"), "2026-11-05")[1], float) \
+        and all(earn._react_rows(hole(h), date(2026, 11, 5), tc) is None
+                for h, tc in (("2026-11-04", "time-pre-market"), ("2026-11-06", "time-after-hours"), ("2026-11-06", "time-not-supplied")))
     log("  期权拆财报（已知答案的曲线）：" + ("一致" if good else "不一致"))
     return good
 

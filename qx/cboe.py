@@ -290,17 +290,40 @@ def _bdays(a, b):
     return int(np.busday_count(a + timedelta(days=1), b + timedelta(days=1)))
 
 
+def react_day(d, tm):
+    """财报反应日，和 qx/earn.py 算实际涨跌的一样：先取公布日那天或以后第一个交易日；盘前发的就是这天，盘后发的、时间未定的
+    （看这天加下一天）再往后一个交易日。公布日是假日时不能直接取"第二天"（2026-10-29 复查改正）。d、返回都是 date。"""
+    from qx import clock
+    r = d
+    while not clock.is_trading_day(r):
+        r += timedelta(days=1)
+    if tm != "盘前":
+        r += timedelta(days=1)
+        while not clock.is_trading_day(r):
+            r += timedelta(days=1)
+    return r
+
+
 def event_move(c, react, two=False):
     """期权给的"财报这一下"多大（口径十四.9）。c = chains_latest.json 里一个标的（curve = [[到期日, 天数, 平值隐含波动 %], …]），react = 反应日。
     取反应日当天或以后的头两个到期日，按"平常每个交易日的方差不变、财报那一下单独一份"拆开：
       总方差 V = (隐含波动)² × 自然日 / 365；平常每天 = (V2 − V1) ÷ (两个到期日之间的交易日数)；财报这一下 = V1 − 平常每天 × (取数那天到第一个到期日的交易日数)。
-    two=True（过去几次只有"当天加下一天"两天合计）：再加一天平常的方差，两边才是同一个东西。
-    拆不出来（反应日以后不到两个到期日、第一个到期日比反应日晚 7 天以上、算出来 ≤ 0）返回 None。
-    → dict(sd, med = sd × 0.6745，"一半机会超过"的幅度, day = 平常一天的标准差, exp, exp2)"""
+    实际那边是反应日一整天的涨跌（平常的一份加财报那一下），所以再加回反应日那一天平常的方差；two=True（时间未定，当天加下一天两天合计）加两天（2026-10-29 复查改正）。
+    拆不出来（取数那天已经到了反应日、两天合计的到了第一天；反应日以后不到两个到期日；第一个到期日比反应日晚 7 天以上；财报这一下 ≤ 0）返回 None。
+    → dict(sd = 反应日（两天）涨跌的标准差, med = sd × 0.6745，"一半机会超过"的幅度, jump = 财报那一下的标准差, day = 平常一天的标准差, exp, exp2)"""
     import numpy as np
     if not c or not c.get("curve"):
         return None
+    from qx import clock
     asof = date.fromisoformat(str(c.get("date") or c["asof"])[:10])
+    k = 2 if two else 1
+    first = react
+    if two:                                                          # 两天合计的第一天 = 反应日前一个交易日（跳过假日）
+        first -= timedelta(days=1)
+        while not clock.is_trading_day(first):
+            first -= timedelta(days=1)
+    if asof >= first:
+        return None                                                  # 取数那天已经是反应日（两天合计的第一天）或以后：财报那一下已经过去了
     after = [(date.fromisoformat(e), iv / 100) for e, dte, iv in c["curve"] if date.fromisoformat(e) >= react and date.fromisoformat(e) > asof]
     if len(after) < 2 or (after[0][0] - react).days > EVENT_NEAR:
         return None
@@ -310,11 +333,20 @@ def event_move(c, react, two=False):
     if n1 <= 0 or n12 <= 0:
         return None
     day = (v2 - v1) / n12
-    ev = v1 - day * n1 + (day if two else 0.0)
-    if day < 0 or ev <= 0:
+    jump = v1 - day * n1
+    if day < 0 or jump <= 0:
         return None
-    sd = float(np.sqrt(ev))
-    return dict(sd=sd, med=sd * MED_Z, day=float(np.sqrt(day)), exp=e1.isoformat(), exp2=e2.isoformat())
+    sd = float(np.sqrt(jump + k * day))
+    return dict(sd=sd, med=sd * MED_Z, jump=float(np.sqrt(jump)), day=float(np.sqrt(day)), exp=e1.isoformat(), exp2=e2.isoformat())
+
+
+def chain_at(c, day):
+    """c（chains_latest.json 里一个标的）在 day 收盘时看得到的那一份：本身的日期 ≤ day 用本身；盘中重取过（日期是 day 以后）用存着的
+    上一个交易日最后一份（prev）；都晚于 day 返回 None（原则 3，口径十四.9）。"""
+    for x in (c, (c or {}).get("prev")):
+        if x and x.get("curve") and str(x.get("date") or x.get("asof") or "9999")[:10] <= str(day)[:10]:
+            return x
+    return None
 
 
 HIST_COLS = ["date", "symbol", "spot", "iv30", "term", "skew25", "pc_vol", "pc_oi", "vol", "p_dn20", "p_dn10", "p_up10", "p_up20", "p_dte", "p_sd",
@@ -371,8 +403,15 @@ def option_snapshots(symbols, hist_path, log=print, latest_path=None, archive_di
             latest = {}
         for m in out:
             if m.get("curve"):
-                latest[m["symbol"]] = {k: m.get(k) for k in ("date", "asof", "spot", "iv30", "term", "skew25", "pc_vol", "pc_oi", "curve", "prob", "unusual",
-                                                             "gex", "flip", "cwall", "cwall_oi", "pwall", "pwall_oi", "magnet", "magnet_oi", "name")}
+                old = latest.get(m["symbol"]) or {}
+                new = {k: m.get(k) for k in ("date", "asof", "spot", "iv30", "term", "skew25", "pc_vol", "pc_oi", "curve", "prob", "unusual",
+                                             "gex", "flip", "cwall", "cwall_oi", "pwall", "pwall_oi", "magnet", "magnet_oi", "name")}
+                day = lambda x: str(x.get("date") or x.get("asof") or "")[:10]
+                if old.get("curve") and day(old) < day(new):        # 换了一天：上一个交易日最后一份另存（按收盘算的卡、日历用，盘中重取不会把它盖掉）
+                    new["prev"] = {k: old.get(k) for k in ("date", "asof", "curve")}
+                elif old.get("prev"):
+                    new["prev"] = old["prev"]
+                latest[m["symbol"]] = new
         with open(latest_path + ".tmp", "w", encoding="utf-8") as f:
             json.dump(latest, f, ensure_ascii=False)
         os.replace(latest_path + ".tmp", latest_path)

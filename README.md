@@ -34,6 +34,7 @@
 - **前瞻和 AI 账本**（第 5 步，`qx/forward.py`、`qx/timeline.py`、`qx/ledger.py`，口径第十三节）：六条线、未来 6 个月时间轴、三种走向（原文加密在 `cards/scenarios/`）、账本。
 - **Worker**（`worker/`）：Cloudflare 上每 5 分钟取快讯和开盘中市场的价格，页面打开时现取。要用户注册 Cloudflare、加 Secret 以后才部署（`worker-setup.yml` 建库，`worker.yml` 测试和部署）。推送规则、打标签和 Python 读同一组样例对拍（`worker/test/fixtures/`，自检和 `npm test` 都跑）。
 - **数据源实测**（第 0 步）：`tools/probe.py`、`docs/数据源实测.md`。
+- **精简：前台五样、后台全部**（2026-10-29，`qx/front.py`、`page/k.js` 的 front()，口径第十四节）：首屏按交易员看市场的五样排——情绪、价格位置（含 K 线）、买卖方结构和变化、预期、基本面；每样一句结论、几项常驻的数、新触发的行（每块最多露 2 行，其余折起来）。原来的每一块都在"全部（后台）"里，一样没删。新读数：CFTC TFF 分类（股指、美债期货看资管和杠杆基金）、SOXL / SOXS 每天净申赎美元、超预期财报的反应中位数、期权拆出"财报那一天"的幅度（第 5 类卡）。推送点开跳到页面上那一条，顶栏"24 小时内推过 N 条"。
 
 ## 怎么跑
 
@@ -50,6 +51,8 @@
 | `python run.py replay [起] [止]` | 小信号和仓位回放（每天截到那天重算），明细加密存 `data/private/replay.csv` |
 | `python run.py seal-scenarios` | 本机 `../判断/scenarios/*.json`（三种走向原文，不进仓库）加密成 `cards/scenarios/*.enc` |
 | `python run.py earn-refresh` | 财报反应：2026-10-28 以前按"前 504 天"算日度波动的行，按全部历史重算（别和正在写这个文件的进程同时跑） |
+| `python run.py earn-recap` | 财报反应：给没有"公布前市值"的行补上（入选 ≥ 200 亿美元看它，口径十四.1） |
+| `python run.py earn-split` | 财报反应：给 r0、r1 还空着的行补上公布当天、下一个交易日分开的涨跌（第 5 类卡用，口径十四.9；每天的 auto 也补，一次最多 20 个代码，连着取不到的排在后面，其余空着最久的先补） |
 | `cd worker && npm test` | Worker 的测试（不用装包，和 Python 对拍） |
 
 ## 放在哪

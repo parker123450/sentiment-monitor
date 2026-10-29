@@ -15,13 +15,12 @@
 //   GET  /ack?id=   不要令牌      推送测试回执（一次性编号）
 // 只放公开的新闻标题、行情和读数；判断卡、三种走向不放。
 
-import { compile, tag, firsts, candidates, gate, digest, moveMsgs, pushDay } from "./rules.js";
+import { compile, tag, firsts, candidates, gate, digest, moveMsgs, pushDay, pubTitle } from "./rules.js";
 import { newsJobs, parse, sparkUrl, parseSpark } from "./sources.js";
 
 const ORIGIN = "https://parker123450.github.io";
 const SITE = "https://parker123450.github.io/sentiment-monitor/";
 const KEEP_DAYS = 30, SHOW_H = 2, FAIL_STOP = 5, STOP_H = 1, RARE_PUSH = 2;
-const PUB_TITLE = /^(first|spread|move|digest):/;
 const PUSH_RULES = { day_cap: 6, day_start_bj: 8, repeat_h: 24, rare_n10: 2 };   // 默认；Actions 推来的 rules.push 覆盖
 
 const json = (x, status = 200, h = {}) => new Response(JSON.stringify(x), { status, headers: { "content-type": "application/json; charset=utf-8", ...h } });
@@ -77,9 +76,9 @@ async function pushAll(env, msgs, now) {
   await putState(env, "push", st, now).run();
   let n = 0;
   for (const m of out) n += (await send(env, m)) > 0;
-  // 标题只记公开的（快讯、盘中涨跌、"没推的 N 件"这个数）；云端推来的今天变了什么、卡、判断不记，页面用自己那一条的字
+  // 标题只记公开的（rules.js 的 pubTitle：快讯、盘中涨跌、"没推的 N 件"这个数）；云端推来的今天变了什么、卡、判断不记，页面用自己那一条的字
   if (out.length) await env.DB.batch(out.map(m => env.DB.prepare("INSERT OR REPLACE INTO pushlog (key, at, day, sent, title) VALUES (?, ?, ?, ?, ?)")
-    .bind(m.key, now, pushDay(now, R.day_start_bj), 1, PUB_TITLE.test(m.key) ? String(m.title).slice(0, 120) : null)));
+    .bind(m.key, now, pushDay(now, R.day_start_bj), 1, pubTitle(m.key) ? String(m.title).slice(0, 120) : null)));
   return n;
 }
 
