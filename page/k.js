@@ -102,7 +102,9 @@
     const s1 = x => x == null ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(1);
     const s0 = x => x == null ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(Math.round(x));
     const head = (id, no, nm) => `<div class="ph"><h2>${no} ${nm}</h2><a href="#b-${id}" data-back="b-${id}">全部 ›</a></div>`;
-    const trg = xs => (xs || []).map(x => `<div class="trg"${x.key ? ` data-k="${esc(x.key)}"` : ""}>${esc(x.title)}${x.why ? `<small>${esc(x.why)}</small>` : ""}</div>`).join("");
+    const tr1 = x => `<div class="trg"${x.key ? ` data-k="${esc(x.key)}"` : ""}>${esc(x.title)}${x.why ? `<small>${esc(x.why)}</small>` : ""}</div>`;
+    const TRG = 2;                                    // 五样方案第 7 步：每块的触发行最多露 2 行，其余折起来（只是显示上限）
+    const trg = xs => (xs = xs || []).slice(0, TRG).map(tr1).join("") + (xs.length > TRG ? `<details class="trgm"><summary>再看 ${xs.length - TRG} 条</summary>${xs.slice(TRG).map(tr1).join("")}</details>` : "");
     const put = (id, html) => { const el = $("p-" + id); if (el) el.innerHTML = html; };
     const T = FR.trig || {};
     // 顶上：判断卡（只在错的条件第一次出现、要人看的事两个交易日内）
@@ -603,7 +605,7 @@
     }
     function draw() {
       const cv = $("kc"); if (!cv || !cv.getContext || !B.length) return;
-      const W = Math.max(300, cv.parentElement.clientWidth || 700), H = W < 560 ? 500 : 560, dpr = window.devicePixelRatio || 1;
+      const W = Math.max(300, cv.parentElement.clientWidth || 700), H = W < 560 ? 420 : 560, dpr = window.devicePixelRatio || 1;
       if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + "px"; }
       const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
       DARK = isDark();
