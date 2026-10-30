@@ -459,7 +459,13 @@
   (function fwd() {
     const F = RD.fwd, el = $("fwd"); if (!F || !el) return;
     el.hidden = false;
-    const li = xs => xs.length ? `<ul class="nw">${xs.map(x => `<li>${esc(plain(x))}</li>`).join("")}</ul>` : `<p class="knote">—</p>`;
+    // 前瞻那几行是推送也读的字，句尾带"（偏高）/（少见）"；页面上换成同一个读数"历史上同方向更极端的日子占多少"（小信号、配对读数里本来就有），字和推送都不动
+    const SF = new Map(((RD.sig && RD.sig.signals) || []).map(x => [x.text, x.frac])), PF = [];
+    for (const b of (RD.narr && RD.narr.baskets) || []) for (const p of b.pairs || []) PF.push([p.name + " 20 日", p.frac]);
+    const lvn = s => { const m = /^(.*)（(?:偏高|少见)）$/.exec(String(s)); if (!m) return s;
+      const f = SF.has(m[1]) ? SF.get(m[1]) : (PF.find(([k]) => m[1].startsWith(k)) || [])[1];
+      return f == null ? s : `${m[1]}（历史 ${fr(f)}）`; };
+    const li = xs => xs.length ? `<ul class="nw">${xs.map(x => `<li>${esc(plain(lvn(x)))}</li>`).join("")}</ul>` : `<p class="knote">—</p>`;
     let h = `<h2>前瞻<small>截至 ${md(F.asof)} · 六条线，每条：先变的小信号、现在怎么样、接下来的检验</small></h2>`;
     h += F.lines.map(L => `<details class="cd"><summary><b>${esc(L.name)}</b><span class="ns">${L.signals.length ? L.signals.length + " 条小信号" : "没有小信号"} · 接下来 ${L.next.length} 件</span></summary>` +
       `<dl><dt>先变的小信号</dt><dd>${li(L.signals)}</dd><dt>现在怎么样</dt><dd>${li(L.now)}</dd><dt>接下来的检验（30 天内）</dt><dd>${li(L.next)}</dd></dl></details>`).join("");
