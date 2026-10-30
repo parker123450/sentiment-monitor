@@ -297,4 +297,11 @@ def build(D, aaii, R, write=False):
     except Exception as e:
         fr = {"err": type(e).__name__}
     return dict(flash=fl, radar=radar, front=fr, asof=days[-1].strftime("%Y-%m-%d"), updated=now.strftime("%Y-%m-%d %H:%M"), today=td, judge=jud["cards"], fb=notify.feedback_topic() or None, options=opt, happen={k: hap[k] for k in ("news", "pm", "calendar", "day")}, chart=ch, daily=daily, turns=turns,
-                groups=group_facts(D, R), ice=ic, cnn=cnn(), status=status(D, aaii, meta), stnames=NAMES, momwords=MOM_WORDS)
+                groups=group_facts(D, R), ice=ic, cnn=cnn(), status=status(D, aaii, meta), stnames=NAMES, momwords=MOM_WORDS, mkmap=mkmap())
+
+
+def mkmap():
+    """新4：qx/watch.py GROUPS 的组名 → 这个组的代码在"各市场"的哪几类（类来自 qx/coverage.py CLASS）。只给页面用：
+    盘中涨跌推送 move:{组}:live 落到"各市场"里 [data-mk~="组名"] 的那几行。"""
+    from qx import coverage
+    return {g: sorted({coverage.CLASS[s] for s in syms if s in coverage.CLASS}, key=coverage.CLASSES.index) for g, syms in watch.GROUPS}
