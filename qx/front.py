@@ -7,6 +7,7 @@
 这里只挑已经算好的结果、按五样摆；规则、阈值、排序一条不动，推送照旧（推送读的是 export 里原来的那几份）。
 其余照样算、照样推，进后台。
 """
+import math
 from datetime import date, timedelta
 
 import numpy as np
@@ -205,12 +206,14 @@ def _next_trading(d):
 
 
 def _pct(x):
-    """概率 → 整数百分比，只在这里取整一次（页面原样写；2026-10-30 复查后改：原来先留 3 位、页面再取整，0.2745 → 0.275 → 28%）。"""
+    """概率 → 整数百分比，只在这里取整一次（页面原样写；2026-10-30 复查后改：原来先留 3 位、页面再取整，0.2745 → 0.275 → 28%）。
+    逢 5 进，和 page/k.js 的 Math.round 一样（K 线点开那块"下次议息会"用 Math.round 算 data/fomc_history.csv 的同一个数）；
+    Python 的 round() 逢 5 取偶，0.705 → 70、0.245 → 24，同一页同一场会写成两个数（2026-10-30 第二次复查后改）。"""
     try:
         x = float(x)
     except (TypeError, ValueError):
         return None
-    return int(round(x * 100)) if np.isfinite(x) else None
+    return int(math.floor(x * 100 + 0.5)) if np.isfinite(x) else None
 
 
 def fomc(cal, t, hist=None, tl=None, now=None):
@@ -219,7 +222,9 @@ def fomc(cal, t, hist=None, tl=None, now=None):
     线上盘中例外（2026-10-30 复查后补）：t 还是前一个收盘、墙上时钟已经过了下一个交易日 14:00 的决议，那一场算开过。只在墙上时钟 now 还落在
     "t 可能是最新收盘"的那段里（到 t 之后第二个交易日收盘为止，留一天给晚到的日线）才看；截到以前的日子（预览、自检）照数据那天算。
     概率只用 t 那天能看到的那一份：日历（data/calendar.json）是 t 当天到下一个交易日之间取的才用；不然用 data/fomc_history.csv 里 t 以前最近的那一行（7 天以内，只是显示时取哪一行，不是规则）。
-    都没有的写"这天没存"；日历那份：整个没取到（ok.polymarket 为假）写"这次没取到"，取了没有写"预测市场还没有盘口"，不在要取的那两场里写"没存"。
+    都没有的写"这天没存"；日历那份：ok.polymarket 为假写"没取到或还没有盘口"（qx/events.py 是 ok["polymarket"] = bool(pm)，polymarket.fetch() 网络失败和
+    两场都没对上盘口都返回 {}，分不开），取了、这一场没有写"预测市场还没有盘口"，不在要取的那两场里写"没存"。
+    要取的那两场（asked）用并起来的 dates 算，events.fetch() 实际只按时间轴取；时间轴没取到美联储日程时两边可能对不上，"还没有盘口 / 没存"会分错（只是显示上哪个字）。
     日期给北京时间（决议在北京是第二天凌晨）；概率给整数百分比（_pct()，三项各自取整，加起来可能是 99 或 101）。
     hist、tl、now：预测市场存档的行、时间轴的事件、墙上时钟；不给就读 data/ 下的文件、取现在（自检用构造的传进来）。"""
     from qx import happen as HP, timeline as TL
@@ -258,7 +263,7 @@ def fomc(cal, t, hist=None, tl=None, now=None):
             x.update(hold=_pct(p.get("hold")), cut=_pct(p.get("cut")), hike=_pct(p.get("hike")), vol=_f(p.get("vol"), 0), stale=bool(p.get("stale")),
                      asof=asof if asof != day else None)
         elif src == "cal":
-            # 日历那份：整个没取到 → 这次没取到；要取了、没有 → 还没有盘口；本来就不在要取的那几场里（比如盘中跳过已开完的那场以后的再下一次）→ 没存
+            # 日历那份：ok.polymarket 为假 → 没取到或还没有盘口；要取了、没有 → 还没有盘口；本来就不在要取的那几场里（比如盘中跳过已开完的那场以后的再下一次）→ 没存
             x.update(why="fail" if failed else "nomkt" if d in asked else "nosave")
         else:
             x.update(why="nosave")                    # 存档那份 10-29 以前只存下一次，没有 = 那天没存

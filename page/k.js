@@ -165,7 +165,7 @@
       const F = FR.fomc || [];
       if (F.length) {                                 // 下一次、下下次，按数据那天算（qx/front.py fomc()），日子是北京时间；概率是后台取好的整数百分比，原样写
         const none = F.every(x => x.why === "nosave"), pr = x => x.hold != null ? ` 不变 ${x.hold}%、降息 ${x.cut}%、加息 ${x.hike}%${x.stale ? "（上次取到的）" : x.asof ? `（${d2(x.asof)} 存的）` : ""}`
-          : x.why === "nomkt" ? "，预测市场还没有盘口" : x.why === "fail" ? "，这次没取到预测市场的概率" : none ? "" : " 没存概率";
+          : x.why === "nomkt" ? "，预测市场还没有盘口" : x.why === "fail" ? "，预测市场的概率没取到或还没有盘口" : none ? "" : " 没存概率";
         h += `<div class="rw">议息会：${F.map((x, i) => `${i ? "下下次" : "下次"} ${d2(x.bj)}${pr(x)}`).join(none ? "、" : "；")}${none ? "（这天没存预测市场的概率）" : ""}<small>　北京时间${F.some(x => x.hold != null) ? " · Polymarket" : ""}</small></div>`; }
       const H = FR.h48 || [];
       if (H.length) h += `<div class="rw"><b>接下来 48 小时</b>（北京时间${FR.cal_late ? `，日历 ${d2(FR.cal_late)} 取的` : ""}）${H.map(d => `<div class="h48"><span class="d">${esc(d.day)}</span> ${d.items.map(x => `${esc(x.at)} ${esc(x.text)}`).join("；")}</div>`).join("")}</div>`;
@@ -224,9 +224,9 @@
     const Q = [["保险贵不贵", "q1"], ["更怕跌还是更想涨", "q2"], ["大家押在哪个价位", "q3"], ["做市商对冲会放大还是压住波动", "q4"], ["定价了多大的涨跌", "q5"]];
     // 大盘那一行：数从 qx/front.py opt_market() 来（和 options.py 同一个 10 年分位），写"10 年分位 N"，不写"偏高 / 少见"
     // 数在后台已经按要写的位数取过整（只取一次），这里不再取整；VIX 补齐一位小数（20 写成 20.0，和 market() 那句一样，不改数）
-    // 拿不到时用 options.py market() 那句，但把没登记的 95 / 70 / 30 那几个词（少见地高 / 偏高 / 偏低 / 平常）去掉，只留数
+    // 拿不到时用 options.py market() 那句，但把没登记的 95 / 70 / 30 那几个词（少见地高 / 偏高 / 偏低 / 平常）换成"10 年分位没算出来"，和正常那条同一个位置
     const M = RAW.front && RAW.front.optmkt, p10 = x => `10 年分位 ${x.p}`;
-    const nowd = String(O.market || "").replace(/（(?:10 年里少见地高|偏高|偏低|平常)）/g, "").replace(/，(?:10 年里少见地高|偏高|偏低|平常)）/g, "）");
+    const nowd = String(O.market || "").replace(/（(?:10 年里少见地高|偏高|偏低|平常)）/g, "（10 年分位没算出来）").replace(/，(?:10 年里少见地高|偏高|偏低|平常)）/g, "，10 年分位没算出来）");
     const mk = M && M.vix ? [`VIX ${Number(M.vix.now).toFixed(1)}（${p10(M.vix)}）`, M.r9 != null ? `9 天保险是 30 天的 ${M.r9}%${M.r9_ge1 ? "：眼前几天有事" : ""}` : "",
       M.skew ? `SKEW ${M.skew.now}（买极端下跌保护的程度，${p10(M.skew)}）` : "", M.vvix ? `VVIX ${M.vvix.now}（保险本身的波动，${p10(M.vvix)}）` : ""].filter(Boolean).join("；") + "。" : nowd;
     el.innerHTML = `<summary>期权：五个问题<small>${esc((O.summary || "").replace(/、一个月定价 ±\d+%/g, ""))}</small></summary>

@@ -211,7 +211,7 @@ def front_check(log=print):
     """前台议息会那一行（qx/front.py fomc()）、"接下来 7 天"表和 48 小时的北京时间、"日历是哪天取的"：拿构造的日历、预测市场存档、时间轴算，答案已知。
     下一次 = 决议日在 t 以后（决议日当天算已经开过）；线上盘中墙上时钟过了下一个交易日 14:00 的决议，那一场也算开过（只在 t 之后第二个交易日收盘以前）；
     概率只用 t 那天能看到的那一份——日历是 t 到下一个交易日之间取的才用，不然用存档里 t 以前最近、7 天以内的那一行；
-    那份里没有这一场：日历那份整个没取到写"这次没取到"、要取了没有写"还没有盘口"、不在要取的场次里写"没存"，存档那份写"这天没存"；概率是整数百分比、只取整一次；
+    那份里没有这一场：日历那份 ok.polymarket 为假写"没取到或还没有盘口"、要取了没有写"还没有盘口"、不在要取的场次里写"没存"，存档那份写"这天没存"；概率是整数百分比、只取整一次；
     北京时间：夏令时（10-28）决议是第二天 02:00，冬令时（12-09）是第二天 03:00，记者会晚半小时；没写时刻的决议按 14:00；三处写法一样。"""
     from qx import front as FR
     hist = [dict(date="2026-10-23", meeting="2026-10-28", hold="0.935", cut="0.002", hike="0.0685"),
@@ -247,7 +247,7 @@ def front_check(log=print):
     ok.append([(x["date"], x.get("hold"), x.get("why")) for x in a] == [("2026-12-09", 70, None), ("2027-01-27", None, "nosave")])
     a = f("2026-10-27", c2, pd.Timestamp("2026-10-28 13:00", tz="America/New_York"))   # 决议前：照旧
     ok.append([x["date"] for x in a] == ["2026-10-28", "2026-12-09"] and a[0].get("hold") == 97)
-    ok.append(FR._pct("0.2745") == 27 and FR._pct(0.705) == round(70.5) and FR._pct(None) is None)   # 只取整一次（原来先留 3 位：0.275 → 28）
+    ok.append(FR._pct("0.2745") == 27 and FR._pct(0.705) == 71 and FR._pct(0.245) == 25 and FR._pct(None) is None)   # 只取整一次（原来先留 3 位：0.275 → 28）；逢 5 进，和 k.js Math.round 一样
     ev = [dict(kind="fomc", date="2026-10-28", time="2:00 p.m. 美东", title="议息会（决议）"), dict(kind="presser", date="2026-10-28", time=" 美东", title="主席记者会"),
           dict(kind="fomc", date="2026-12-09", time=" 美东", title="议息会（决议）"), dict(kind="cpi", date="2026-10-28", time="8:30 a.m.", title="CPI")]
     ok.append(FR.fed_bj(ev) == {"fomc|2026-10-28": dict(bj="2026-10-29", hm="02:00"), "presser|2026-10-28": dict(bj="2026-10-29", hm="02:30"),
