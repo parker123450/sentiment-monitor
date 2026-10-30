@@ -194,6 +194,7 @@ def m1(D, t):
 FOMC_DATES = ("2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18", "2025-07-30", "2025-09-17", "2025-10-29", "2025-12-10",
               "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17", "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
               "2027-01-27", "2027-03-17")
+FED_HM = {"fomc": "14:00", "presser": "14:30"}        # 美联储日程上没写时刻时的默认（决议 14:00、记者会 14:30，美东）
 
 
 def _next_trading(d):
@@ -203,12 +204,24 @@ def _next_trading(d):
     return d.isoformat()
 
 
-def fomc(cal, t, hist=None, tl=None):
+def _pct(x):
+    """概率 → 整数百分比，只在这里取整一次（页面原样写；2026-10-30 复查后改：原来先留 3 位、页面再取整，0.2745 → 0.275 → 28%）。"""
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return None
+    return int(round(x * 100)) if np.isfinite(x) else None
+
+
+def fomc(cal, t, hist=None, tl=None, now=None):
     """议息会下一次和下下次（口径十四.2"常驻的数"），按数据那天 t 算，不看墙上时钟（2026-10-30 改：原来用墙上时钟，截到以前的日子也写今天的下一次和今天的概率，日历里的场次过了就整行不见；日期是美东的，和时间轴的北京时间对不上）。
     "下一次" = 决议日（美东）在 t 以后：t 当天 14:00 的决议在收盘前已经出了。
+    线上盘中例外（2026-10-30 复查后补）：t 还是前一个收盘、墙上时钟已经过了下一个交易日 14:00 的决议，那一场算开过。只在墙上时钟 now 还落在
+    "t 可能是最新收盘"的那段里（到 t 之后第二个交易日收盘为止，留一天给晚到的日线）才看；截到以前的日子（预览、自检）照数据那天算。
     概率只用 t 那天能看到的那一份：日历（data/calendar.json）是 t 当天到下一个交易日之间取的才用；不然用 data/fomc_history.csv 里 t 以前最近的那一行（7 天以内，只是显示时取哪一行，不是规则）。
-    都没有的写"这天没存"；那份里没有这一场的写"预测市场还没有盘口"。日期给北京时间（决议在北京是第二天凌晨）。
-    hist、tl：预测市场存档的行、时间轴的事件；不给就读 data/ 下的文件（自检用构造的传进来）。"""
+    都没有的写"这天没存"；日历那份：整个没取到（ok.polymarket 为假）写"这次没取到"，取了没有写"预测市场还没有盘口"，不在要取的那两场里写"没存"。
+    日期给北京时间（决议在北京是第二天凌晨）；概率给整数百分比（_pct()，三项各自取整，加起来可能是 99 或 101）。
+    hist、tl、now：预测市场存档的行、时间轴的事件、墙上时钟；不给就读 data/ 下的文件、取现在（自检用构造的传进来）。"""
     from qx import happen as HP, timeline as TL
     cal = cal or {}
     day = pd.Timestamp(t).strftime("%Y-%m-%d")
@@ -216,7 +229,10 @@ def fomc(cal, t, hist=None, tl=None):
     tl = TL.load().get("events", []) if tl is None else tl
     dates = set(FOMC_DATES) | {e["date"] for e in tl if e.get("kind") == "fomc"} \
         | {e["date"] for e in cal.get("events", []) if e.get("kind") == "fomc"} | set(cal.get("fomc_pm") or {}) | {r["meeting"] for r in hist}
-    nxt = sorted(d for d in dates if d > day)[:2]
+    now = pd.Timestamp.now(tz="UTC") if now is None else pd.Timestamp(now)
+    live = now <= pd.Timestamp(f"{_next_trading(_next_trading(day))} 16:00", tz=clock.NY)
+    done = lambda d: live and pd.Timestamp(f"{d} {FED_HM['fomc']}", tz=clock.NY) <= now
+    nxt = sorted(d for d in dates if d > day and not done(d))[:2]
     snap, asof, src = None, None, None
     got = cal.get("fetched")
     if got and day <= pd.Timestamp(got).tz_convert(clock.NY).date().isoformat() <= _next_trading(day):
@@ -230,18 +246,22 @@ def fomc(cal, t, hist=None, tl=None):
         if ds and (pd.Timestamp(day) - pd.Timestamp(ds[-1])).days <= 7:
             asof, src = ds[-1], "hist"
             snap = {r["meeting"]: r for r in hist if r["date"] == asof}
-    since = min((r["date"] for r in hist), default=None)
+    # 日历那份要取的场次（qx/events.py fetch()：日历窗口里的决议 + 时间轴从取数那天起的下一次和下下次）；整个没取到时 ok.polymarket 为假
+    asked = set(sorted(d for d in dates if d >= (cal.get("from") or day))[:2]) | {e["date"] for e in cal.get("events", []) if e.get("kind") == "fomc"}
+    failed = (cal.get("ok") or {}).get("polymarket") is False
     out = []
     for d in nxt:
-        bj = pd.Timestamp(f"{d} 14:00", tz=clock.NY).tz_convert(clock.SH)
+        bj = pd.Timestamp(f"{d} {FED_HM['fomc']}", tz=clock.NY).tz_convert(clock.SH)
         x = dict(date=d, bj=bj.strftime("%Y-%m-%d"), bj_hm=bj.strftime("%H:%M"))
         p = (snap or {}).get(d)
         if p:
-            x.update(hold=_f(p.get("hold"), 3), cut=_f(p.get("cut"), 3), hike=_f(p.get("hike"), 3), vol=_f(p.get("vol"), 0), stale=bool(p.get("stale")),
+            x.update(hold=_pct(p.get("hold")), cut=_pct(p.get("cut")), hike=_pct(p.get("hike")), vol=_f(p.get("vol"), 0), stale=bool(p.get("stale")),
                      asof=asof if asof != day else None)
+        elif src == "cal":
+            # 日历那份：整个没取到 → 这次没取到；要取了、没有 → 还没有盘口；本来就不在要取的那几场里（比如盘中跳过已开完的那场以后的再下一次）→ 没存
+            x.update(why="fail" if failed else "nomkt" if d in asked else "nosave")
         else:
-            # 日历那份是按时间轴的下一次和下下次去取的，取了没有 = 还没有盘口；存档那份 10-29 以前只存下一次，没有 = 那天没存
-            x.update(why="nomkt" if src == "cal" else "nosave", since=since if since and since > day else None)
+            x.update(why="nosave")                    # 存档那份 10-29 以前只存下一次，没有 = 那天没存
         out.append(x)
     return out
 
@@ -290,6 +310,13 @@ def _et_time(d, s):
     return pd.Timestamp(f"{d} {h:02d}:{mi:02d}", tz=clock.NY)
 
 
+def _fed_et(e):
+    """美联储日程上一件事（决议、记者会、纪要……）的美东时刻；决议、记者会没写时刻的用 FED_HM 的默认。
+    48 小时和"接下来 7 天"都用它，同一件事落在同一个北京日子（2026-10-30 复查后改：原来 48 小时没时刻的按美东日子放、写"时间未定"）。"""
+    x = _et_time(e["date"], (e.get("time") or "").replace(" 美东", ""))
+    return x if x is not None or e.get("kind") not in FED_HM else _et_time(e["date"], FED_HM[e["kind"]])
+
+
 def h48(cal, now=None):
     """接下来两个美股交易日的日历，换成北京时间、按北京的日子合成几行（五样方案三；只改显示，名单照口径三.8）。"""
     now = pd.Timestamp(now) if now is not None else pd.Timestamp.now(tz="UTC")
@@ -308,7 +335,7 @@ def h48(cal, now=None):
         if e.get("utc"):
             when = pd.Timestamp(e["utc"]).tz_convert(clock.SH)
         elif e["kind"] in ("fomc", "presser", "minutes", "chair", "beige"):
-            x = _et_time(e["date"], (e.get("time") or "").replace(" 美东", ""))
+            x = _fed_et(e)
             when = x.tz_convert(clock.SH) if x is not None else None
         elif e["kind"] == "earnings":
             if e.get("time") == "盘前":
@@ -355,9 +382,6 @@ def h48_all(hap, cal):
     return b if b != a else None
 
 
-FED_HM = {"fomc": "14:00", "presser": "14:30"}        # 美联储日程上没写时刻时的默认（决议 14:00、记者会 14:30，美东）
-
-
 def fed_bj(cal):
     """"全部"里"接下来 7 天"那张表的议息会（决议、记者会）换成北京时间，和前台议息会那一行、48 小时、时间轴同一个写法（只给页面用，只改显示）。
     → {"fomc|美东日期": {bj: 北京日期, hm: 北京时刻}}；日历（推送读的 today.upcoming）不动。"""
@@ -365,8 +389,7 @@ def fed_bj(cal):
     for e in cal or []:
         if e.get("kind") not in FED_HM:
             continue
-        x = _et_time(e["date"], (e.get("time") or "").replace(" 美东", "")) or _et_time(e["date"], FED_HM[e["kind"]])
-        b = x.tz_convert(clock.SH)
+        b = _fed_et(e).tz_convert(clock.SH)
         out[f"{e['kind']}|{e['date']}"] = dict(bj=b.strftime("%Y-%m-%d"), hm=b.strftime("%H:%M"))
     return out
 
@@ -433,14 +456,16 @@ def yield10(D, t):
 
 def opt_market(D):
     """期权块"大盘"那一行的数（只给页面用）：和 qx/options.py market() 同一个算法——过去 10 年（2,520 个交易日，含当天）里不高于当天的比例，
-    页面写"10 年分位 N"，不写"偏高 / 少见"（方案第五节第 5 条；options.py 的 95 / 70 / 30 只决定那几个词，不进任何规则）。"""
-    def one(k):
+    页面写"10 年分位 N"，不写"偏高 / 少见"（方案第五节第 5 条；options.py 的 95 / 70 / 30 只决定那几个词，不进任何规则）。
+    只取整一次，就在这里按页面写的位数取（VIX 一位，SKEW、VVIX、分位整数，9 天 ÷ 30 天写成整数百分比），页面原样写，和 market() 那句的数一样
+    （2026-10-30 复查后改：原来留 4 位、页面再 toFixed(1)，VIX 收盘 19.450001 → 19.45 → 页面 19.4，同一页别处是 19.5）。"""
+    def one(k, dp):
         s = D[k]["c"].dropna()
-        return dict(now=_f(s.iloc[-1], 4), p=_f((s.iloc[-2520:] <= s.iloc[-1]).mean() * 100, 0))     # 原值留 4 位，页面只取整一次（和 market() 一样）
-    out = {k: one(sym) for k, sym in (("vix", "^VIX"), ("skew", "^SKEW"), ("vvix", "^VVIX")) if sym in D and len(D[sym]["c"].dropna())}
+        return dict(now=_f(s.iloc[-1], dp), p=_f((s.iloc[-2520:] <= s.iloc[-1]).mean() * 100, 0))
+    out = {k: one(sym, dp) for k, sym, dp in (("vix", "^VIX", 1), ("skew", "^SKEW", 0), ("vvix", "^VVIX", 0)) if sym in D and len(D[sym]["c"].dropna())}
     if "vix" in out and "^VIX9D" in D and len(D["^VIX9D"]["c"].dropna()):
         r = D["^VIX9D"]["c"].dropna().iloc[-1] / D["^VIX"]["c"].dropna().iloc[-1]
-        out.update(r9=_f(r, 4), r9_ge1=bool(r >= 1))          # "眼前几天有事"照 market() 用没取整的比
+        out.update(r9=_f(r * 100, 0), r9_ge1=bool(r >= 1))          # "眼前几天有事"照 market() 用没取整的比
     return out or None
 
 
@@ -570,8 +595,10 @@ def judge_line(today):
 # ================================================================ 合起来
 def build(D, R, radar, today, hap, ice, cal):
     t = R["P"].index[-1]
-    from qx import positioning as PS
-    out = dict(asof=t.strftime("%Y-%m-%d"), min_obs=PS.MIN_OBS)          # 仓位读数至少几个观测才和历史比（页面写"攒到第几期"用）
+    from qx import positioning as PS, watch as W
+    out = dict(asof=t.strftime("%Y-%m-%d"), min_obs=PS.MIN_OBS,          # 仓位读数至少几个观测才和历史比（页面写"攒到第几期"用）
+               # "今天变了什么"里"少见"换成的门槛（qx/watch.py 的常量，页面不另写一份）：单日 / 5 日涨跌美股、美股以外，保险比实际波动两头，比的是过去几年
+               rare=dict(us=W.RARE_US, linked=W.RARE_LINKED, ivrv=W.RARE, yrs=round(W.WIN / 252)))
     parts = [("emo", lambda: emotion(R)), ("pos", lambda: position(D, t)), ("ends", lambda: baskets_ends(radar.get("narr"))),
              ("flow", lambda: flows(D, t, radar.get("pos"))), ("m1", lambda: m1(D, t)), ("fomc", lambda: fomc(cal, t)),
              ("react", lambda: reaction(radar.get("cards"))), ("season", lambda: earnings_season(t)), ("tw", lambda: tw_revenue(t)),

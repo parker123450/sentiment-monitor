@@ -26,10 +26,12 @@
   const plain = s => String(s == null ? "" : s).replace(/neocloud/g, "算力云")      // 登记表里的英文名、"2/5"写成白话（只改显示）；第 0 环写"还没走到第 1 环"
     .replace(/(走到)?第 (\d+)\/(\d+) 环/g, (_, w, a, b) => +a ? `${w || ""}第 ${a} 环（共 ${b} 环）` : `还没走到第 1 环（共 ${b} 环）`);
   // "今天变了什么"的条目是推送也读的字（qx/watch.py，口径三），里面"少见"没有数；页面上换成登记的门槛，字和推送都不动：
-  // 四条读数和阶段的分项是分位 ≥90；单日 / 5 日涨跌是过去 10 年同方向一样极端的日子 ≤1%（美股以外 0.5%，qx/watch.py RARE_US / RARE_LINKED）；保险比实际波动是过去 10 年两头各 2%
+  // 四条读数和阶段的分项是分位 ≥90；单日 / 5 日涨跌是过去 10 年同方向一样极端的日子 ≤ RARE_US（美股以外 RARE_LINKED）；保险比实际波动是过去 10 年两头各 RARE。
+  // 门槛的数从 qx/front.py build() 的 rare 来（就是 qx/watch.py 的常量），页面不另写一份；拿不到就只写"过了门槛"
+  const RQ = (RAW.front && RAW.front.rare) || null, rp = x => +(x * 100).toFixed(2) + "%", yr = RQ ? `过去 ${RQ.yrs} 年` : "";
   const RWD = [[/第一次到了历史上少见的程度/g, "第一次到分位 90 以上"], [/今天到了历史上少见的：/g, "今天到了分位 90 以上的："], [/第一次到少见的读数：/g, "第一次到分位 90 以上的读数："],
-    [/单独一条读数到少见/g, "单独一条读数到分位 90 以上"], [/^也少见：/, "同组也过了门槛（过去 10 年同方向一样极端的日子不超过 1%，美股以外 0.5%）："],
-    [/比实际波动贵得少见：/, "比实际波动贵到了过去 10 年最贵的 2%："], [/比实际波动便宜得少见：/, "比实际波动便宜到了过去 10 年最便宜的 2%："]];
+    [/单独一条读数到少见/g, "单独一条读数到分位 90 以上"], [/^也少见：/, RQ ? `同组也过了门槛（${yr}同方向一样极端的日子不超过 ${rp(RQ.us)}，美股以外 ${rp(RQ.linked)}）：` : "同组也过了门槛："],
+    [/比实际波动贵得少见：/, RQ ? `比实际波动贵到了${yr}最贵的 ${rp(RQ.ivrv)}：` : "比实际波动贵过了门槛："], [/比实际波动便宜得少见：/, RQ ? `比实际波动便宜到了${yr}最便宜的 ${rp(RQ.ivrv)}：` : "比实际波动便宜过了门槛："]];
   const rwd = s => RWD.reduce((a, [r, t]) => a.replace(r, t), String(s == null ? "" : s));
   function facts(r) {
     const pc = (a, b) => Math.round((a / b - 1) * 100);
@@ -101,7 +103,7 @@
       RAW.groups.map(g => `<tr><td class="nm">${esc(g.name)}${g.names ? `<small>${esc(g.names)}</small>` : ""}</td><td class="r num">${g.below} / ${g.n}</td><td class="r num">${g.low}</td><td class="r num ${g.r10 < 0 ? "neg" : "pos"}">${sgn(g.r10, 1)}%</td><td class="r num">${g.dd}%</td></tr>`).join("");
     $("ice").innerHTML = `<tr><th>评级</th><th class="r">现在（基点）</th><th class="r">5 日</th><th class="r">一个月里</th><th>三年里的位置</th></tr>` +
       Object.entries(RAW.ice).map(([k, v]) => { const p = (v.now - v.lo) / ((v.hi - v.lo) || 1) * 100, ch = v.now - v.m1;
-        return `<tr><td>${esc(k)}<small>截至 ${md(v.date)}</small></td><td class="r num">${v.now}</td><td class="r num">${sgn(v.c5, 0)}${v.lvl5 && v.f5 != null ? `<small style="color:var(--alert)">历史 ${fr(v.f5)}</small>` : ""}</td><td class="r num">${sgn(ch, 0)}</td><td><div class="bar" title="三年最低 ${v.lo}，最高 ${v.hi}"><i style="width:${Math.max(3, p).toFixed(0)}%"></i></div></td></tr>`; }).join("");
+        return `<tr><td>${esc(k)}<small>截至 ${md(v.date)}</small></td><td class="r num">${v.now}</td><td class="r num">${sgn(v.c5, 0)}${v.lvl5 && v.f5 != null ? `<small style="color:var(--alert)">历史上 ${fr(v.f5)} 的日子更极端</small>` : ""}</td><td class="r num">${sgn(ch, 0)}</td><td><div class="bar" title="三年最低 ${v.lo}，最高 ${v.hi}"><i style="width:${Math.max(3, p).toFixed(0)}%"></i></div></td></tr>`; }).join("");
   })();
 
   // ---------- 前台五样（第四轮五样方案，qx/front.py；口径十四）：每样一句结论、两三个数、只在有新东西时出的触发行
@@ -161,10 +163,10 @@
     { let h = head("expect", "④", "预期"); const M = FR.m1 || [], S = M.find(x => x.name === "费城半导体");
       if (S) h += `<p class="hl">期权给费城半导体接下来一个月定价上下各约 ${S.m}%（约 ${n0(S.lo)}–${n0(S.hi)}）${M.filter(x => x !== S).map(x => `，${esc(x.name.replace(" 500", "").replace(" 100", ""))} ${x.m}%`).join("")}<small>　检验过：能衡量幅度，只说幅度，不说方向</small></p>`;
       const F = FR.fomc || [];
-      if (F.length) {                                 // 下一次、下下次，按数据那天算（qx/front.py fomc()），日子是北京时间
-        const none = F.every(x => x.why === "nosave"), pr = x => x.hold != null ? ` 不变 ${Math.round(x.hold * 100)}%、降息 ${Math.round(x.cut * 100)}%、加息 ${Math.round(x.hike * 100)}%${x.stale ? "（上次取到的）" : x.asof ? `（${d2(x.asof)} 存的）` : ""}`
-          : x.why === "nomkt" ? "，预测市场还没有盘口" : none ? "" : " 这天没存概率";
-        h += `<div class="rw">议息会：${F.map((x, i) => `${i ? "下下次" : "下次"} ${d2(x.bj)}${pr(x)}`).join(none ? "、" : "；")}${none ? `（这天没存预测市场的概率${F[0].since ? `，${d2(F[0].since)} 起才存` : ""}）` : ""}<small>　北京时间${F.some(x => x.hold != null) ? " · Polymarket" : ""}</small></div>`; }
+      if (F.length) {                                 // 下一次、下下次，按数据那天算（qx/front.py fomc()），日子是北京时间；概率是后台取好的整数百分比，原样写
+        const none = F.every(x => x.why === "nosave"), pr = x => x.hold != null ? ` 不变 ${x.hold}%、降息 ${x.cut}%、加息 ${x.hike}%${x.stale ? "（上次取到的）" : x.asof ? `（${d2(x.asof)} 存的）` : ""}`
+          : x.why === "nomkt" ? "，预测市场还没有盘口" : x.why === "fail" ? "，这次没取到预测市场的概率" : none ? "" : " 没存概率";
+        h += `<div class="rw">议息会：${F.map((x, i) => `${i ? "下下次" : "下次"} ${d2(x.bj)}${pr(x)}`).join(none ? "、" : "；")}${none ? "（这天没存预测市场的概率）" : ""}<small>　北京时间${F.some(x => x.hold != null) ? " · Polymarket" : ""}</small></div>`; }
       const H = FR.h48 || [];
       if (H.length) h += `<div class="rw"><b>接下来 48 小时</b>（北京时间${FR.cal_late ? `，日历 ${d2(FR.cal_late)} 取的` : ""}）${H.map(d => `<div class="h48"><span class="d">${esc(d.day)}</span> ${d.items.map(x => `${esc(x.at)} ${esc(x.text)}`).join("；")}</div>`).join("")}</div>`;
       const R = FR.react;
@@ -173,11 +175,13 @@
       put("expect", h + trg(T.expect)); }
     // ⑤ 基本面
     { let h = head("fund", "⑤", "基本面"); const E = FR.season, W = FR.tw, C = FR.credit || [], Y = FR.y10;
-      const w20 = x => x.lvl20 && x.c20 > 0, w5 = x => x.lvl5 && x.up5;
+      const w20 = x => x.lvl20 && x.c20 > 0, w5 = x => x.lvl5 && x.up5, ex = f => `历史上 ${fr(f)} 的日子更极端`;
       const hot = C.filter(x => w20(x) || w5(x)).map(x => ({ x, f: Math.min(w20(x) ? x.f20 : 1, w5(x) ? x.f5 : 1) })).sort((a, b) => a.f - b.f).slice(0, 2).map(o => o.x);
-      const cw = hot.length ? `信用利差在走阔：${hot.map(x => w20(x) ? `${esc(x.name)} 20 日 ${s0(x.c20)} 基点（历史最极端 ${fr(x.f20)}）` : `${esc(x.name)} 5 日 ${s0(x.c5)} 基点（历史最极端 ${fr(x.f5)}）`).join("、")}（FRED ${d2(hot[0].date)}）` : "信用利差五档都没有走阔到历史最极端的 5%";
+      // 结论句写哪一段（20 日优先），下一行同一档同一段的"历史上…"就不再写；日子见下一行"融资环境（基点，FRED 几月几日）"，这里不重复
+      const said = x => hot.includes(x) ? (w20(x) ? 20 : 5) : 0;
+      const cw = hot.length ? `信用利差在走阔：${hot.map(x => said(x) === 20 ? `${esc(x.name)} 20 日 ${s0(x.c20)} 基点（${ex(x.f20)}）` : `${esc(x.name)} 5 日 ${s0(x.c5)} 基点（${ex(x.f5)}）`).join("、")}` : "利差五档都没走阔到历史最极端的 5%";
       h += `<p class="hl">${E ? `${esc(E.word)}已报 ${E.n} 家（市值 ≥200 亿美元），${E.beat} 家超预期` : ""}${W ? `；台积电 ${+W.ym.slice(5)} 月营收同比 ${s1(W.yoy)}%` : ""}；${cw}</p>`;
-      const nm = x => `${esc(x.name)} ${n0(x.now)}${x.lvl20 ? `（20 日 ${s0(x.c20)}${hot.includes(x) ? "" : `，历史最极端 ${fr(x.f20)}`}）` : x.lvl5 ? `（5 日 ${s0(x.c5)}${hot.includes(x) ? "" : `，历史最极端 ${fr(x.f5)}`}）` : x.c20 != null ? `（20 日 ${s0(x.c20)}）` : `（5 日 ${s0(x.c5)}）`}`;
+      const nm = x => `${esc(x.name)} ${n0(x.now)}${x.lvl20 ? `（20 日 ${s0(x.c20)}${said(x) === 20 ? "" : `，${ex(x.f20)}`}）` : x.lvl5 ? `（5 日 ${s0(x.c5)}${said(x) === 5 ? "" : `，${ex(x.f5)}`}）` : x.c20 != null ? `（20 日 ${s0(x.c20)}）` : `（5 日 ${s0(x.c5)}）`}`;
       const lowq = C.filter(x => ["单 B", "BB", "CCC"].includes(x.name)), ig = C.find(x => x.name === "投资级");
       if (C.length) h += `<div class="rw">融资环境（基点，FRED ${d2(C[0].date)}）：${lowq.map(nm).join(" · ")}<br>${ig ? nm(ig) : ""}${Y ? ` · 10 年美债 ${Number(Y.now).toFixed(2)}%（${esc(Y.src || "")}${Y.date !== FR.asof ? " " + d2(Y.date) : ""}，20 日 ${s0(Y.c20)} 基点）` : ""}</div>`;
       if (E && E.med != null) h += `<div class="rw">超预期幅度：中位 ${s1(E.med)}%${E.ai_n ? `；AI 链 ${E.ai_n} 家里 ${E.ai_beat} 家超预期` : ""}</div>`;
@@ -218,10 +222,13 @@
   (function opt() {
     const O = RAW.options, el = $("opt"); if (!O || !el || !(O.rows || []).length) return;
     const Q = [["保险贵不贵", "q1"], ["更怕跌还是更想涨", "q2"], ["大家押在哪个价位", "q3"], ["做市商对冲会放大还是压住波动", "q4"], ["定价了多大的涨跌", "q5"]];
-    // 大盘那一行：数从 qx/front.py opt_market() 来（和 options.py 同一个 10 年分位），写"10 年分位 N"，不写"偏高 / 少见"；拿不到就用原来那句
-    const M = RAW.front && RAW.front.optmkt, p10 = x => `10 年分位 ${Math.round(x.p)}`;
-    const mk = M && M.vix ? [`VIX ${M.vix.now.toFixed(1)}（${p10(M.vix)}）`, M.r9 != null ? `9 天保险是 30 天的 ${Math.round(M.r9 * 100)}%${M.r9_ge1 ? "：眼前几天有事" : ""}` : "",
-      M.skew ? `SKEW ${Math.round(M.skew.now)}（买极端下跌保护的程度，${p10(M.skew)}）` : "", M.vvix ? `VVIX ${Math.round(M.vvix.now)}（保险本身的波动，${p10(M.vvix)}）` : ""].filter(Boolean).join("；") + "。" : O.market;
+    // 大盘那一行：数从 qx/front.py opt_market() 来（和 options.py 同一个 10 年分位），写"10 年分位 N"，不写"偏高 / 少见"
+    // 数在后台已经按要写的位数取过整（只取一次），这里不再取整；VIX 补齐一位小数（20 写成 20.0，和 market() 那句一样，不改数）
+    // 拿不到时用 options.py market() 那句，但把没登记的 95 / 70 / 30 那几个词（少见地高 / 偏高 / 偏低 / 平常）去掉，只留数
+    const M = RAW.front && RAW.front.optmkt, p10 = x => `10 年分位 ${x.p}`;
+    const nowd = String(O.market || "").replace(/（(?:10 年里少见地高|偏高|偏低|平常)）/g, "").replace(/，(?:10 年里少见地高|偏高|偏低|平常)）/g, "）");
+    const mk = M && M.vix ? [`VIX ${Number(M.vix.now).toFixed(1)}（${p10(M.vix)}）`, M.r9 != null ? `9 天保险是 30 天的 ${M.r9}%${M.r9_ge1 ? "：眼前几天有事" : ""}` : "",
+      M.skew ? `SKEW ${M.skew.now}（买极端下跌保护的程度，${p10(M.skew)}）` : "", M.vvix ? `VVIX ${M.vvix.now}（保险本身的波动，${p10(M.vvix)}）` : ""].filter(Boolean).join("；") + "。" : nowd;
     el.innerHTML = `<summary>期权：五个问题<small>${esc((O.summary || "").replace(/、一个月定价 ±\d+%/g, ""))}</small></summary>
       <p>大盘：${esc(mk)}</p>
       <div class="oq">${O.rows.map(r => `<div class="oc"><h4>${esc(r.name)}<small>${r.live ? "盘中 · 延迟 15 分钟" : md(r.date || RAW.asof) + " 收盘"}</small></h4>${r.ans.map(a => `<div class="oa${a.warn ? " w" : ""}"><b>${esc(a.q)}</b>：${esc(a.a)}</div>`).join("")}</div>`).join("")}</div>
@@ -430,11 +437,11 @@
     const S = RD.sig, P = RD.pos, el = $("sig"); if (!S || !el) return;
     el.hidden = false;
     const pc = f => f < 0.001 ? "不到 0.1%" : (f * 100).toFixed(f < 0.1 ? 1 : 0) + "%";
-    const one = x => `<div class="fli"><div><span class="tg${x.level === "少见" ? " first" : ""}">历史 ${pc(x.frac)}</span><b>${esc(x.text)}</b></div>` +
+    const one = x => `<div class="fli"><div><span class="tg${x.level === "少见" ? " first" : ""}">历史上 ${pc(x.frac)} 的日子更极端</span><b>${esc(x.text)}</b></div>` +
       `<div class="fm">截至 ${md(x.asof)} · ${esc(plain(x.next))}</div>` +
       (x.asym ? `<div><span class="tg first">不对称：${esc(x.asym.market)}${esc(x.asym.word)}</span></div>` : "") + `</div>`;
     const sg = S.signals || [];
-    let h = `<h2>小信号<small>截至 ${md(S.asof)} · 5 日变化到了自己全部历史最极端的 5% 以内的；"历史"后面是历史上同方向更极端的日子占多少</small></h2>`;
+    let h = `<h2>小信号<small>截至 ${md(S.asof)} · 5 日变化到了自己全部历史最极端的 5% 以内的</small></h2>`;
     h += sg.length ? sg.slice(0, 3).map(one).join("") : `<p class="quiet">今天没有 5 日变化到历史最极端 5% 以内的小信号。</p>`;
     let more = sg.length > 3 ? `<h3 class="mh3">其余 ${sg.length - 3} 条小信号</h3>${sg.slice(3).map(one).join("")}` : "";
     const F = S.firsts || [];
@@ -481,8 +488,9 @@
     for (const b of (RD.narr && RD.narr.baskets) || []) for (const p of b.pairs || []) PF.push([p.name + " 20 日", p.frac]);
     const lvn = s => { const m = /^(.*)（(?:偏高|少见)）$/.exec(String(s)); if (!m) return s;
       const f = SF.has(m[1]) ? SF.get(m[1]) : (PF.find(([k]) => m[1].startsWith(k)) || [])[1];
-      return f == null ? s : `${m[1]}（历史 ${fr(f)}）`; };
-    const li = xs => xs.length ? `<ul class="nw">${xs.map(x => `<li>${esc(plain(lvn(x)))}</li>`).join("")}</ul>` : `<p class="knote">—</p>`;
+      return f == null ? s : `${m[1]}（历史上 ${fr(f)} 的日子更极端）`; };
+    const gap = s => String(s).replace(/(\d 日)([+−-]\d)/g, "$1 $2");      // "20 日+60 个基点"补空格（只改显示）
+    const li = xs => xs.length ? `<ul class="nw">${xs.map(x => `<li>${esc(gap(plain(lvn(x))))}</li>`).join("")}</ul>` : `<p class="knote">—</p>`;
     let h = `<h2>前瞻<small>截至 ${md(F.asof)} · 六条线，每条：先变的小信号、现在怎么样、接下来的检验</small></h2>`;
     h += F.lines.map(L => `<details class="cd"><summary><b>${esc(L.name)}</b><span class="ns">${L.signals.length ? L.signals.length + " 条小信号" : "没有小信号"} · 接下来 ${L.next.length} 件</span></summary>` +
       `<dl><dt>先变的小信号</dt><dd>${li(L.signals)}</dd><dt>现在怎么样</dt><dd>${li(L.now)}</dd><dt>接下来的检验（30 天内）</dt><dd>${li(L.next)}</dd></dl></details>`).join("");
