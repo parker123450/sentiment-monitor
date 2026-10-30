@@ -35,6 +35,11 @@ def _prev_day(idx, t):
     return before[-1] if len(before) else None
 
 
+def _plain(s):
+    """页面上的白话：登记表里的英文名换成中文（只改显示，登记表和推送不动）。"""
+    return (s or "").replace("neocloud", "算力云")
+
+
 # ================================================================ ① 情绪
 def emotion(R):
     st, idx = R["stage"].dropna(), R["stage"].dropna().index
@@ -183,14 +188,59 @@ def m1(D, t):
     return out
 
 
-def fomc(cal):
-    pm = dict((cal or {}).get("fomc_pm") or {})
-    for e in (cal or {}).get("events", []):
-        if e.get("kind") == "fomc" and e.get("pm"):
-            pm.setdefault(e["date"], e["pm"])
-    today = clock.ny_now().date().isoformat()
-    xs = sorted((d, p) for d, p in pm.items() if d >= today)[:2]
-    return [dict(date=d, hold=_f(p.get("hold"), 3), cut=_f(p.get("cut"), 3), hike=_f(p.get("hike"), 3), vol=_f(p.get("vol"), 0), stale=bool(p.get("stale"))) for d, p in xs]
+# 美联储公布的议息会决议日（两天会的第二天，美东 14:00）。2026-10-30 从 federalreserve.gov/monetarypolicy/fomccalendars.htm 核对过（qx/timeline.py 的 fed()）。
+# 时间轴只存"今天起 6 个月"，截到以前的日子（自检、量页面）要靠这张表找"那天的下一次"；新的一年时间轴取到了会并进来。
+FOMC_DATES = ("2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18", "2025-07-30", "2025-09-17", "2025-10-29", "2025-12-10",
+              "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17", "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
+              "2027-01-27", "2027-03-17", "2027-04-28", "2027-06-09", "2027-07-28", "2027-09-15", "2027-10-27", "2027-12-08")
+
+
+def _next_trading(d):
+    d = date.fromisoformat(d) + timedelta(days=1)
+    while not clock.is_trading_day(d):
+        d += timedelta(days=1)
+    return d.isoformat()
+
+
+def fomc(cal, t):
+    """议息会下一次和下下次（口径十四.2"常驻的数"），按数据那天 t 算，不看墙上时钟（2026-10-30 改：原来用墙上时钟，截到以前的日子也写今天的下一次和今天的概率，日历里的场次过了就整行不见；日期是美东的，和时间轴的北京时间对不上）。
+    "下一次" = 决议日（美东）在 t 以后：t 当天 14:00 的决议在收盘前已经出了。
+    概率只用 t 那天能看到的那一份：日历（data/calendar.json）是 t 当天到下一个交易日之间取的才用；不然用 data/fomc_history.csv 里 t 以前最近的那一行（7 天以内）。
+    都没有的写"这天没存"；那份里没有这一场的写"预测市场还没有盘口"。日期给北京时间（决议在北京是第二天凌晨）。"""
+    from qx import happen as HP, timeline as TL
+    cal = cal or {}
+    day = pd.Timestamp(t).strftime("%Y-%m-%d")
+    hist = HP._rows(HP.FOMC)
+    dates = set(FOMC_DATES) | {e["date"] for e in TL.load().get("events", []) if e.get("kind") == "fomc"} \
+        | {e["date"] for e in cal.get("events", []) if e.get("kind") == "fomc"} | set(cal.get("fomc_pm") or {}) | {r["meeting"] for r in hist}
+    nxt = sorted(d for d in dates if d > day)[:2]
+    snap, asof, src = None, None, None
+    got = cal.get("fetched")
+    if got and day <= pd.Timestamp(got).tz_convert(clock.NY).date().isoformat() <= _next_trading(day):
+        snap = dict(cal.get("fomc_pm") or {})
+        for e in cal.get("events", []):
+            if e.get("kind") == "fomc" and e.get("pm"):
+                snap.setdefault(e["date"], e["pm"])
+        asof, src = day, "cal"
+    else:
+        ds = sorted({r["date"] for r in hist if r["date"] <= day})
+        if ds and (pd.Timestamp(day) - pd.Timestamp(ds[-1])).days <= 7:
+            asof, src = ds[-1], "hist"
+            snap = {r["meeting"]: r for r in hist if r["date"] == asof}
+    since = min((r["date"] for r in hist), default=None)
+    out = []
+    for d in nxt:
+        bj = pd.Timestamp(f"{d} 14:00", tz=clock.NY).tz_convert(clock.SH)
+        x = dict(date=d, bj=bj.strftime("%Y-%m-%d"), bj_hm=bj.strftime("%H:%M"))
+        p = (snap or {}).get(d)
+        if p:
+            x.update(hold=_f(p.get("hold"), 3), cut=_f(p.get("cut"), 3), hike=_f(p.get("hike"), 3), vol=_f(p.get("vol"), 0), stale=bool(p.get("stale")),
+                     asof=asof if asof != day else None)
+        else:
+            # 日历那份是按时间轴的下一次和下下次去取的，取了没有 = 还没有盘口；存档那份 10-29 以前只存下一次，没有 = 那天没存
+            x.update(why="nomkt" if src == "cal" else "nosave", since=since if since and since > day else None)
+        out.append(x)
+    return out
 
 
 def reaction(cards):
@@ -332,11 +382,13 @@ def credit(ice, narr):
 
 
 def yield10(D, t):
+    """10 年美债收益率：和"少见的涨跌"那条规则同一个序列（口径三.1；qx/watch.py 的 GROUPS"美元和美债"、_close() 读 D["^TNX"]，Yahoo 收盘），截至 t。
+    2026-10-30 改：原来读 FRED DGS10（晚一天），和前瞻、配对读数、各市场里的 10 年美债（都是 ^TNX）一页两个数。"""
     from qx import smallsignal as SS
-    s, _ = SS.series(D, "DGS10", t) if "DGS10" in D else (None, True)
+    s, _ = SS.series(D, "^TNX", t) if "^TNX" in D else (None, True)
     if s is None or len(s) < 21:
         return None
-    return dict(now=_f(s.iloc[-1], 2), c20=_f((s.iloc[-1] - s.iloc[-21]) * 100, 0), date=s.index[-1].strftime("%Y-%m-%d"))
+    return dict(now=_f(s.iloc[-1], 2), c20=_f((s.iloc[-1] - s.iloc[-21]) * 100, 0), date=s.index[-1].strftime("%Y-%m-%d"), src="Yahoo")
 
 
 # ================================================================ 触发行：今天（上一个交易日收盘以来）新的
@@ -393,14 +445,14 @@ def triggers(D, t, radar, today, hap, R):
         have = {x["key"] for v in trig.values() for x in v}
         for x in sig.get("signals") or []:
             if x["level"] == "少见" and x["k"] not in was:
-                trig[_pillar_of_signal(x)].append(dict(src="sig", key="sig:" + x["k"], title=f"{x['text']}（少见，历史上 {x['frac'] * 100:.1f}% 的日子更极端）"))
+                trig[_pillar_of_signal(x)].append(dict(src="sig", key="sig:" + x["k"], title=f"{x['text']}（历史上 {x['frac'] * 100:.1f}% 的日子更极端）"))
         # 3) 推演链走到新的一环（第 2 环以后，口径十一）
         st_p = {c["id"]: c["step"] for c in sig_p.get("chains") or []}
         for c in sig.get("chains") or []:
             if c["step"] >= 2 and c["step"] > st_p.get(c["id"], 0):
                 L = c["links"][c["step"] - 1]
-                trig["fund"].append(dict(src="chain", key="chain:" + c["id"], title=f"推演链 · {c['name']}走到第 {c['step']} 环：{L['name']}（{L.get('lit') or ''} 亮）"
-                                         + (f"；下一环看{c['next']['name']}" if c.get("next") else "")))
+                trig["fund"].append(dict(src="chain", key="chain:" + c["id"], title=_plain(f"推演链 · {c['name']}走到第 {c['step']} 环（共 {c['of']} 环）：{L['name']}（{L.get('lit') or ''} 亮）"
+                                         + (f"；下一环看{c['next']['name']}" if c.get("next") else ""))))
     except Exception:
         pos_p = sig_p = None
     # 4) 配对读数升级（口径十：平常 → 偏高 / 少见，偏高 → 少见）
@@ -415,7 +467,7 @@ def triggers(D, t, radar, today, hap, R):
                 seen.add(p["id"])
                 if rank.get(p["level"], 0) > rank.get(prv.get(p["id"], "平常"), 0):
                     k = "fund" if p["id"].startswith("BAML") or p["id"] in ("^TNX", "HYG/IEF") else "price"
-                    trig[k].append(dict(src="pair", key="pair:" + p["id"], title=f"{p['name']} 20 日变化到了{p['level']}（历史上 {p['frac'] * 100:.1f}% 的日子更极端，截至 {p['asof']}）"))
+                    trig[k].append(dict(src="pair", key="pair:" + p["id"], title=f"{p['name']} 20 日变化：历史上 {p['frac'] * 100:.1f}% 的日子更极端（截至 {p['asof']}）"))
     except Exception:
         pass
     # 5) 卡新满足（口径十二；第 1、3 类归买卖方，第 5 类归预期，第 6 类归价格；第 2、4 类放后台）
@@ -436,7 +488,7 @@ def triggers(D, t, radar, today, hap, R):
             had = {(r["name"], r["asof"]) for r in pos_p["readings"] if r["src"] == "CFTC"}
             for r in pos["readings"]:
                 if r["src"] == "CFTC" and r.get("crowd", True) and r.get("wk") == "少见" and (r["name"], r["asof"]) not in had:
-                    trig["flow"].append(dict(src="cftc_wk", key=f"cftc_wk:{r['name']}", title=f"CFTC {r['asof'][5:]} 那期：{r['name'].replace(' ÷ 总持仓', '')}一周{'升' if r['chg'] > 0 else '降'}了 {abs(r['chg']):.1f} 个百分点到 {r['value']}%（少见，历史上 {r['wk_frac'] * 100:.1f}% 的周变化同方向更大）"))
+                    trig["flow"].append(dict(src="cftc_wk", key=f"cftc_wk:{r['name']}", title=f"CFTC {r['asof'][5:]} 那期：{r['name'].replace(' ÷ 总持仓', '')}一周{'升' if r['chg'] > 0 else '降'}了 {abs(r['chg']):.1f} 个百分点到 {r['value']}%（历史上 {r['wk_frac'] * 100:.1f}% 的周变化同方向更大）"))
     except Exception:
         pass
     # 7) 三种走向的信号先出现（口径十三，first 是最近一个收盘日）
@@ -463,9 +515,10 @@ def judge_line(today):
 # ================================================================ 合起来
 def build(D, R, radar, today, hap, ice, cal):
     t = R["P"].index[-1]
-    out = dict(asof=t.strftime("%Y-%m-%d"))
+    from qx import positioning as PS
+    out = dict(asof=t.strftime("%Y-%m-%d"), min_obs=PS.MIN_OBS)          # 仓位读数至少几个观测才和历史比（页面写"攒到第几期"用）
     parts = [("emo", lambda: emotion(R)), ("pos", lambda: position(D, t)), ("ends", lambda: baskets_ends(radar.get("narr"))),
-             ("flow", lambda: flows(D, t, radar.get("pos"))), ("m1", lambda: m1(D, t)), ("fomc", lambda: fomc(cal)),
+             ("flow", lambda: flows(D, t, radar.get("pos"))), ("m1", lambda: m1(D, t)), ("fomc", lambda: fomc(cal, t)),
              ("react", lambda: reaction(radar.get("cards"))), ("season", lambda: earnings_season(t)), ("tw", tw_revenue),
              ("credit", lambda: credit(ice, radar.get("narr"))), ("y10", lambda: yield10(D, t)),
              ("judge", lambda: judge_line(today)), ("h48", lambda: h48((hap or {}).get("calendar")))]
