@@ -80,6 +80,25 @@ def write_k(D, site_dir=None, password=None, preview_dir=None):
     return out
 
 
+def write_views(data, site_dir=None, password=None, preview_dir=None):
+    """说明、状态两个视图（第四轮后台精简第 2 步，方案第四节），点了才加载，和 K 线文件同一个做法：发布用页面同一把钥匙加密（site/v/），
+    本机预览写明文（本机预览/v/）。内容在 qx/front.py views() 里按 data 写好；只给页面用，推送不读。返回清单 {名字: {f, v}}，v 是内容的指纹（旧缓存不会冒充新的）。"""
+    import hashlib, json
+    from qx import crypt, front
+    out = {}
+    for name, h in front.views(data).items():
+        txt = json.dumps({"html": h}, ensure_ascii=False, separators=(",", ":"))
+        f = name + ".enc"
+        if site_dir and password:
+            os.makedirs(os.path.join(site_dir, "v"), exist_ok=True)
+            open(os.path.join(site_dir, "v", f), "wb").write(crypt.encrypt_blob(txt, password))
+        if preview_dir:
+            os.makedirs(os.path.join(preview_dir, "v"), exist_ok=True)
+            open(os.path.join(preview_dir, "v", f), "w", encoding="utf-8").write(txt)
+        out[name] = {"f": f, "v": hashlib.sha256(txt.encode("utf-8")).hexdigest()[:12]}
+    return out
+
+
 def chart_one(D, src, name, volsrc=None):
     if src not in D:
         return None

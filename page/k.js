@@ -6,6 +6,14 @@
   const sgn = (x, dp = 2) => x == null || !isFinite(x) ? "—" : (x > 0 ? "+" : x < 0 ? "−" : "") + fmt(Math.abs(x), dp);
   const lastOf = a => a[a.length - 1];
   const tok = name => (getComputedStyle(document.documentElement).getPropertyValue(name) || "").trim();
+  // 点了才取的加密小文件（K 线 k/*.enc；说明、状态 v/*.enc）：用解锁时留下的钥匙（window.QX_KEY）解开；本机预览是明文
+  async function fetchEnc(path) {
+    const r = await fetch(path, { cache: "force-cache" }); if (!r.ok) throw new Error("HTTP " + r.status);
+    if (!window.QX_KEY) return await r.text();
+    const b = new Uint8Array(await r.arrayBuffer()), key = await crypto.subtle.importKey("raw", window.QX_KEY, "AES-GCM", false, ["decrypt"]);
+    const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b.slice(0, 12) }, key, b.slice(12));
+    return await new Response(new Blob([pt]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  }
   function hexToRgb(h) {
     h = (h || "").trim(); if (h.startsWith("rgb")) return h.replace(/[^\d,]/g, "").split(",").slice(0, 3).map(Number);
     if (h.length === 4) h = "#" + h[1] + h[1] + h[2] + h[2] + h[3] + h[3];
@@ -83,7 +91,7 @@
     $("lead").textContent = lead;
     $("lines").innerHTML = LN.map(([k, nm, mk, what]) => { const [lv, w] = level(r[k]), m = r[mk], c = lv === 2 ? tok("--alert") : lv === 1 ? tok("--ink-2") : tok("--ink-3");
       return `<div class="ln"><span class="k">${nm}</span><span class="mv" style="white-space:normal">${what}</span><span class="w"><b style="color:${c}">${w}</b>${m == null ? "" : " · " + MW[m]}</span></div>`; }).join("") +
-      (RAW.cnn ? `<div class="ln cnn"><span class="k">CNN</span><span>恐慌贪婪 ${RAW.cnn.now}，${esc(RAW.cnn.word)}${RAW.cnn.w1 != null ? `（一周前 ${RAW.cnn.w1}，一个月前 ${RAW.cnn.m1 ?? "—"}）` : ""}。只作参考，用的都是大盘读数</span></div>` : "");
+      "";                                              // CNN 恐慌贪婪那一行搬到 说明（第四轮后台精简第 2 步；口径二.4 本来就不进阶段）
     const F3 = facts(r), since = s => { if (!(st >= s && st <= 3)) return null; let k = LASTK; while (k > 0 && D.state[k - 1] >= s && D.state[k - 1] <= 3) k--; return D.d[k]; };
     ["在卖", "在怕", "投降"].forEach((nm, i) => {
       const s = i + 1, on = st >= s && st <= 3, sd = since(s), el = document.createElement("div");
@@ -191,8 +199,38 @@
   function openBack(id) {
     const bk = $("back"); if (!bk) return;
     if (bk.hidden) { bk.hidden = false; $("backbtn").hidden = true; dispatchEvent(new Event("resize")); }
-    const el = id && $(id); if (el) el.scrollIntoView({ block: "start" });
+    const el = id && $(id); if (el) { if (el.closest("#detail")) openDetail(); el.scrollIntoView({ block: "start" }); }
   }
+  // ---------- 说明 / 明细 / 状态（第四轮后台精简第 2 步，方案第四节）
+  // 明细在"全部"里面（#detail，同一个加密包），平时收着；说明、状态点了才取 v/<名字>.enc（qx/front.py views() 写好，和 K 线文件同一把钥匙）
+  const broken = () => ((RAW.flash && RAW.flash.health) || []).filter(h => !h.ok);     // 快讯停了 / 没取到的路（和 qx/front.py broken_routes() 一样）
+  const VIEWS = { shuo: "说明", zt: "状态" }, VST = {};
+  function openDetail() {
+    const bk = $("back"); if (bk && bk.hidden) openBack(null);
+    const d = $("detail"); if (d && d.hidden) { d.hidden = false; dispatchEvent(new Event("resize")); }
+    return d;
+  }
+  async function openView(name, sec) {
+    if (name === "detail") { const d = openDetail(); if (d) d.scrollIntoView({ block: "start" }); return; }
+    const el = $("v-" + name); if (!el || !VIEWS[name]) return;
+    const bar = `<div class="vbar"><h2>${VIEWS[name]}</h2><button type="button" data-vclose="${name}">收起 ×</button></div>`;
+    const go = () => ((sec && $(sec)) || el).scrollIntoView({ block: "start" });
+    el.hidden = false;
+    if (VST[name] === "ok") return go();
+    if (VST[name] === "loading") return;
+    VST[name] = "loading"; el.innerHTML = bar + `<p class="knote">正在取…</p>`; go();
+    try {
+      const x = (RAW.vmore || {})[name]; if (!x) throw new Error("这次没生成");
+      el.innerHTML = bar + JSON.parse(await fetchEnc("v/" + x.f + "?v=" + x.v)).html;      // 带内容的指纹，旧缓存不会冒充新的
+      VST[name] = "ok"; go();
+    } catch (err) { VST[name] = null; el.innerHTML = bar + `<p class="knote" style="color:var(--alert)">没取到（${esc(String(err.message || err))}）。</p>`; }
+  }
+  document.addEventListener("click", e => {
+    const c = e.target.closest && e.target.closest("[data-vclose]");
+    if (c) { e.preventDefault(); const el = $("v-" + c.dataset.vclose); if (el) el.hidden = true; return; }
+    const a = e.target.closest && e.target.closest("[data-view]"); if (a) { e.preventDefault(); openView(a.dataset.view, a.dataset.sec); }
+  });
+  const vhash = () => { const m = /^#v-(shuo|zt|detail)$/.exec(location.hash); if (m) openView(m[1]); };
   document.addEventListener("click", e => { const a = e.target.closest && e.target.closest("[data-back]"); if (a) { e.preventDefault(); openBack(a.dataset.back); } });
   if ($("backbtn")) $("backbtn").addEventListener("click", () => openBack("b-emo"));
   if (/^#b-/.test(location.hash)) openBack(location.hash.slice(1));
@@ -213,7 +251,7 @@
     if ((T.recent || []).length) html += `<details><summary>前几天说过的（${T.recent.length} 条）</summary>${T.recent.map(card).join("")}</details>`;
     if ((T.trends || []).length) {
       const c = (w, n, u) => w ? `<td class="${w === "上行" ? "s-up" : w === "下行" ? "s-dn" : ""}">${w} ${n} ${u}</td>` : "<td>—</td>";
-      html += `<details><summary>所有品种的趋势状态（日 / 周 / 月）</summary><p>上行 = 收盘在均线上方、均线在升；下行反过来；其他是震荡。日线 20 日均线，周线 10 周，月线 10 个月；数字是这个状态持续了多久。</p><table class="tbl tr"><tr><th>品种</th><th>日线</th><th>周线</th><th>月线</th></tr>${T.trends.map(r => `<tr><td>${esc(r.name)}</td>${c(r.d, r.dn, "天")}${c(r.w, r.wn, "周")}${c(r.m, r.mn, "个月")}</tr>`).join("")}</table></details>`;
+      html += `<details><summary>所有品种的趋势状态（日 / 周 / 月）</summary><p class="vlink">上行、下行、震荡怎么定：<a href="#v-shuo" data-view="shuo" data-sec="s-trend">说明 ›</a></p><table class="tbl tr"><tr><th>品种</th><th>日线</th><th>周线</th><th>月线</th></tr>${T.trends.map(r => `<tr><td>${esc(r.name)}</td>${c(r.d, r.dn, "天")}${c(r.w, r.wn, "周")}${c(r.m, r.mn, "个月")}</tr>`).join("")}</table></details>`;
     }
     el.innerHTML = html;
   })();
@@ -221,7 +259,6 @@
   // ---------- 期权：五个问题（规则在 口径.md 第四节；白话在 qx/options.py 写好）
   (function opt() {
     const O = RAW.options, el = $("opt"); if (!O || !el || !(O.rows || []).length) return;
-    const Q = [["保险贵不贵", "q1"], ["更怕跌还是更想涨", "q2"], ["大家押在哪个价位", "q3"], ["做市商对冲会放大还是压住波动", "q4"], ["定价了多大的涨跌", "q5"]];
     // 大盘那一行：数从 qx/front.py opt_market() 来（和 options.py 同一个 10 年分位），写"10 年分位 N"，不写"偏高 / 少见"
     // 数在后台已经按要写的位数取过整（只取一次），这里不再取整；VIX 补齐一位小数（20 写成 20.0，和 market() 那句一样，不改数）
     // 拿不到时用 options.py market() 那句，但把没登记的 95 / 70 / 30 那几个词（少见地高 / 偏高 / 偏低 / 平常）换成"10 年分位没算出来"，和正常那条同一个位置
@@ -232,7 +269,7 @@
     el.innerHTML = `<summary>期权：五个问题<small>${esc((O.summary || "").replace(/、一个月定价 ±\d+%/g, ""))}</small></summary>
       <p>大盘：${esc(mk)}</p>
       <div class="oq">${O.rows.map(r => `<div class="oc"><h4>${esc(r.name)}<small>${r.live ? "盘中 · 延迟 15 分钟" : md(r.date || RAW.asof) + " 收盘"}</small></h4>${r.ans.map(a => `<div class="oa${a.warn ? " w" : ""}"><b>${esc(a.q)}</b>：${esc(a.a)}</div>`).join("")}</div>`).join("")}</div>
-      <details><summary>这五个问题是什么意思</summary><dl class="ox">${Q.map(([q, k]) => `<dt>${q}</dt><dd>${esc(O.explain[k])}</dd>`).join("")}</dl></details>
+      <p class="vlink">这五个问题是什么意思：<a href="#v-shuo" data-view="shuo" data-sec="s-opt">说明 ›</a></p>
       <p class="knote">期权链是 CBOE 延迟 15 分钟的报价，从 2026-10-19 起每天攒，现在 ${O.days} 天；攒满 250 个交易日以后才和历史比。K 线上 SMH、英伟达、美光、台积电标了做市商 gamma 转负 / 转正的日子。</p>`;
   })();
 
@@ -312,7 +349,7 @@
       (N.top && N.top.length ? `<ul class="nw">${N.top.map(li).join("")}</ul>` : `<p class="quiet">最近 24 小时没有和美股有关的要闻。</p>`) +
       (C.length ? `<h3 style="font-size:15px;margin:16px 0 4px">接下来 7 天${late ? `<small>　日历是 ${md(late)}取的，不是这天的</small>` : ""}</h3><table class="tbl cal">${calRows(C)}</table>` : "") +
       ((N.more || []).length ? `<details><summary>更多新闻（按话题）</summary>${N.more.map(g => `<p style="margin:10px 0 2px"><b>${esc(g.topic)}</b></p><ul class="nw">${g.items.map(li).join("")}</ul>`).join("")}</details>` : "") +
-      `<p class="knote">新闻只从路透、彭博、华尔街日报、金融时报、CNBC、日经亚洲、美联储、韩联社、CoinDesk 和华尔街见闻"重要"快讯里取。期权：财报是反应日（时间未定的是当天加下一天）的涨跌，拆掉了别的日子平常的波动，写一半机会超过多少；议息会是到期以前的总幅度，包含到期前的正常波动，偏大一点。</p>`;
+      `<p class="vlink">新闻从哪几家取、日历里的期权幅度怎么算：<a href="#v-shuo" data-view="shuo" data-sec="s-news">说明 ›</a></p>`;
   })();
 
   // ---------- 雷达（第四轮第 2 步）：顶栏时点、市场在交易什么、各市场一行；有 Worker 时每 60 秒现取价格（/live）
@@ -337,17 +374,18 @@
   }
   function pushTitle(x) {
     if (x.title) return x.title;
-    const el = findK(x.key), t = el && (el.matches(".trg") ? el.firstChild : el.querySelector(".it-t, summary b, a") || el);
+    const el = findK(x.key), t = el && (el.matches(".trg") ? el.firstChild : el.querySelector(".kt, .it-t, summary b, a") || el);   // .kt：改成表格行以后的标题格
     if (t && t.textContent.trim()) return t.textContent.trim().slice(0, 80);
     return pushCat(x.key);
   }
   // 推送点开跳到那一条（#k=编号）：触发行、今天变了什么、机会和风险卡、快讯带 data-k / data-ks。按 原编号 → 加 card: 找，
-  // 同一个编号前台有的先跳前台；不去掉日期找（会跳到后来另一天同一类的那一条）
+  // 同一个编号前台有的先跳前台，再"全部"，最后明细；不去掉日期找（会跳到后来另一天同一类的那一条）
   function findK(k) {
     const q = x => `[data-k="${CSS.escape(x)}"],[data-ks~="${CSS.escape(x)}"]`;
+    const at = e => !e.closest("#back") ? 0 : !e.closest("#detail") ? 1 : 2;
     for (const x of [k, "card:" + k]) {
-      const els = [...document.querySelectorAll(q(x))];
-      if (els.length) return els.find(e => !e.closest("#back")) || els[0];
+      const els = [...document.querySelectorAll(q(x))].filter(e => !e.closest(".view"));
+      if (els.length) return els.reduce((a, b) => at(b) < at(a) ? b : a);
     }
     return null;
   }
@@ -355,9 +393,12 @@
     const m = /^#k=(.+)$/.exec(location.hash); if (!m) return;
     let k; try { k = decodeURIComponent(m[1]); } catch (e) { return; }
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}   // 刷新不再跳
-    const el = findK(k) || $({ first: "flash", spread: "flash" }[k.split(":")[0]] || (/^move:[^|]*:live\|/.test(k) ? "mkts" : ""));
-    if (!el || el.hidden) return;
+    const mv = /^move:([^|]*):live\|/.exec(k);          // 盘中涨跌：页面上没有那一条时落到各市场（有那个大类的行就落到行）
+    const el = findK(k) || (mv && document.querySelector(`[data-mk="${CSS.escape(mv[1])}"]`)) || $({ first: "flash", spread: "flash" }[k.split(":")[0]] || (mv ? "mkts" : ""));
+    if (!el) return;
+    for (let p = el; p; p = p.parentElement) if (p.hidden && p.id !== "back" && p.id !== "detail") return;   // 那一块这次没数据
     if (el.closest("#back")) openBack(null);
+    if (el.closest("#detail")) openDetail();
     for (let d = el.closest("details"); d; d = d.parentElement && d.parentElement.closest("details")) d.open = true;
     el.classList.add("hit"); setTimeout(() => el.classList.remove("hit"), 6000);
     requestAnimationFrame(() => el.scrollIntoView({ block: "center" }));
@@ -374,7 +415,9 @@
     const FR = RAW.front || {}, age = Math.max(0, Math.round((Date.now() - (RD.built || Date.now())) / 60e3));
     const ago = age < 1 ? "刚刚" : age < 60 ? age + " 分钟前" : age < 1440 ? Math.floor(age / 60) + " 小时前" : Math.floor(age / 1440) + " 天前";
     const d2 = s => s ? `${+s.slice(5, 7)}/${+s.slice(8, 10)}` : "";
-    const parts = [`<span class="${age > 40 ? "stale" : ""}">状态 ${ago}（${bjd(RD.built || Date.now())}）</span>`];
+    const nb = broken().length;
+    const parts = [nb ? `<a href="#v-zt" class="bad" data-view="zt" data-sec="z-flash">状态 ${ago}（${bjd(RD.built || Date.now())}）· ${nb} 条路断了 ›</a>`
+                      : `<span class="${age > 40 ? "stale" : ""}">状态 ${ago}（${bjd(RD.built || Date.now())}）</span>`];
     if (LIVE && LIVE.prices) {
       const P = LIVE.prices.p || {}, by = {};
       for (const r of RD.mkts || []) for (const x of r.items) { const q = P[x.s]; if (q && q.at && r.open) by[r.market] = Math.max(by[r.market] || 0, q.at * 1000); }
@@ -408,7 +451,7 @@
     el.innerHTML = M.map(r => `<div class="mr"><div class="mh"><span>${esc(r.cls)}</span><small>${r.open ? "开盘中" : r.today === false ? "今天休市" : r.note ? esc(r.note) : "已收盘"}</small></div><div class="mi">${r.items.slice(0, 8).map(x => {
         const q = P[x.s], ch = q && q.pc ? (x.bp ? (q.p - q.pc) * 100 : Math.log(q.p / q.pc)) : x.chg;
         const txt = ch == null ? "—" : x.bp ? (ch >= 0 ? "+" : "−") + Math.abs(ch).toFixed(0) + "bp" : pctP((Math.exp(ch) - 1) * 100);
-        return `<span class="${Math.abs(x.z || 0) >= 2 ? "big" : ""}">${esc(x.n)} <b${cP(ch)}>${txt}</b></span>`; }).join("")}${r.items.length > 8 ? `<span>…共 ${r.items.length} 个</span>` : ""}${(r.miss || []).length ? `<span class="miss">缺：${r.miss.map(esc).join("、")}</span>` : ""}</div></div>`).join("") +
+        return `<span class="${Math.abs(x.z || 0) >= 2 ? "big" : ""}">${esc(x.n)} <b${cP(ch)}>${txt}</b></span>`; }).join("")}${r.items.length > 8 ? `<span>…共 ${r.items.length} 个</span>` : ""}</div></div>`).join("") +
       `<p class="knote">每行按"今天涨跌 ÷ 长期日波动"从大到小排，加粗的是 2 倍以上。${Object.keys(P).length ? "盘中价格是打开页面时现取的（Yahoo）。" : "没有现取价格时是最近一个收盘。"}</p>`;
   }
   async function live() {
@@ -475,7 +518,7 @@
     const R2 = (K.replay || {})[2] || [], R4 = (K.replay || {})[4] || [], T4 = (K.replay || {}).tally4 || {};
     more += `<details><summary>回放：第 2 类信用和股价背离（最近 2 年 ${R2.length} 次）</summary><table class="nbk">${R2.slice().reverse().map(x => `<tr><td>${esc(x.date)} ${esc(x.basket)}<small>篮子 ${x.b}，信用健康度 ${x.h}</small></td><td class="z">${x.ret20 == null ? "未满 20 天" : (x.ret20 > 0 ? "+" : "") + x.ret20 + "%"}<small>途中最深 ${x.mdd == null ? "—" : x.mdd + "%"}</small></td></tr>`).join("")}</table><p class="knote">20 天后按卡看好的方向算（信用变好、股价没跟 → 看涨；信用变差、股价没跟 → 看跌）。</p></details>`;
     more += `<details><summary>回放：第 4 类消息反应不对称（最近 4 个季度）</summary><table class="nbk">${Object.entries(T4).sort().reverse().map(([q, g]) => `<tr><td>${esc(q)}<small>${g["家数"]} 家发财报（市值 ≥ 200 亿美元）</small></td><td class="z">好消息不涨 ${g["好消息不涨"]}<small>坏消息不跌 ${g["坏消息不跌"]} · AI 链 ${g["AI 链"]}</small></td></tr>`).join("")}</table><p class="knote">最近的 ${Math.min(20, R4.length)} 家：${R4.slice(-20).reverse().map(x => esc(x.sym) + " " + esc(x.kind)).join("、")}</p></details>`;
-    more += `<p class="knote">${Object.entries(K.pending || {}).map(([k, v]) => `第 ${k} 类：${esc(v)}`).join("；")}。</p>`;
+    if (Object.keys(K.pending || {}).length) more += `<p class="vlink">还没回放的几类、哪天攒够：<a href="#v-zt" data-view="zt" data-sec="z-accrue">状态 ›</a></p>`;
     el.innerHTML = h + `<details><summary>更多：${cs.length > 3 ? `其余 ${cs.length - 3} 张卡、` : ""}回放清单</summary>${more}</details>`;
   })();
 
@@ -506,7 +549,8 @@
     const lg = $("ledger");
     if (lg && (F.ledger || []).length) {
       lg.hidden = false;
-      lg.innerHTML = `<h2>AI 账本<small>每个数带来源、时点、下次公布日</small></h2><table class="nbk">${F.ledger.map(r => `<tr><td>${esc(r.name)}<small>${esc(plain(r.chain))} · ${esc(r.src)}${r.asof ? " · " + esc(r.asof) : ""} · 下次 ${esc(r.next)}</small></td><td class="z" style="white-space:normal">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.value)}</a>` : esc(r.value)}</td></tr>`).join("")}</table>`;
+      lg.innerHTML = `<h2>AI 账本<small>每个数带来源、时点、下次公布日</small></h2><table class="nbk">${F.ledger.filter(r => !/^(缺|没有免费)/.test(String(r.value || ""))).map(r => `<tr><td>${esc(r.name)}<small>${esc(plain(r.chain))} · ${esc(String(r.src || "").replace(/^财政部 Fiscal Data$/, "美国财政部"))}${r.asof ? " · " + esc(r.asof) : ""} · 下次 ${esc(r.next)}</small></td><td class="z" style="white-space:normal">${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.value)}</a>` : esc(r.value)}</td></tr>`).join("")}</table>` +
+        (F.ledger.some(r => /^(缺|没有免费)/.test(String(r.value || ""))) ? `<p class="vlink">缺的几行（没取到、要联系邮箱、没有免费的数）：<a href="#v-zt" data-view="zt" data-sec="z-miss">状态 ›</a></p>` : "");
     }
   })();
 
@@ -518,14 +562,10 @@
       `<div class="fm">${x.src.map(esc).join("；")} · 发布 ${esc(x.pub)}，看到 ${esc(x.seen)}（北京）${x.n > 1 ? ` · ${x.n} 家` : ""}</div>` +
       `<div>${x.first.map(f => `<span class="tg first">第一次：${esc(f)}</span>`).join("")}${x.ents.map(e => `<span class="tg">${esc(e)}</span>`).join("")}${x.lines.map(l => `<span class="tg">${esc(l)}</span>`).join("")}</div></div>`;
     const top = F.items.slice(0, F.top), more = F.items.slice(F.top);
-    const lag = h => h.lag ? `中位 ${h.lag.med} 分钟（90% ${h.lag.p90}，${h.lag.n} 条）` : "还没攒够";
-    const hr = F.health.map(h => `<tr><td>${esc(h.src)}${h.via ? " · 经" + esc(h.via) : ""}${h.sec ? `<small>（${esc(h.sec)} 栏目）</small>` : ""}</td><td class="${h.ok ? "" : "bad"}">${h.cloud ? "云端每 5 分钟取" : h.ok ? (h.ago == null ? "—" : h.ago + " 分钟前取到") : "停了 / 没取到"}</td><td>${lag(h)}</td></tr>`).join("");
     el.innerHTML = `<h2>快讯<small>最近 ${F.hours} 小时，打上标签的 ${F.shown} 件（共看到 ${F.total} 条）</small></h2>` +
       (top.length ? top.map(it).join("") : `<p class="quiet">最近 ${F.hours} 小时没有打上标签的快讯。</p>`) +
       (more.length ? `<details><summary>再看 ${more.length} 件</summary>${more.map(it).join("")}</details>` : "") +
-      `<details><summary>各条路的健康和延迟</summary><table class="fh">${hr}</table>` +
-      `<p class="knote">延迟 = 我们看到的时间 − 发布时间，只算每条路开始取以后新出现的条目；云端每 15 分钟取一次，所以含最多 15 分钟的等待。` +
-      `${F.backfill_done ? "" : "过去 30 天还没回补完，\"第一次\"只标不推。"}路透经 TradingView、谷歌新闻取，是你 10-27 定的。</p></details>`;
+      `<p class="vlink">各条路的健康和延迟${broken().length ? `（<b style="color:var(--alert)">${broken().length} 条路断了</b>）` : ""}：<a href="#v-zt" data-view="zt" data-sec="z-flash">状态 ›</a></p>`;   // 健康表搬到 状态（第四轮后台精简第 2 步）
   })();
 
   // ---------- 最近一年：阶段一条 + 四行热度（和 K 线副图同一套颜色）
@@ -968,13 +1008,7 @@
     async function loadMore(k) {
       const x = (RAW.kmore || []).find(y => y.k === k); if (!x) return null;
       const have = SYMS.find(s => s.k === k); if (have) return have;
-      const r = await fetch("k/" + x.f + (x.v ? "?v=" + x.v : ""), { cache: "force-cache" }); if (!r.ok) throw new Error("HTTP " + r.status);   // 带上最后一根日线的日期，旧缓存不会冒充新图
-      let txt;
-      if (window.QX_KEY) {
-        const b = new Uint8Array(await r.arrayBuffer()), key = await crypto.subtle.importKey("raw", window.QX_KEY, "AES-GCM", false, ["decrypt"]);
-        const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b.slice(0, 12) }, key, b.slice(12));
-        txt = await new Response(new Blob([pt]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
-      } else txt = await r.text();
+      const txt = await fetchEnc("k/" + x.f + (x.v ? "?v=" + x.v : ""));     // 带上最后一根日线的日期，旧缓存不会冒充新图
       const s = Object.assign(JSON.parse(txt), { more: true }); SYMS.push(s); return s;
     }
     $("ktools").addEventListener("change", async e => {
@@ -1053,6 +1087,6 @@
     };
   })();
   document.addEventListener("click", e => { const b = e.target.closest && e.target.closest("[data-jump]"); if (b) KL.jump(b.dataset.jump); });
-  addEventListener("hashchange", jumpK);
-  jumpK();
+  addEventListener("hashchange", () => { jumpK(); vhash(); });
+  jumpK(); vhash();
 })();

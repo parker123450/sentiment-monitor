@@ -634,3 +634,180 @@ def build(D, R, radar, today, hap, ice, cal):
     for c in out.get("cross200") or []:                   # 跌破 200 日线（旧终端 risk below200，能衡量风险）那天出一行
         out["trig"]["price"].append(dict(src="ma200", key="ma200:" + c["k"], title=f"{c['name']}收盘跌破 200 日线（{c['ma200']}）；在线下时，60 天内再跌一大段的比例历来高 7–8 个百分点（只说风险，不说方向）"))
     return out
+
+
+# ---------- 说明 / 状态（第四轮后台精简第 2 步，方案第四节）：两个点了才加载的视图。HTML 在这里写好，export.write_views 用页面同一把钥匙加密成 v/*.enc，
+# k.js 点了才取回、解开、放进页面。只读已经算好的 data（推送读的那几份不动），一样不删：从页面搬过来的每一处都记进 MOVED（说明第一节的索引）。
+import html as _html
+
+_e = lambda s: _html.escape(str("" if s is None else s), quote=True)
+_md = lambda s: f"{int(s[5:7])} 月 {int(s[8:10])} 日" if s and len(s) >= 10 else "—"
+
+# 从页面移到这里的：（原来在哪，搬了什么，现在在哪）。"现在在哪"写视图和那一节的名字；原处只留一行指过来
+MOVED = [
+    ("① 情绪 · 全部，最下面的折叠", "四条恐慌读数是怎么算的（含三段、在加速 / 在减速、哪一型、转折标签、抛售和涨过头标签）", "说明 · 四条读数怎么算的"),
+    ("① 情绪 · 全部，四条读数下面", "CNN 恐慌贪婪那一行（今天的数、一周前、一个月前）", "说明 · CNN 恐慌贪婪"),
+    ("前台 K 线 · 图的全部", "\"怎么看\"那一段（含电脑上的操作）；原处留一句手机也通的说法", "说明 · K 线怎么看"),
+    ("② 价格位置 · 全部，趋势状态表上面", "上行、下行、震荡怎么定（均线、持续多久）", "说明 · 趋势状态怎么定"),
+    ("④ 预期 · 全部，期权块", "\"这五个问题是什么意思\"（保险贵不贵、更怕跌还是更想涨、押在哪个价位、做市商对冲、定价了多大的涨跌）", "说明 · 期权五个问题"),
+    ("新闻和日历，表尾", "新闻从哪几家取、日历里期权幅度怎么算", "说明 · 新闻和日历"),
+    ("页面最下面", "数据来源清单", "说明 · 数据来源"),
+    ("快讯，\"各条路的健康和延迟\"", "每条路多久前取到、延迟中位数、延迟怎么算、过去 30 天回补到哪", "状态 · 快讯各条路"),
+    ("② 各市场，每行末尾", "\"缺：…\"（没取到的品种）", "状态 · 缺的品种和序列"),
+    ("⑤ AI 账本", "写\"缺\"或\"没有免费可自动化的数\"的几行（含 SEC 接口要联系邮箱那一行）", "状态 · 缺的品种和序列"),
+    ("全部卡 · 回放清单末尾", "\"第 N 类：数据从……起攒，攒满一年才够回放\"", "状态 · 在攒什么、哪天能用"),
+]
+KEPT = [   # 方案第四节列了、这一步没搬的（理由），说明里一并写出来，免得以为丢了
+    ("前台 K 线 · 图的全部", "标签说明（阶段、转折、抛售 / 涨过头、gamma、判断）", "留在图下：看图时要对着标签看"),
+    ("④ 期权块", "\"期权链攒了几天\"那句", "留在块里；状态的\"在攒什么\"里也有一行"),
+]
+
+SHUO_FOUR = """<p><b>抛售恐慌</b>：28 只半导体股里，最近 5 天平均每天有几只创 20 天新低，和历史比排第几。股票池扩大到 63 只（加小盘、次新）结论一样。历次大跌的最低点前后，费城半导体、纳指、标普 84% 到 100% 的次数都到了历史上最高的 10%，2015 年前后都成立。</p>
+<p><b>定价恐慌</b>：科技股保险（VXN）比它自己最近 3 个月的平常水平贵多少。和"自己最近"比，不和 2001、2008 年比。</p>
+<p><b>仓位恐慌</b>（美股期权和散户）：两样取较高的：股票期权里买跌和买涨的比例比平时高多少；散户看多减看空一周里掉了多少。</p>
+<p><b>信用压力</b>：7 只信用 ETF（高收益债、贷款、堕落天使、投资级、新兴市场债）里，有几只 20 天跑输国债到了历史最差的 10%。历次底部亮 82% 到 90%，随机日子只有三成。</p>
+<p><b>三段</b>：历次底部都是先在卖（成分股普跌、放量），再在怕（保险变贵、散户转空），最后投降（抢买保护、信用利差走阔、VIX 冲高）。按这个顺序算，价格回升就重新开始；某一段 10 天没再亮就退回去。半导体 21 次大跌全都到了"在怕"，19 次到了"投降"。进入"投降"不等于到底，只有约两成在 3 周内见底。阶段只有研究做的样本内核对，没有前瞻检验。</p>
+<p><b>在加速 / 在减速</b>：每条读数 5 天里升了多少、比 5 天前升得快还是慢。研究里加速度最先到顶，所以"还在升，但在减速"多半在第一、二段之间，不是最后。</p>
+<p><b>哪一型</b>：这一段下跌以来 VIX 到过 30，是<b>宏观冲击型</b>，大盘读数都会亮；没到过，是<b>板块自己跌型</b>（像 2026 年 7 月、10 月），大盘读数看不出来，要看"比自己最近"的读数和成分股。</p>
+<p><b>转折标签</b>：<b>恐慌高峰</b> = 一段下跌里三条读数平均最高的那天（要等恐慌退了才标出来，是事后标的）；<b>恐慌退潮</b> = 怕过以后各项读数都退了的第一天；<b>二次探底</b> = 退潮以后价格回到这一段最低点 3% 以内，但恐慌比高峰低很多；<b>参与度先走</b> = 指数离一年高点不到 3%，站上 50 日线的成分股却比最近少了 20 个百分点以上（顶部历史上测不出来，只是描述）。</p>
+<p><b>抛售</b>标签：成交量是 50 日均量 2 倍以上、当天跌 2% 以上、RSI 低于 40。<b>涨过头</b>标签：RSI 高于 75、价格比 50 日线高 15% 以上，只说明涨得急。所有读数只和当天以前的历史比。这是描述，不是买卖建议。</p>"""
+SHUO_K = """<p><b>手机上</b>：点图上某一天，图下那一行就换成那天；左右拖动平移，两指缩放；图下的滑条也能左右移动。<b>电脑上</b>：鼠标移到某一天看那天，Ctrl＋滚轮缩放，方向键一天一天走，+ / − 缩放。</p>
+<p>价格区最下面的色带是每天在哪一段（<b style="color:var(--s1i)">在卖</b> → <b style="color:var(--s2i)">在怕</b> → <b style="color:var(--s3i)">投降</b> → <b style="color:var(--s4i)">在出清</b>），空白是平稳。副图默认是<b>恐慌热度</b>：抛售、定价、仓位、信用四行，颜色越深越恐慌，最深的是历史上最恐慌的一成；"工具"里可以换副图、打开阶段标签、抛售 / 涨过头标签和别的均线。<b>gamma 转负</b>：按期权持仓估的做市商对冲会放大波动（简化模型）；<b>判断</b>：你提出判断的那天。可以自己画水平线和趋势线。</p>"""
+SHUO_TREND = "<p>上行 = 收盘在均线上方、均线在升；下行反过来；其他是震荡。日线 20 日均线，周线 10 周，月线 10 个月；数字是这个状态持续了多久。</p>"
+SHUO_NEWS = """<p>新闻只从路透、彭博、华尔街日报、金融时报、CNBC、日经亚洲、美联储、韩联社、CoinDesk 和华尔街见闻"重要"快讯里取。</p>
+<p>日历里的期权幅度：财报是反应日（时间未定的是当天加下一天）的涨跌，拆掉了别的日子平常的波动，写一半机会超过多少；议息会是到期以前的总幅度，包含到期前的正常波动，偏大一点。</p>"""
+SHUO_SRC = ("<p>Yahoo（行情、VIX、VXN、成分股、信用 ETF）、CBOE（认沽认购、期权链）、AAII 散户调查、FRED（信用利差、美债收益率）、CFTC 期货持仓、"
+            "纳斯达克（财报、宏观日历）、美联储和日本央行日程、美国经济分析局、Polymarket、台湾证交所、美国财政部（拍卖结果走财政部的 Fiscal Data 接口：TreasuryDirect 的 robots.txt 全挡）、"
+            "日本财务省、TradingView 和谷歌新闻里的路透、CNBC、华尔街见闻、CNN 恐慌贪婪。云厂商资本开支要走 SEC 的 XBRL 接口，要联系邮箱，还没接（见 状态）。</p>")
+
+# 关键词配错的新闻（方案第四节"状态"）：按词组挑"chip"不是芯片的标题，只列出来，词表不改（改词表要登记新版本，方案第七节）
+_MISKW = __import__("re").compile(r"\b(bargaining|poker|blue[- ])chips?\b|\bchips? (in|away)\b|\bchocolate chip|\bChip [A-Z][a-z]+ (says|said|,)", __import__("re").I)
+
+
+def ready_by(asof, have, need, per="bday"):
+    """还要攒多少、大约哪天够：per="bday" 按交易日（周一到周五），"half" 按半个月一期（空头回补天数，纳斯达克每月两期）。
+    只是按日历推的估计（不算节假日），页面写"约"。"""
+    left = max(0, int(need) - int(have))
+    t = pd.Timestamp(asof)
+    if left == 0:
+        return t.strftime("%Y-%m-%d")
+    if per == "half":
+        return (t + pd.Timedelta(days=round(left * 365.25 / 24))).strftime("%Y-%m")
+    return (t + pd.offsets.BDay(left)).strftime("%Y-%m-%d")
+
+
+def broken_routes(fl):
+    """快讯里停了 / 没取到的路（顶栏"N 条路断了 ›"和状态页用同一个数）。"""
+    return [h for h in ((fl or {}).get("health") or []) if not h.get("ok")]
+
+
+def _stale(status, asof):
+    """和页面顶部"数据提醒"同一个算法（k.js head()）：AAII 落后 9 天以上、其余 4 天以上算没更新。"""
+    out = []
+    for nm, v in (status or {}).items():
+        if not v.get("last"):
+            out.append(f"{nm}没有数据")
+            continue
+        lag = (pd.Timestamp(asof) - pd.Timestamp(v["last"])).days
+        if lag > (9 if nm.startswith("AAII") else 4):
+            out.append(f"{nm}最新只到 {_md(v['last'])}")
+    return out
+
+
+def accrue(data):
+    """"在攒什么、哪天能用"：每行（什么，现在攒了多少 / 要多少，大约哪天够，说明）。只读已经算好的数。"""
+    from qx import options as OP, positioning as PS
+    asof, R = data.get("asof"), data.get("radar") or {}
+    rows = []
+    O = data.get("options") or {}
+    if O.get("days") is not None and O["days"] < OP.MIN_HIST:
+        rows.append(("期权链（和自己历史比）", f"{O['days']} 天 / {OP.MIN_HIST} 个交易日", "约 " + ready_by(asof, O["days"], OP.MIN_HIST), "攒满以前期权读数不叫\"少见\""))
+    H = (R.get("narr") or {}).get("heat") or {}
+    if H.get("note") and not H.get("rows"):
+        m = __import__("re").search(r"从 (\d{4}-\d{2}-\d{2}) 起攒", H["note"])
+        rows.append(("主题热度（新闻条数）", H["note"], "约 " + (pd.Timestamp(m.group(1)) + pd.Timedelta(days=9)).strftime("%Y-%m-%d") if m else "—", "满 10 天才算"))
+    by = {}
+    for r in ((R.get("pos") or {}).get("readings") or []):
+        if r.get("pos") is None and r.get("n") is not None and r["n"] <= PS.MIN_OBS:
+            kind = "空头回补天数" if "空头回补" in r["name"] else r["name"]
+            by.setdefault((kind, r["src"]), []).append(r)
+    for (kind, src), xs in by.items():
+        n = min(x["n"] for x in xs)
+        half = kind == "空头回补天数"
+        rows.append((f"{kind}（{src}，{len(xs)} 个）" if len(xs) > 1 else f"{kind}（{src}）", f"{n} {'期' if half else '天'} / 第 {PS.MIN_OBS + 1} {'期' if half else '天'}才和历史比",
+                     "约 " + ready_by(asof, n, PS.MIN_OBS + 1, "half" if half else "bday"), "不够以前只写数，不说挤不挤"))
+    from qx.radar import NAMES as CN
+    for k, v in sorted(((R.get("cards") or {}).get("pending") or {}).items()):
+        m = __import__("re").search(r"（(\d{4}-\d{2}-\d{2})）", v)
+        rows.append((f"第 {k} 类卡的回放（{CN.get(int(k), '')}）", v, m.group(1) if m else "—", "回放以前卡上写\"还没有回放\""))
+    fl = data.get("flash") or {}
+    if fl and not fl.get("backfill_done"):
+        rows.append(("快讯过去 30 天回补", "还没回补完", "—", "回补完以前\"第一次\"只标不推"))
+    return rows
+
+
+def _table(head, rows):
+    return ("<table class=\"tbl\"><tr>" + "".join(f"<th>{_e(h)}</th>" for h in head) + "</tr>"
+            + "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>" for r in rows) + "</table>")
+
+
+def _sec(id_, title, body):
+    return f"<h3 class=\"vh\" id=\"{id_}\">{_e(title)}</h3>{body}"
+
+
+def view_shuo(data):
+    h = "<p class=\"knote\">怎么算的、怎么看、数据从哪来。页面上只留一行指到这里；内容和原来一样，一样没删。</p>"
+    h += _sec("s-moved", "从页面移到这里的", _table(["原来在哪", "搬了什么", "现在在哪"], [(_e(a), _e(b), _e(c)) for a, b, c in MOVED])
+              + "<p class=\"knote\">方案里列了、这一步没搬的：" + "；".join(f"{_e(a)}的{_e(b)}：{_e(c)}" for a, b, c in KEPT) + "。</p>")
+    h += _sec("s-four", "四条读数怎么算的", SHUO_FOUR)
+    C = data.get("cnn")
+    cnn = (f"<p>CNN 恐慌贪婪 {_e(C['now'])}，{_e(C['word'])}（{_md(C['date'])}"
+           + (f"；一周前 {_e(C['w1'])}，一个月前 {_e(C['m1'] if C.get('m1') is not None else '—')}" if C.get("w1") is not None else "") + "）。</p>") if C else "<p>这次没有 CNN 的数。</p>"
+    h += _sec("s-cnn", "CNN 恐慌贪婪", cnn + "<p>CNN 公布的合成指数，只作参考，不进阶段（口径二.4）。它用的都是大盘读数，板块自己跌的时候常常看不出来。</p>")
+    h += _sec("s-k", "K 线怎么看", SHUO_K)
+    h += _sec("s-trend", "趋势状态怎么定", SHUO_TREND)
+    X = (data.get("options") or {}).get("explain") or {}
+    Q = [("保险贵不贵", "q1"), ("更怕跌还是更想涨", "q2"), ("大家押在哪个价位", "q3"), ("做市商对冲会放大还是压住波动", "q4"), ("定价了多大的涨跌", "q5")]
+    if X:
+        h += _sec("s-opt", "期权五个问题", "<dl class=\"ox\">" + "".join(f"<dt>{q}</dt><dd>{_e(X.get(k, ''))}</dd>" for q, k in Q) + "</dl>")
+    h += _sec("s-news", "新闻和日历", SHUO_NEWS)
+    h += _sec("s-src", "数据来源", SHUO_SRC)
+    return h
+
+
+def view_zt(data):
+    asof = data.get("asof")
+    h = f"<p class=\"knote\">数据和各条路的状态：哪条路断了、哪些在攒、缺了什么。页面截至 {_md(asof)}，页面生成于北京时间 {_e(data.get('updated'))}。</p>"
+    fl = data.get("flash") or {}
+    bad = broken_routes(fl)
+    warn = _stale(data.get("status"), asof)
+    st = data.get("status") or {}
+    h += _sec("z-src", "各数据源到哪天", (f"<p><b style=\"color:var(--alert)\">数据提醒：</b>{_e('；'.join(warn))}。相关读数沿用最近一次的。</p>" if warn else "<p>四个数据源都没落后。</p>")
+              + _table(["数据源", "最新到", "这次"], [(_e(k), _e(v.get("last") or "没有数据"), _e({"ok": "取到了", "local": "用存下的"}.get(v.get("status"), v.get("status")))) for k, v in st.items()]))
+    if fl.get("health"):
+        lag = lambda x: f"中位 {x['lag']['med']} 分钟（90% {x['lag']['p90']}，{x['lag']['n']} 条）" if x.get("lag") else "还没攒够"
+        rows = [(_e(x["src"]) + (" · 经" + _e(x["via"]) if x.get("via") else "") + (f"<small>（{_e(x['sec'])} 栏目）</small>" if x.get("sec") else ""),
+                 (f"<span class=\"bad\">" if not x.get("ok") else "<span>") + ("云端每 5 分钟取" if x.get("cloud") else ("—" if x.get("ago") is None else f"{x['ago']} 分钟前取到") if x.get("ok") else "停了 / 没取到") + "</span>",
+                 lag(x)) for x in fl["health"]]
+        h += _sec("z-flash", "快讯各条路", (f"<p><b style=\"color:var(--alert)\">{len(bad)} 条路断了：</b>{_e('、'.join(x['src'] + ('（' + x['sec'] + ' 栏目）' if x.get('sec') else '') for x in bad))}。</p>" if bad else "<p>各条路都通。</p>")
+                  + _table(["路", "取到没有", "延迟"], rows)
+                  + "<p class=\"knote\">延迟 = 我们看到的时间 − 发布时间，只算每条路开始取以后新出现的条目；云端每 15 分钟取一次，所以含最多 15 分钟的等待。"
+                  + ("" if fl.get("backfill_done") else "过去 30 天还没回补完，\"第一次\"只标不推。") + "路透经 TradingView、谷歌新闻取，是你 10-27 定的。</p>")
+    A = accrue(data)
+    h += _sec("z-accrue", "在攒什么、哪天能用", _table(["什么", "攒了多少", "大约哪天够", "够以前"], [tuple(_e(c) for c in r) for r in A]) if A else "<p>没有在攒的。</p>")
+    R = data.get("radar") or {}
+    miss = [(_e("各市场 · " + m["cls"]), _e("、".join(m["miss"])), "没取到行情") for m in (R.get("mkts") or []) if m.get("miss")]
+    miss += [(_e("AI 账本 · " + _plain(x.get("chain"))), _e(x["name"]), _e(x["value"]) + (f"<small>（{_e(x['src'])}）</small>" if x.get("src") and x["src"] != "—" else ""))
+             for x in ((R.get("fwd") or {}).get("ledger") or []) if str(x.get("value", "")).startswith(("缺", "没有免费"))]
+    h += _sec("z-miss", "缺的品种和序列", _table(["在哪", "缺什么", "为什么"], miss) if miss else "<p>这次没有缺的。</p>")
+    N = (data.get("happen") or {}).get("news") or {}
+    mis = [(_e(g.get("topic", "")), _e(n["t"])) for g in ([{"topic": "要闻", "items": N.get("top") or []}] + (N.get("more") or []))
+           for n in g.get("items") or [] if _MISKW.search(n.get("t") or "")]
+    h += _sec("z-kw", "关键词可能配错的新闻", (_table(["配进的话题", "标题"], mis) if mis else "<p>这次没挑出来。</p>")
+              + "<p class=\"knote\">按词组挑的（bargaining chip、blue chip、人名 Chip 这类，\"chip\" 不是芯片），可能漏。只列出来，词表没改：改词表要登记新版本。</p>")
+    return h
+
+
+def views(data):
+    """说明、状态两个视图的 HTML（export.write_views 写成 v/shuo.enc、v/zt.enc）。"""
+    return {"shuo": view_shuo(data), "zt": view_zt(data)}

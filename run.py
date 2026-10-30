@@ -110,6 +110,11 @@ def build(check=False, write=False):
     except Exception as e:
         log(f"  ! K 线文件没写出来：{type(e).__name__}")
         data["kmore"] = []
+    try:                                                # 说明、状态两个视图，点了才加载（同一把钥匙；第四轮后台精简第 2 步）
+        data["vmore"] = export.write_views(data, SITE if pw and ok else None, pw or None, None if os.environ.get("CI") else os.path.dirname(PREVIEW))
+    except Exception as e:
+        log(f"  ! 说明、状态没写出来：{type(e).__name__}")
+        data["vmore"] = {}
     if ok:
         if page.write(data, SITE, password=pw or None, preview=None if os.environ.get("CI") else PREVIEW):
             log(f"页面：site/index.html（加密，{os.path.getsize(os.path.join(SITE, 'index.html')) / 1e6:.2f} MB）")

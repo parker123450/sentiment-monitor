@@ -124,6 +124,8 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
         bad.append(("前台议息会", ["fomc、北京时间或日历取的日子"]))
     if not optmkt_check(log):
         bad.append(("前台期权大盘", ["只取整一次"]))
+    if not views_check(log):
+        bad.append(("状态页", ["哪天够、断了几条路或没更新"]))
     return not bad
 
 
@@ -278,6 +280,21 @@ def optmkt_check(log=print):
           o["vix"]["p"] == round((D["^VIX"]["c"] <= 19.450001).mean() * 100)]
     good = all(ok)
     log("  前台期权大盘（构造的收盘）：" + ("一致" if good else "不一致 第 " + "、".join(str(i + 1) for i, x in enumerate(ok) if not x) + " 条"))
+    return good
+
+
+def views_check(log=print):
+    """状态页（qx/front.py，第四轮后台精简第 2 步）："大约哪天够"按交易日 / 半月一期推，断了的路和顶栏红字同一个数，
+    "没更新"和页面顶部数据提醒同一个算法（AAII 落后 9 天以上、其余 4 天以上）。构造的数。"""
+    from qx import front as FR
+    st = {"AAII 散户调查": {"last": "2026-10-13"}, "AAII 散户调查 2": {"last": "2026-10-14"}, "VIX": {"last": "2026-10-19"}, "黄金": {"last": "2026-10-18"}, "空": {}}
+    ok = [FR.ready_by("2026-10-23", 245, 250) == "2026-10-30", FR.ready_by("2026-10-23", 300, 250) == "2026-10-23",
+          FR.ready_by("2026-10-23", 0, 24, "half") == "2027-10", FR.ready_by("2026-10-23", 249, 250) == "2026-10-26",
+          [h["name"] for h in FR.broken_routes({"health": [{"name": "a", "ok": True}, {"name": "b", "ok": False}, {"name": "c"}]})] == ["b", "c"],
+          FR.broken_routes(None) == [],
+          len(FR._stale(st, "2026-10-23")) == 3 and all(any(k in x for x in FR._stale(st, "2026-10-23")) for k in ("AAII 散户调查最新", "黄金", "空没有"))]
+    good = all(ok)
+    log("  状态页（构造的数）：" + ("一致" if good else "不一致 第 " + "、".join(str(i + 1) for i, x in enumerate(ok) if not x) + " 条"))
     return good
 
 
