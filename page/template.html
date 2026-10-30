@@ -264,6 +264,7 @@ footer { color: var(--ink-3); font-size: 12.5px; margin-top: 24px; }
 .pl table.ptab td, .pl table.ptab th { padding: 3px 4px 3px 0; text-align: right; white-space: nowrap; }
 .pl table.ptab th { color: var(--ink-3); font-weight: 500; font-size: 13px; }
 .pl table.ptab td:first-child, .pl table.ptab th:first-child { text-align: left; }
+@media (max-width: 380px) { .pl table.ptab td small { display: block; white-space: normal; } }   /* 新3：360 宽时期权表的小字换行，不再横着滚 */
 .pl .h48 { margin: 2px 0; }
 .pl .h48 .d { font-weight: 700; color: var(--ink); }
 .kbox { margin-top: 8px; }

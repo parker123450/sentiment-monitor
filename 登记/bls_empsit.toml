@@ -1,0 +1,74 @@
+# 美国非农就业（BLS Employment Situation，非农就业和失业率同一份）的发布日表：纳斯达克宏观日历漏了非农时的后备（新3，口径十四.1 更正）。
+# BLS 自己的日程对程序回 403，程序不去取，这张表是手抄的。qx/events.py bls_nfp() 读它。
+#
+# 抄自：https://www.bls.gov/schedule/news_release/empsit.htm（页面标题 "Schedule of Releases for the Employment Situation"）
+# 哪天抄的：2026-10-31，用浏览器打开那一页照着抄（Reference Month / Release Date / Release Time 三栏）。
+# 哪一年：那一页当时列的是参考月 2026 年 10 月到 2027 年 11 月，发布日 2026-11-06 到 2027-12-03，共 14 次；
+#         发布时刻都是美东 08:30 AM。2026 年更早的几次那一页已经不列，没抄。
+#
+# 表里没有的月份（比如 2027-12 以后）：页面写"约 M/D（估的）"，按那个月第一个周五估，只进"再往后"那一行，
+# 不进 ④ 的状态词，不算口径三.8 的大事。不能拿"每月第一个周五"当真的日子：2010 年以来 201 次里 35 次不在第一个周五，2025-10 根本没发布。
+# 下一份：BLS 每年出下一年的表，到时候照这个格式往下加，写明哪天从哪页抄的；抄过的不改。
+
+[source]
+url = "https://www.bls.gov/schedule/news_release/empsit.htm"
+page = "Schedule of Releases for the Employment Situation"
+copied = "2026-10-31"
+covers = "参考月 2026-10 到 2027-11（发布日 2026-11-06 到 2027-12-03）"
+time_et = "08:30"
+
+[[release]]
+ref = "2026-10"
+date = "2026-11-06"
+
+[[release]]
+ref = "2026-11"
+date = "2026-12-04"
+
+[[release]]
+ref = "2026-12"
+date = "2027-01-08"
+
+[[release]]
+ref = "2027-01"
+date = "2027-02-05"
+
+[[release]]
+ref = "2027-02"
+date = "2027-03-05"
+
+[[release]]
+ref = "2027-03"
+date = "2027-04-02"
+
+[[release]]
+ref = "2027-04"
+date = "2027-05-07"
+
+[[release]]
+ref = "2027-05"
+date = "2027-06-04"
+
+[[release]]
+ref = "2027-06"
+date = "2027-07-02"
+
+[[release]]
+ref = "2027-07"
+date = "2027-08-06"
+
+[[release]]
+ref = "2027-08"
+date = "2027-09-03"
+
+[[release]]
+ref = "2027-09"
+date = "2027-10-08"
+
+[[release]]
+ref = "2027-10"
+date = "2027-11-05"
+
+[[release]]
+ref = "2027-11"
+date = "2027-12-03"

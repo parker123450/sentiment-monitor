@@ -264,11 +264,15 @@
     // 拿不到时用 options.py market() 那句，但把没登记的 95 / 70 / 30 那几个词（少见地高 / 偏高 / 偏低 / 平常）换成"10 年分位没算出来"，和正常那条同一个位置
     const M = RAW.front && RAW.front.optmkt, p10 = x => `10 年分位 ${x.p}`;
     const nowd = String(O.market || "").replace(/（(?:10 年里少见地高|偏高|偏低|平常)）/g, "（10 年分位没算出来）").replace(/，(?:10 年里少见地高|偏高|偏低|平常)）/g, "，10 年分位没算出来）");
+    // 做市商 gamma、最大押注写明用的是哪天的期权链、比数据日晚几个交易日（qx/front.py opt_dates()，新3）
+    const OD = (RAW.front && RAW.front.optdate) || {}, d2 = s => s ? `${+s.slice(5, 7)}/${+s.slice(8, 10)}` : "";
+    const chainOf = x => x ? `（${d2(x.date)} 的期权链${x.lag ? `，晚 ${x.lag} 天` : ""}）` : "", CQ = /做市商|押在哪个价位/;
+    const ods = ["SPY", "SMH"].map(k => OD[k]).filter(Boolean), sumc = ods.length && ods.every(x => x.date === ods[0].date && x.lag === ods[0].lag) ? chainOf(ods[0]) : "";
     const mk = M && M.vix ? [`VIX ${Number(M.vix.now).toFixed(1)}（${p10(M.vix)}）`, M.r9 != null ? `9 天保险是 30 天的 ${M.r9}%${M.r9_ge1 ? "：眼前几天有事" : ""}` : "",
       M.skew ? `SKEW ${M.skew.now}（买极端下跌保护的程度，${p10(M.skew)}）` : "", M.vvix ? `VVIX ${M.vvix.now}（保险本身的波动，${p10(M.vvix)}）` : ""].filter(Boolean).join("；") + "。" : nowd;
-    el.innerHTML = `<summary>期权：五个问题<small>${esc((O.summary || "").replace(/、一个月定价 ±\d+%/g, ""))}</small></summary>
+    el.innerHTML = `<summary>期权：五个问题<small>${esc((O.summary || "").replace(/、一个月定价 ±\d+%/g, ""))}${O.summary ? sumc : ""}</small></summary>
       <p>大盘：${esc(mk)}</p>
-      <div class="oq">${O.rows.map(r => `<div class="oc"><h4>${esc(r.name)}<small>${r.live ? "盘中 · 延迟 15 分钟" : md(r.date || RAW.asof) + " 收盘"}</small></h4>${r.ans.map(a => `<div class="oa${a.warn ? " w" : ""}"><b>${esc(a.q)}</b>：${esc(a.a)}</div>`).join("")}</div>`).join("")}</div>
+      <div class="oq">${O.rows.map(r => `<div class="oc"><h4>${esc(r.name)}<small>${r.live ? "盘中 · 延迟 15 分钟" : md(r.date || RAW.asof) + " 收盘"}</small></h4>${r.ans.map(a => `<div class="oa${a.warn ? " w" : ""}"><b>${esc(a.q)}</b>：${esc(a.a)}${CQ.test(a.q) ? chainOf(OD[r.sym]) : ""}</div>`).join("")}</div>`).join("")}</div>
       <p class="vlink">这五个问题是什么意思：<a href="#v-shuo" data-view="shuo" data-sec="s-opt">说明 ›</a></p>
       <p class="knote">期权链是 CBOE 延迟 15 分钟的报价，从 2026-10-19 起每天攒，现在 ${O.days} 天；攒满 250 个交易日以后才和历史比。K 线上 SMH、英伟达、美光、台积电标了做市商 gamma 转负 / 转正的日子。</p>`;
   })();
@@ -322,7 +326,7 @@
         `<p class="knote">概率是下注的人用钱投出来的，不是真实概率。1 天里变了 15 个百分点以上、成交又大的，会进"今天要知道的"。</p>`;
     }
     const nw = $("news"); if (!nw) return;
-    const N = H.news || {}, C = H.calendar || [];
+    const N = H.news || {}, C = (H.calendar || []).concat((RAW.front && RAW.front.cal_add) || []);   // cal_add：纳斯达克漏了的非农，BLS 发布日表补的（qx/front.py nfp_add()，新3）
     const li = n => `<li><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.t)}</a><small>${esc(n.topic ? n.topic + " · " : "")}${esc(n.src)} · ${esc(n.ago)}${n.k > 1 ? ` · ${n.k} 家报道` : ""}</small></li>`;
     const what = e => e.kind === "earnings" ? `${esc(e.name || e.sym)} 财报` : esc(e.title);
     const extra = e => { const a = [];
@@ -526,6 +530,8 @@
   // ---------- 前瞻和 AI 账本（第四轮第 5 步，qx/forward.py、qx/timeline.py、qx/ledger.py；口径.md 第十三节）
   (function fwd() {
     const F = RD.fwd, el = $("fwd"); if (!F || !el) return;
+    // 时间轴、"接下来的检验"用页面的改正版（qx/front.py tl_fix()，新3：纳斯达克宏观日历差一天的挪回来、漏了的非农从 BLS 发布日表补；推送读的那份不动）
+    const TF = RAW.front && RAW.front.tlfix;
     el.hidden = false;
     // 前瞻那几行是推送也读的字，句尾带"（偏高）/（少见）"；页面上换成同一个读数"历史上同方向更极端的日子占多少"（小信号、配对读数里本来就有），字和推送都不动
     const SF = new Map(((RD.sig && RD.sig.signals) || []).map(x => [x.text, x.frac])), PF = [];
@@ -536,14 +542,14 @@
     const gap = s => String(s).replace(/(\d 日)([+−-]\d)/g, "$1 $2");      // "20 日+60 个基点"补空格（只改显示）
     const li = xs => xs.length ? `<ul class="nw">${xs.map(x => `<li>${esc(gap(plain(lvn(x))))}</li>`).join("")}</ul>` : `<p class="knote">—</p>`;
     let h = `<h2>前瞻<small>截至 ${md(F.asof)} · 六条线，每条：先变的小信号、现在怎么样、接下来的检验</small></h2>`;
-    h += F.lines.map(L => `<details class="cd"><summary><b>${esc(L.name)}</b><span class="ns">${L.signals.length ? L.signals.length + " 条小信号" : "没有小信号"} · 接下来 ${L.next.length} 件</span></summary>` +
+    h += F.lines.map(L => (TF && TF.next && TF.next[L.id] ? Object.assign({}, L, { next: TF.next[L.id] }) : L)).map(L => `<details class="cd"><summary><b>${esc(L.name)}</b><span class="ns">${L.signals.length ? L.signals.length + " 条小信号" : "没有小信号"} · 接下来 ${L.next.length} 件</span></summary>` +
       `<dl><dt>先变的小信号</dt><dd>${li(L.signals)}</dd><dt>现在怎么样</dt><dd>${li(L.now)}</dd><dt>接下来的检验（30 天内）</dt><dd>${li(L.next)}</dd></dl></details>`).join("");
     for (const S of F.scenarios || []) {
       h += `<h3 class="mh3">三种走向 · ${esc(S.name)}<small style="font-weight:500;color:var(--ink-3)">（${esc(S.since)} 登记；${S.lead ? "先出现的是：" + esc(S.lead) : "登记以后还没有哪条的信号先出现"}）</small></h3>` +
         S.ways.map(w => `<details class="cd"><summary><b>${esc(w.name)}</b><span class="ns">${esc(w.how)} · 规则信号亮了 ${w.lit} 个</span></summary><ul class="nw">${w.signals.map(x => `<li>${x.hit === null ? "◇" : x.hit ? "●" : "○"} ${esc(x.text)}<small>${esc(x.why)}${x.first ? " · " + esc(x.first) + " 第一次亮" : x.pre ? " · 登记时已亮" : ""}</small></li>`).join("")}</ul></details>`).join("") +
         `<p class="knote">● 亮 ○ 没亮 ◇ 写不成规则、要人看。${esc(S.note)} 情景，不是买卖建议。</p>`;
     }
-    const T = F.timeline || {};
+    const T = TF ? Object.assign({}, F.timeline, { events: TF.events }) : (F.timeline || {});
     h += `<details><summary>时间轴：未来 6 个月 ${(T.events || []).length} 件（北京时间）</summary><table class="nbk">${(T.events || []).map(e => `<tr><td>${esc(e.bj)}</td><td><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title)}</a><small>${esc(e.src)}</small></td></tr>`).join("")}</table>` +
       `<p class="knote"><b>排不到的：</b>${(T.missing || []).map(esc).join("；")}。选举、上市、大额融资这类没有固定日程的，要手动登记才有。</p></details>`;
     el.innerHTML = h;

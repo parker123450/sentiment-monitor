@@ -293,7 +293,7 @@ def build(D, aaii, R, write=False):
     td, ic = today(D, R, opt, hap, jud), ice(D, days[-1])
     try:
         from qx import front as FR                         # 前台五样（第四轮五样方案，口径十四）：只挑已算好的结果按五样摆
-        fr = FR.build(D, R, radar, td, hap, ic, events.load())
+        fr = FR.build(D, R, radar, td, hap, ic, events.load(), opt=opt)
     except Exception as e:
         fr = {"err": type(e).__name__}
     return dict(flash=fl, radar=radar, front=fr, asof=days[-1].strftime("%Y-%m-%d"), updated=now.strftime("%Y-%m-%d %H:%M"), today=td, judge=jud["cards"], fb=notify.feedback_topic() or None, options=opt, happen={k: hap[k] for k in ("news", "pm", "calendar", "day")}, chart=ch, daily=daily, turns=turns,

@@ -5,17 +5,18 @@
   美联储      https://www.federalreserve.gov/json/calendar.json   议息会决议日、发布会、纪要、褐皮书、主席讲话和听证
   纳斯达克财报 https://api.nasdaq.com/api/calendar/earnings?date=YYYY-MM-DD      关注公司 + 市值 ≥ 2000 亿美元的公司
   纳斯达克宏观 https://api.nasdaq.com/api/calendar/economicevents?date=YYYY-MM-DD  CPI、非农、PCE、GDP、零售、ISM、日韩央行
-  （BLS 自己的日程对程序回 403，所以用纳斯达克的。）
+  （BLS 自己的日程对程序回 403，所以用纳斯达克的；纳斯达克漏了的非农，用 登记/bls_empsit.toml 里手抄的 BLS 发布日表补，bls_nfp()，只给页面用。）
 月度期权到期：每月第三个周五（休市就提前一天），自己算。
 不打分、不进任何计算。没取到的源沿用上次的。输出 data/calendar.json。
 """
-import html, json, os, re, time
+import html, json, os, re, time, tomllib
 from datetime import date, datetime, timedelta, timezone
 
 from qx import store, clock
 from qx.registry import SEMIS, BIGTECH, AI
 
 CAL = os.path.join(store.HERE, "calendar.json")
+BLS = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "登记", "bls_empsit.toml")
 DAYS = 14
 FED_URL = "https://www.federalreserve.gov/json/calendar.json"
 EARN_URL = "https://api.nasdaq.com/api/calendar/earnings?date={}"
@@ -69,12 +70,14 @@ def fed(txt, start, end):
     return out
 
 
-def nasdaq_days(get, url, start, end, log):
-    """每个工作日取一次纳斯达克的表 → {日期: rows}；返回 (表, 取到几天)。"""
+def nasdaq_days(get, url, start, end, log, lag=0):
+    """每个工作日取一次纳斯达克的表 → {日期: rows}；返回 (表, 取到几天)。
+    lag：查的日子比事件晚几天（宏观日历查 q 得到 q 前一天的事件，lag=1），按事件那天是不是工作日挑（新3 改正：原来按查的那天挑，
+    周五的事件要查周六，被跳过了，11/6 的非农就这样漏了；口径十四.1 更正）。"""
     out, ok = {}, 0
     d = start
     while d <= end:
-        if d.weekday() < 5:
+        if (d - timedelta(days=lag)).weekday() < 5:
             try:
                 j = json.loads(get(url.format(d.isoformat()), timeout=30, ua=JSON_UA))
                 out[d.isoformat()] = ((j.get("data") or {}).get("rows")) or []
@@ -165,7 +168,7 @@ def fetch(log=print, today=None):
         fe, ok["fed"] = keep_old({"fomc", "presser", "minutes", "beige", "chair"}), False
     et, n1 = nasdaq_days(get, EARN_URL, start, end, log)
     ea = earnings(et) if n1 else keep_old({"earnings"})
-    mt, n2 = nasdaq_days(get, ECON_URL, start + timedelta(days=1), end + timedelta(days=1), log)   # 查 q 得到 q 前一天的事件
+    mt, n2 = nasdaq_days(get, ECON_URL, start + timedelta(days=1), end + timedelta(days=1), log, lag=1)   # 查 q 得到 q 前一天的事件
     ma = [e for e in econ(mt) if start.isoformat() <= e["date"] <= end.isoformat()] if n2 else keep_old({"macro"})
     ok.update(earnings=n1, macro=n2)
     ev = sorted(fe + ea + ma + opex(start, end), key=lambda e: (e["date"], e["kind"] != "fomc", e.get("time") or "", e.get("sym") or ""))
@@ -185,6 +188,49 @@ def fetch(log=print, today=None):
                                         "to": end.isoformat(), "events": ev, "fomc_pm": fomc_pm, "ok": ok}, ensure_ascii=False))
     log(f"日历：{start} → {end}，美联储 {len(fe)} 件、财报 {len(ea)} 家、宏观 {len(ma)} 件（纳斯达克财报 {n1} 天、宏观 {n2} 天取到）")
     return ev
+
+
+NFP = "美国非农就业"
+
+
+def bls_table():
+    """登记/bls_empsit.toml（手抄的 BLS 发布日表）→ dict(source, dates=[发布日…])；没有这个文件给空表。"""
+    try:
+        with open(BLS, "rb") as f:
+            R = tomllib.load(f)
+    except FileNotFoundError:
+        return dict(source={}, dates=[])
+    return dict(source=R.get("source") or {}, dates=sorted(r["date"] for r in R.get("release") or []))
+
+
+def bls_nfp(start, end):
+    """非农的后备（新3，口径十四.1 更正）：BLS 发布日表里 [start, end] 之间的发布日，换成日历的格式（美东 08:30）。
+    表管到的那几个月（第一次到最后一次发布的月份）以外，按那个月第一个周五估一条，标 est=True：只进"再往后"那一行，
+    不进 ④ 的状态词、不算口径三.8 的大事（第一个周五不是真的日子：2010 年以来 201 次里 35 次不在第一个周五）。
+    表管到的月份里没有发布的就是没有，不估。不进 load()：推送读的 today.upcoming 不动，页面那几处自己补（qx/front.py nfp_add()）。"""
+    start, end = str(start), str(end)
+    T = bls_table()
+    src = T["source"]
+    hm = src.get("time_et") or "08:30"
+    note = f"Employment Situation：非农就业和失业率（BLS 发布日表，{src.get('copied', '')} 手抄）"
+    url = src.get("url") or ""
+
+    def row(d, est):
+        dt = datetime.fromisoformat(f"{d} {hm}").replace(tzinfo=clock.NY).astimezone(timezone.utc)
+        return {"date": d, "time": hm + " 美东", "utc": dt.isoformat(timespec="minutes"), "kind": "macro", "title": NFP, "note": note,
+                "src": "BLS 发布日表" + ("（估的）" if est else ""), "url": url, **({"est": True} if est else {})}
+
+    out = [row(d, False) for d in T["dates"] if start <= d <= end]
+    lo, hi = (T["dates"][0][:7], T["dates"][-1][:7]) if T["dates"] else ("9999-99", "0000-00")
+    m = date.fromisoformat(start[:8] + "01")
+    while m.isoformat() <= end:
+        ym = m.isoformat()[:7]
+        if not (lo <= ym <= hi):
+            fr = next(m + timedelta(days=i) for i in range(7) if (m + timedelta(days=i)).weekday() == 4)
+            if start <= fr.isoformat() <= end:
+                out.append(row(fr.isoformat(), True))
+        m = date(m.year + (m.month == 12), m.month % 12 + 1, 1)
+    return sorted(out, key=lambda e: e["date"])
 
 
 OFFICIAL = {"gdp": "美国 GDP", "pce": "美国 PCE", "boj": "日本央行利率决议"}

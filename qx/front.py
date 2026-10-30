@@ -409,6 +409,85 @@ def cal_late(cal, t):
     return d if d > _next_trading(pd.Timestamp(t).strftime("%Y-%m-%d")) else None
 
 
+def nfp_add(cal7, now=None):
+    """非农的后备（新3，口径十四.1 更正）："接下来 7 天"那张表（happen.calendar，按美东今天起 7 天）里纳斯达克漏了的非农，
+    从 BLS 发布日表补（qx/events.py bls_nfp()；同一天已经有"美国非农就业"的不补）。估的（表管不到的月份）不进这里。
+    只给页面用：推送读的 today.upcoming、happen.calendar 都不动。"""
+    from datetime import datetime, timezone
+    from qx import events as EV
+    now = now or datetime.now(timezone.utc)
+    d0 = now.astimezone(clock.NY).date()
+    have = {(e["date"], e["title"]) for e in cal7 or []}
+    return [e for e in EV.bls_nfp(d0.isoformat(), (d0 + timedelta(days=7)).isoformat()) if not e.get("est") and (e["date"], e["title"]) not in have]
+
+
+def nfp_later(t, days=45):
+    """"再往后"那一行（新4 画）用的非农：数据日以后 45 天里，BLS 表里的（真的）和表管不到的月份估的（est，写"约 M/D（估的）"）。只给页面用。"""
+    from qx import events as EV
+    t = pd.Timestamp(t)
+    return EV.bls_nfp((t + pd.Timedelta(days=1)).strftime("%Y-%m-%d"), (t + pd.Timedelta(days=days)).strftime("%Y-%m-%d"))
+
+
+def tl_fix(radar, t):
+    """时间轴给页面用的改正版（新3，口径十四.1 更正）。推送也读的 radar.fwd.timeline、前瞻六条线不动，页面换成这一份：
+      - 纳斯达克宏观日历的事件差一天：data/timeline.json 是 10-29 改正以前的 qx/timeline.py 生成的（查 q 得到的是 q 前一天的事件，
+        旧代码把它记成 q 那天），这一版的标志是链接里的日子和事件日子一样；这种往前挪一天（日子和北京时间都挪）。改正后的代码重新生成以后就没有要挪的了。
+      - 纳斯达克漏了的非农，从 BLS 发布日表补（qx/events.py bls_nfp()，估的不进）。
+      - 六条线"接下来的检验"里读宏观日历的那几条线（forward.NEXT_KIND 里有 macro 的）按改正后的事件重排。
+    没有要改的给 None。→ dict(events, next={线: [...]}, moved=挪了几件, added=补了几件)"""
+    from qx import events as EV, forward as FW, timeline as TL
+    fw = (radar or {}).get("fwd") or {}
+    ev = (fw.get("timeline") or {}).get("events") or []
+    if not ev:
+        return None
+    out, moved = [], 0
+    for e in ev:
+        if e.get("src") == "纳斯达克宏观日历" and e.get("kind") == "macro" and str(e.get("url") or "").endswith("date=" + e["date"]):
+            d = (date.fromisoformat(e["date"]) - timedelta(days=1)).isoformat()
+            bj = e.get("bj") or ""
+            bj = (date.fromisoformat(bj[:10]) - timedelta(days=1)).isoformat() + bj[10:] if len(bj) >= 10 else d
+            e = dict(e, date=d, bj=bj)
+            moved += 1
+        out.append(e)
+    tl = TL.load()
+    lo, hi = tl.get("start") or min(e["date"] for e in ev), tl.get("end") or max(e["date"] for e in ev)
+    have = {(e["date"], e["title"]) for e in out}
+    add = [dict(date=e["date"], bj=pd.Timestamp(e["utc"]).tz_convert(clock.SH).strftime("%Y-%m-%d %H:%M"), kind="macro", title=e["title"], src=e["src"], url=e["url"])
+           for e in EV.bls_nfp(lo, hi) if not e.get("est") and (e["date"], e["title"]) not in have]
+    if not moved and not add:
+        return None
+    out = sorted(out + add, key=lambda e: e["date"])                     # 同一天里的先后照原来的（sorted 是稳定的）
+    ts, te = pd.Timestamp(t).strftime("%Y-%m-%d"), (pd.Timestamp(t) + pd.Timedelta(days=30)).strftime("%Y-%m-%d")
+    soon = [e for e in out if ts <= e["date"] <= te]
+    nxt = {}
+    for L in fw.get("lines") or []:
+        ks = FW.NEXT_KIND.get(L["id"], set())
+        if "macro" in ks and L["id"] != "industry":
+            n = [f"{e['bj']} {e['title']}" for e in soon if e["kind"] in ks][:6]
+            if n != L.get("next"):
+                nxt[L["id"]] = n
+    return dict(events=out, next=nxt, moved=moved, added=len(add))
+
+
+def opt_dates(opt, t):
+    """期权链是哪天的、比数据日晚几个交易日（新3：做市商 gamma 和期权最大押注写明用的是哪天的期权链）。只给页面用。
+    日子是 qx/options.py 每个代码那一行的 date（qx/cboe.py 存下的那天的链）。→ {代码: {date, lag}}；盘中现取的不给；
+    链比数据日还晚（截到以前的日子预览时会这样）lag 给 None。"""
+    t = pd.Timestamp(t).date()
+    out = {}
+    for r in (opt or {}).get("rows") or []:
+        d = r.get("date")
+        if not d or r.get("live"):
+            continue
+        c = date.fromisoformat(d)
+        lag, x = 0, c
+        while x < t:
+            x += timedelta(days=1)
+            lag += clock.is_trading_day(x)
+        out[r["sym"]] = dict(date=d, lag=lag if c <= t else None)
+    return out
+
+
 # ================================================================ ⑤ 基本面
 def earnings_season(t):
     from qx import earn
@@ -598,8 +677,13 @@ def judge_line(today):
 
 
 # ================================================================ 合起来
-def build(D, R, radar, today, hap, ice, cal):
+def build(D, R, radar, today, hap, ice, cal, opt=None):
     t = R["P"].index[-1]
+    try:                                                  # 非农后备（新3）：纳斯达克漏了的非农补进页面的 48 小时、"接下来 7 天"（推送读的那几份不动）
+        hap_p = dict(hap or {}, calendar=sorted(list((hap or {}).get("calendar") or []) + nfp_add((hap or {}).get("calendar")),
+                                                key=lambda e: (e["date"], e["kind"] != "fomc", e.get("time") or "", e.get("sym") or "")))
+    except Exception:
+        hap_p = hap
     from qx import positioning as PS, watch as W
     out = dict(asof=t.strftime("%Y-%m-%d"), min_obs=PS.MIN_OBS,          # 仓位读数至少几个观测才和历史比（页面写"攒到第几期"用）
                # "今天变了什么"里"少见"换成的门槛（qx/watch.py 的常量，页面不另写一份）：单日 / 5 日涨跌美股、美股以外，保险比实际波动两头，比的是过去几年
@@ -608,9 +692,11 @@ def build(D, R, radar, today, hap, ice, cal):
              ("flow", lambda: flows(D, t, radar.get("pos"))), ("m1", lambda: m1(D, t)), ("fomc", lambda: fomc(cal, t)),
              ("react", lambda: reaction(radar.get("cards"))), ("season", lambda: earnings_season(t)), ("tw", lambda: tw_revenue(t)),
              ("credit", lambda: credit(ice, radar.get("narr"))), ("y10", lambda: yield10(D, t)),
-             ("judge", lambda: judge_line(today)), ("h48", lambda: h48((hap or {}).get("calendar"))),
-             ("h48all", lambda: h48_all(hap, cal)), ("fed_bj", lambda: fed_bj((hap or {}).get("calendar"))), ("cal_late", lambda: cal_late(cal, t)),
-             ("optmkt", lambda: opt_market(D))]
+             ("judge", lambda: judge_line(today)), ("h48", lambda: h48((hap_p or {}).get("calendar"))),
+             ("h48all", lambda: h48_all(hap_p, cal)), ("fed_bj", lambda: fed_bj((hap or {}).get("calendar"))), ("cal_late", lambda: cal_late(cal, t)),
+             ("optmkt", lambda: opt_market(D)),
+             ("cal_add", lambda: [e for e in (hap_p or {}).get("calendar") or [] if e.get("src") == "BLS 发布日表"]),
+             ("nfp_later", lambda: nfp_later(t)), ("tlfix", lambda: tl_fix(radar, t)), ("optdate", lambda: opt_dates(opt, t))]
     for k, f in parts:
         try:
             out[k] = f()
