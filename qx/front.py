@@ -651,15 +651,18 @@ MOVED = [
     ("② 价格位置 · 全部，趋势状态表上面", "上行、下行、震荡怎么定（均线、持续多久）", "说明 · 趋势状态怎么定"),
     ("④ 预期 · 全部，期权块", "\"这五个问题是什么意思\"（保险贵不贵、更怕跌还是更想涨、押在哪个价位、做市商对冲、定价了多大的涨跌）", "说明 · 期权五个问题"),
     ("新闻和日历，表尾", "新闻从哪几家取、日历里期权幅度怎么算", "说明 · 新闻和日历"),
-    ("页面最下面", "数据来源清单", "说明 · 数据来源"),
+    ("页面最下面", "数据来源清单（只留来源名；绕路和没接的接口写在状态）", "说明 · 数据来源；状态 · 接口备注"),
     ("快讯，\"各条路的健康和延迟\"", "每条路多久前取到、延迟中位数、延迟怎么算、过去 30 天回补到哪", "状态 · 快讯各条路"),
     ("② 各市场，每行末尾", "\"缺：…\"（没取到的品种）", "状态 · 缺的品种和序列"),
     ("⑤ AI 账本", "写\"缺\"或\"没有免费可自动化的数\"的几行（含 SEC 接口要联系邮箱那一行）", "状态 · 缺的品种和序列"),
+    ("⑤ AI 账本，每行的来源小字", "接口名\"财政部 Fiscal Data\"（页面上改写成\"美国财政部\"），和 TreasuryDirect 的 robots.txt 全挡、所以走这个接口那句", "状态 · 接口备注"),
+    ("顶栏第一行（有路断了时）", "状态的生成时刻（北京时间），让位给\"N 条路断了 ›\"", "状态 · 最上面一行（页面生成于…）"),
     ("全部卡 · 回放清单末尾", "\"第 N 类：数据从……起攒，攒满一年才够回放\"", "状态 · 在攒什么、哪天能用"),
 ]
 KEPT = [   # 方案第四节列了、这一步没搬的（理由），说明里一并写出来，免得以为丢了
     ("前台 K 线 · 图的全部", "标签说明（阶段、转折、抛售 / 涨过头、gamma、判断）", "留在图下：看图时要对着标签看"),
     ("④ 期权块", "\"期权链攒了几天\"那句", "留在块里；状态的\"在攒什么\"里也有一行"),
+    ("各块", "定义句和版本注脚", "S3 / S5 改写各块时再搬（这一步各块的文字还没定）"),
 ]
 
 SHUO_FOUR = """<p><b>抛售恐慌</b>：28 只半导体股里，最近 5 天平均每天有几只创 20 天新低，和历史比排第几。股票池扩大到 63 只（加小盘、次新）结论一样。历次大跌的最低点前后，费城半导体、纳指、标普 84% 到 100% 的次数都到了历史上最高的 10%，2015 年前后都成立。</p>
@@ -677,11 +680,14 @@ SHUO_TREND = "<p>上行 = 收盘在均线上方、均线在升；下行反过来
 SHUO_NEWS = """<p>新闻只从路透、彭博、华尔街日报、金融时报、CNBC、日经亚洲、美联储、韩联社、CoinDesk 和华尔街见闻"重要"快讯里取。</p>
 <p>日历里的期权幅度：财报是反应日（时间未定的是当天加下一天）的涨跌，拆掉了别的日子平常的波动，写一半机会超过多少；议息会是到期以前的总幅度，包含到期前的正常波动，偏大一点。</p>"""
 SHUO_SRC = ("<p>Yahoo（行情、VIX、VXN、成分股、信用 ETF）、CBOE（认沽认购、期权链）、AAII 散户调查、FRED（信用利差、美债收益率）、CFTC 期货持仓、"
-            "纳斯达克（财报、宏观日历）、美联储和日本央行日程、美国经济分析局、Polymarket、台湾证交所、美国财政部（拍卖结果走财政部的 Fiscal Data 接口：TreasuryDirect 的 robots.txt 全挡）、"
-            "日本财务省、TradingView 和谷歌新闻里的路透、CNBC、华尔街见闻、CNN 恐慌贪婪。云厂商资本开支要走 SEC 的 XBRL 接口，要联系邮箱，还没接（见 状态）。</p>")
+            "纳斯达克（财报、宏观日历）、美联储和日本央行日程、美国经济分析局、Polymarket、台湾证交所、美国财政部（美债拍卖结果）、"
+            "日本财务省、TradingView 和谷歌新闻里的路透、CNBC、华尔街见闻、CNN 恐慌贪婪。云厂商资本开支还没接（见 状态）。</p>")
+SHUO_API = ("<p>美债拍卖结果走财政部的 Fiscal Data 接口：TreasuryDirect 的 robots.txt 全挡，不绕。"
+            "云厂商资本开支和自由现金流要走 SEC 的 XBRL 接口，要给联系邮箱（SEC_CONTACT）才接，没给以前 AI 账本那一行写\"缺\"。</p>")
 
 # 关键词配错的新闻（方案第四节"状态"）：按词组挑"chip"不是芯片的标题，只列出来，词表不改（改词表要登记新版本，方案第七节）
-_MISKW = __import__("re").compile(r"\b(bargaining|poker|blue[- ])chips?\b|\bchips? (in|away)\b|\bchocolate chip|\bChip [A-Z][a-z]+ (says|said|,)", __import__("re").I)
+# "chips in" 不算：标题里多半是真芯片（"Cools Its Chips in Saudi Arabia"）；人名只认"Chip 某某," / says / said / appoint 这几种写法
+_MISKW = __import__("re").compile(r"\b(bargaining|poker|blue)[- ]chips?\b|\bchips? away\b|\bchocolate chip|\bChip [A-Z][a-z]+(,| says\b| said\b| appoints?\b)", __import__("re").I)
 
 
 def ready_by(asof, have, need, per="bday"):
@@ -725,7 +731,12 @@ def accrue(data):
     H = (R.get("narr") or {}).get("heat") or {}
     if H.get("note") and not H.get("rows"):
         m = __import__("re").search(r"从 (\d{4}-\d{2}-\d{2}) 起攒", H["note"])
-        rows.append(("主题热度（新闻条数）", H["note"], "约 " + (pd.Timestamp(m.group(1)) + pd.Timedelta(days=9)).strftime("%Y-%m-%d") if m else "—", "满 10 天才算"))
+        if m:
+            from qx import news as NW
+            got = len(NW.load()[1])        # 和 narrative.heat() 同一个数：存下条数的天数（heat 不按页面那天截，这里也不截）
+            rows.append(("主题热度（新闻条数）", f"{got} / 10 天（从 {m.group(1)} 起）", "约 " + (pd.Timestamp(m.group(1)) + pd.Timedelta(days=9)).strftime("%Y-%m-%d"), "满 10 天才算"))
+        else:
+            rows.append(("主题热度（新闻条数）", H["note"], "—", "满 10 天才算"))
     by = {}
     for r in ((R.get("pos") or {}).get("readings") or []):
         if r.get("pos") is None and r.get("n") is not None and r["n"] <= PS.MIN_OBS:
@@ -782,7 +793,7 @@ def view_zt(data):
     bad = broken_routes(fl)
     warn = _stale(data.get("status"), asof)
     st = data.get("status") or {}
-    h += _sec("z-src", "各数据源到哪天", (f"<p><b style=\"color:var(--alert)\">数据提醒：</b>{_e('；'.join(warn))}。相关读数沿用最近一次的。</p>" if warn else "<p>四个数据源都没落后。</p>")
+    h += _sec("z-src", "各数据源到哪天", (f"<p><b style=\"color:var(--alert)\">数据提醒：</b>{_e('；'.join(warn))}。相关读数沿用最近一次的。</p>" if warn else f"<p>{len(st)} 个数据源都没落后。</p>")
               + _table(["数据源", "最新到", "这次"], [(_e(k), _e(v.get("last") or "没有数据"), _e({"ok": "取到了", "local": "用存下的"}.get(v.get("status"), v.get("status")))) for k, v in st.items()]))
     if fl.get("health"):
         lag = lambda x: f"中位 {x['lag']['med']} 分钟（90% {x['lag']['p90']}，{x['lag']['n']} 条）" if x.get("lag") else "还没攒够"
@@ -800,12 +811,33 @@ def view_zt(data):
     miss += [(_e("AI 账本 · " + _plain(x.get("chain"))), _e(x["name"]), _e(x["value"]) + (f"<small>（{_e(x['src'])}）</small>" if x.get("src") and x["src"] != "—" else ""))
              for x in ((R.get("fwd") or {}).get("ledger") or []) if str(x.get("value", "")).startswith(("缺", "没有免费"))]
     h += _sec("z-miss", "缺的品种和序列", _table(["在哪", "缺什么", "为什么"], miss) if miss else "<p>这次没有缺的。</p>")
-    N = (data.get("happen") or {}).get("news") or {}
-    mis = [(_e(g.get("topic", "")), _e(n["t"])) for g in ([{"topic": "要闻", "items": N.get("top") or []}] + (N.get("more") or []))
-           for n in g.get("items") or [] if _MISKW.search(n.get("t") or "")]
-    h += _sec("z-kw", "关键词可能配错的新闻", (_table(["配进的话题", "标题"], mis) if mis else "<p>这次没挑出来。</p>")
-              + "<p class=\"knote\">按词组挑的（bargaining chip、blue chip、人名 Chip 这类，\"chip\" 不是芯片），可能漏。只列出来，词表没改：改词表要登记新版本。</p>")
+    h += _sec("z-api", "接口备注", SHUO_API)
+    h += _sec("z-kw", "关键词可能配错的新闻", (_table(["哪天", "配进的话题", "标题"], mis) if (mis := miskw(data)) else "<p>这次没挑出来。</p>")
+              + "<p class=\"knote\">扫新闻块和 K 线每天存下的新闻（这一页那天以前的），按词组挑（bargaining chip、blue chip、人名 Chip 这类，\"chip\" 不是芯片），可能漏。只列出来，词表没改：改词表要登记新版本。</p>")
     return h
+
+
+def miskw(data):
+    """关键词可能配错的新闻：扫 新闻块（要闻、各话题）和 K 线每天存下的新闻（happen.day.news，只看这一页那天以前的），同一个标题只列一次。"""
+    asof = data.get("asof") or "9999"
+    Hp = data.get("happen") or {}
+    N = Hp.get("news") or {}
+    seen, out = set(), []
+    for g in [{"topic": "要闻", "items": N.get("top") or []}] + (N.get("more") or []):
+        for n in g.get("items") or []:
+            t = n.get("t") or ""
+            if t not in seen and _MISKW.search(t):
+                seen.add(t)
+                out.append(("新闻块", _e(g.get("topic", "")), _e(t)))
+    for d, xs in sorted(((Hp.get("day") or {}).get("news") or {}).items(), reverse=True):
+        if d > asof:
+            continue
+        for x in xs:
+            t = x[1] if len(x) > 1 else ""
+            if t not in seen and _MISKW.search(t or ""):
+                seen.add(t)
+                out.append((_md(d), _e(x[0]), _e(t)))
+    return out
 
 
 def views(data):

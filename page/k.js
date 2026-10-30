@@ -416,7 +416,8 @@
     const ago = age < 1 ? "刚刚" : age < 60 ? age + " 分钟前" : age < 1440 ? Math.floor(age / 60) + " 小时前" : Math.floor(age / 1440) + " 天前";
     const d2 = s => s ? `${+s.slice(5, 7)}/${+s.slice(8, 10)}` : "";
     const nb = broken().length;
-    const parts = [nb ? `<a href="#v-zt" class="bad" data-view="zt" data-sec="z-flash">状态 ${ago}（${bjd(RD.built || Date.now())}）· ${nb} 条路断了 ›</a>`
+    // 有路断了：红字接在第一行，生成时刻（北京时间）让给红字、写在状态最上面，第一行不因为红字多折一行（400 宽、开着一个市场的现取价格时实测）
+    const parts = [nb ? `<a href="#v-zt" class="bad" data-view="zt" data-sec="z-flash">状态 ${ago} · ${nb} 条路断了 ›</a>`
                       : `<span class="${age > 40 ? "stale" : ""}">状态 ${ago}（${bjd(RD.built || Date.now())}）</span>`];
     if (LIVE && LIVE.prices) {
       const P = LIVE.prices.p || {}, by = {};

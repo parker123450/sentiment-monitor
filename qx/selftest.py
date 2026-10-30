@@ -25,6 +25,23 @@ def cut(D, aaii, t):
     return out, (aaii[aaii.index < t] if aaii is not None else None)
 
 
+def _cnn_upto(day):
+    """export.cnn() 截到 day：同一个算法，只用 date ≤ day 的行。"""
+    import csv, os
+    from qx import export as EX, store as ST
+    p = os.path.join(ST.HERE, "cnn.csv")
+    if not os.path.exists(p):
+        return None
+    with open(p, encoding="utf-8") as f:
+        rows = sorted((r for r in csv.DictReader(f) if r["date"] <= day), key=lambda r: r["date"])
+    if not rows:
+        return None
+    last = rows[-1]
+    back = lambda days: next((float(r["score"]) for r in reversed(rows) if r["date"] <= (pd.Timestamp(last["date"]) - pd.Timedelta(days=days)).strftime("%Y-%m-%d")), None)
+    return dict(date=last["date"], now=round(float(last["score"])), word=EX.RATING.get(last["rating"], last["rating"]),
+                w1=EX._num(back(7), 0), m1=EX._num(back(30), 0))
+
+
 @contextlib.contextmanager
 def extras_cut(t):
     """第四轮新攒的文件，按各自"能看到的时间"截到 t（规划第〇节：cut() 按这一列截断）：
@@ -36,7 +53,10 @@ def extras_cut(t):
     day = t.strftime("%Y-%m-%d")
     end = (pd.Timestamp(day, tz="UTC") + pd.Timedelta(days=1)).isoformat()
     pub = lambda rows: [r for r in rows if (r.get("pub") or "")[:10] <= day]
+    from qx import export as EX
     saved = (PS._rows, LG._rows, FL.load_rows, EA.rows, FU.load_tw, ST.load_aaii)
+    cnn0 = EX.cnn
+    EX.cnn = lambda: _cnn_upto(day)   # CNN 恐慌贪婪：只用 t 那天以前的行（和 export.cnn 同一个算法）
     PS._rows = lambda p, f=saved[0]: pub(f(p))
     LG._rows = lambda p, f=saved[1]: pub(f(p))
     FL.load_rows = lambda f=saved[2]: [r for r in f() if FL.visible(r) < end]
@@ -47,6 +67,7 @@ def extras_cut(t):
         yield
     finally:
         PS._rows, LG._rows, FL.load_rows, EA.rows, FU.load_tw, ST.load_aaii = saved
+        EX.cnn = cnn0
 
 
 def radar_values(D, t):
@@ -293,6 +314,15 @@ def views_check(log=print):
           [h["name"] for h in FR.broken_routes({"health": [{"name": "a", "ok": True}, {"name": "b", "ok": False}, {"name": "c"}]})] == ["b", "c"],
           FR.broken_routes(None) == [],
           len(FR._stale(st, "2026-10-23")) == 3 and all(any(k in x for x in FR._stale(st, "2026-10-23")) for k in ("AAII 散户调查最新", "黄金", "空没有"))]
+    # 关键词可能配错的新闻：方案点名的两条要挑出来，真芯片的不挑；K 线每天的新闻只看这一页那天以前的
+    kw = {"Chip Meyers, IOA RE Inc: Profile and Biography": True, "Macron Has Few Bargaining Chips as He Keeps Lid on Violence": True,
+          "a bargaining chip": True, "blue chip stocks": True, "Poker-chip maker": True, "Lululemon, Chip Wilson Appoint Poseley": True,
+          "Watch How XDS Datacentres Cools Its Chips in Saudi Arabia": False, "Korean Stocks Drop on Chip Losses After US Selloff": False,
+          "Chip Wars: Trending News": False}
+    ok.append(all(bool(FR._MISKW.search(t)) == v for t, v in kw.items()))
+    dd = {"asof": "2026-10-23", "happen": {"news": {"top": [{"t": "blue chip stocks"}], "more": []},
+                                           "day": {"news": {"2026-10-23": [["半导体板块", "Chip Meyers, IOA RE Inc", "x", "u"]], "2026-10-26": [["半导体板块", "Few Bargaining Chips", "x", "u"]]}}}}
+    ok.append([r[2] for r in FR.miskw(dd)] == ["blue chip stocks", "Chip Meyers, IOA RE Inc"])
     good = all(ok)
     log("  状态页（构造的数）：" + ("一致" if good else "不一致 第 " + "、".join(str(i + 1) for i, x in enumerate(ok) if not x) + " 条"))
     return good
