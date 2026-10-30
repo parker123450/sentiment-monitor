@@ -203,10 +203,25 @@ def bls_table():
     return dict(source=R.get("source") or {}, dates=sorted(r["date"] for r in R.get("release") or []))
 
 
+def nfp_est(y, m):
+    """参考月 y-m 的非农大约哪天发（估的，只给 BLS 表管不到的月份用；新3 复查改正，口径十四.1）：
+    参考周（参考月里含 12 号的那一周，周日到周六）结束以后的第三个周五；落在 1 月 1–3 日的往后挪一周（年底假期），
+    落在 7 月 3、4 日（独立日或它的补假）的提前一天到周四。
+    拿 data/macro_raw.csv 里 2010 年以来 201 次非农发布日对过：196 次对得上，对不上的 5 次都是政府停摆推迟的
+    （2013-10-22、2013-11-08、2025-11-20、2025-12-16、2026-02-11）；BLS 表里的 14 次全对得上。按"每月第一个周五"是 166 次。"""
+    d12 = date(y, m, 12)
+    f = d12 + timedelta(days=(5 - d12.weekday()) % 7 + 20)             # 参考周的周六 + 6 天是第一个周五，再 + 14 天是第三个
+    if f.month == 1 and f.day <= 3:
+        f += timedelta(days=7)
+    elif f.month == 7 and f.day in (3, 4):
+        f -= timedelta(days=1)
+    return f
+
+
 def bls_nfp(start, end):
     """非农的后备（新3，口径十四.1 更正）：BLS 发布日表里 [start, end] 之间的发布日，换成日历的格式（美东 08:30）。
-    表管到的那几个月（第一次到最后一次发布的月份）以外，按那个月第一个周五估一条，标 est=True：只进"再往后"那一行，
-    不进 ④ 的状态词、不算口径三.8 的大事（第一个周五不是真的日子：2010 年以来 201 次里 35 次不在第一个周五）。
+    表管到的那几个月（第一次到最后一次发布的月份）以外，按参考周估一条（nfp_est()，上个月是参考月），标 est=True：只进"再往后"那一行，
+    不进 ④ 的状态词、不算口径三.8 的大事。不按"每月第一个周五"估（2010 年以来 201 次里 35 次不在第一个周五；新3 复查改正，原来就是按它估的）。
     表管到的月份里没有发布的就是没有，不估。不进 load()：推送读的 today.upcoming 不动，页面那几处自己补（qx/front.py nfp_add()）。"""
     start, end = str(start), str(end)
     T = bls_table()
@@ -217,8 +232,11 @@ def bls_nfp(start, end):
 
     def row(d, est):
         dt = datetime.fromisoformat(f"{d} {hm}").replace(tzinfo=clock.NY).astimezone(timezone.utc)
+        if est:                                                        # 估的不是表里抄的：来源写估法（新3 复查改正）
+            return {"date": d, "time": hm + " 美东", "utc": dt.isoformat(timespec="minutes"), "kind": "macro", "title": NFP, "est": True,
+                    "note": "Employment Situation：BLS 发布日表管不到的月份，按参考周（含 12 号那一周）结束以后的第三个周五估", "src": "估的（按参考周推）", "url": url}
         return {"date": d, "time": hm + " 美东", "utc": dt.isoformat(timespec="minutes"), "kind": "macro", "title": NFP, "note": note,
-                "src": "BLS 发布日表" + ("（估的）" if est else ""), "url": url, **({"est": True} if est else {})}
+                "src": "BLS 发布日表", "url": url}
 
     out = [row(d, False) for d in T["dates"] if start <= d <= end]
     lo, hi = (T["dates"][0][:7], T["dates"][-1][:7]) if T["dates"] else ("9999-99", "0000-00")
@@ -226,7 +244,7 @@ def bls_nfp(start, end):
     while m.isoformat() <= end:
         ym = m.isoformat()[:7]
         if not (lo <= ym <= hi):
-            fr = next(m + timedelta(days=i) for i in range(7) if (m + timedelta(days=i)).weekday() == 4)
+            fr = nfp_est(m.year - (m.month == 1), (m.month - 2) % 12 + 1)          # 这个月发的是上个月的数
             if start <= fr.isoformat() <= end:
                 out.append(row(fr.isoformat(), True))
         m = date(m.year + (m.month == 12), m.month % 12 + 1, 1)

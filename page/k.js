@@ -549,7 +549,7 @@
         S.ways.map(w => `<details class="cd"><summary><b>${esc(w.name)}</b><span class="ns">${esc(w.how)} · 规则信号亮了 ${w.lit} 个</span></summary><ul class="nw">${w.signals.map(x => `<li>${x.hit === null ? "◇" : x.hit ? "●" : "○"} ${esc(x.text)}<small>${esc(x.why)}${x.first ? " · " + esc(x.first) + " 第一次亮" : x.pre ? " · 登记时已亮" : ""}</small></li>`).join("")}</ul></details>`).join("") +
         `<p class="knote">● 亮 ○ 没亮 ◇ 写不成规则、要人看。${esc(S.note)} 情景，不是买卖建议。</p>`;
     }
-    const T = TF ? Object.assign({}, F.timeline, { events: TF.events }) : (F.timeline || {});
+    const T = TF ? Object.assign({}, F.timeline, { events: TF.events }, TF.missing ? { missing: TF.missing } : {}) : (F.timeline || {});   // "排不到的"也用改正版（新3 复查改正）
     h += `<details><summary>时间轴：未来 6 个月 ${(T.events || []).length} 件（北京时间）</summary><table class="nbk">${(T.events || []).map(e => `<tr><td>${esc(e.bj)}</td><td><a href="${esc(e.url)}" target="_blank" rel="noopener">${esc(e.title)}</a><small>${esc(e.src)}</small></td></tr>`).join("")}</table>` +
       `<p class="knote"><b>排不到的：</b>${(T.missing || []).map(esc).join("；")}。选举、上市、大额融资这类没有固定日程的，要手动登记才有。</p></details>`;
     el.innerHTML = h;

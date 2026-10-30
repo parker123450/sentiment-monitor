@@ -108,25 +108,29 @@ TFF_SHORT = {"13874A": "标普", "209742": "纳指", "043602": "10 年美债", "
 
 
 def side_word(r):
-    """一个读数在哪边，照口径十一的 10% 门槛写（新3）：位置在 10% 以外写"在多头一侧 / 在空头一侧（位置）"，
-    在中间的写离哪头近："偏多 / 偏空（位置，没过 90% / 没过 10%）"。读数高是空头拥挤的（long_is_crowded=False）反过来。"""
-    p = round(r["pos"] * 100)
+    """一个读数在哪边，照口径十一的 10% 门槛写（新3）：位置在 10% 以外（positioning.side() 给的 side）写"在多头一侧 / 在空头一侧"，
+    在中间的写离哪头近："偏多 / 偏空"。读数高是空头拥挤的（long_is_crowded=False）反过来。
+    不写位置的数（新3 复查改正）：数在紧下面"美股期指谁在场上"那一行（page/k.js 用 Math.round 取整），这里再取一遍整会和那一行差 1（0.945 → 94 / 95），
+    0.104 还会写成"偏空（10%，没过 10%）"。"""
     if r.get("side") in ("多头", "空头"):
-        return f"在{r['side']}一侧（{p}%）"
+        return f"在{r['side']}一侧"
     hi = r["pos"] >= 0.5
-    return f"{'偏多' if hi == bool(r.get('long_is_crowded', True)) else '偏空'}（{p}%，没过 {90 if hi else 10}%）"
+    return "偏多" if hi == bool(r.get("long_is_crowded", True)) else "偏空"
 
 
-def mixed_why(rs):
+def mixed_why(rs, market):
     """"方向不一致"写出是哪个合约、谁在哪边（新3：③ 不写"多头挤在标普和美债"，照口径十一写）。只写 TFF 分开的合约（资管、杠杆基金两个读数）里
-    有读数在 10% 以外的那几个，例："标普：资管在多头一侧（94%），杠杆基金偏空（11%，没过 10%），方向不一致"。写不出就给 None，页面照旧写"方向不一致"。"""
+    有读数在 10% 以外的那几个，前面带市场名，例："美股（标普：资管在多头一侧，杠杆基金偏空）方向不一致"。
+    新3 复查改正：原来那版带位置的数（"……（94%），杠杆基金偏空（11%，没过 10%），方向不一致"），和紧下面"美股期指谁在场上"那一行重复，
+    400 宽多折一行，过不了"高度不能变高"；数只留在那一行。两个读数都在中间的合约（今天的纳指）不写，它不是"不一致"的来由。
+    写不出就给 None，页面照旧写"方向不一致"。"""
     by = {}
     for r in rs:
         if r.get("tff") and r.get("pos") is not None and r.get("code") in TFF_SHORT:
             by.setdefault(r["code"], []).append(r)
     ps = [f"{TFF_SHORT[c]}：" + "，".join(f"{r['who']}{side_word(r)}" for r in xs) for c, xs in by.items()
           if any(r.get("side") in ("多头", "空头") for r in xs)]
-    return "；".join(ps) + "，方向不一致" if ps else None
+    return f"{market}（{'；'.join(ps)}）方向不一致" if ps else None
 
 
 def flows(D, t, pos):
@@ -183,7 +187,7 @@ def flows(D, t, pos):
            for r in pos["readings"] if r.get("tff") and r["code"] in ("13874A", "209742")]       # 美股期指谁在场上（TFF，口径十四.6）：常驻
     crowd_rs = lambda mk: [r for r in pos["readings"] if r["market"] == mk and r.get("crowd", True)]
     # 新3 只改标普那一句（steps2 新3："页面和现在一样，只有三处错和 ③ 那句改了"）；美债照旧写"方向不一致"，要不要也写开等新4 排版时定
-    why = lambda mk: mixed_why(crowd_rs(mk)) if mk == "美股" and word[mk] == "方向不一致" else None
+    why = lambda mk: mixed_why(crowd_rs(mk), mk) if mk == "美股" and word[mk] == "方向不一致" else None
     return dict(asof=asof, pub=pub, changed=changed, still=still, nums=nums,
                 calm=[dict(market=m, word=word[m], **({"why": why(m)} if why(m) else {})) for m in calm if m in ("美股", "美债", "美股波动")],
                 tff=tff, tff_on=on, letf=pos.get("letf"))
@@ -441,10 +445,12 @@ def cal_late(cal, t):
 def nfp_add(cal7, now=None):
     """非农的后备（新3，口径十四.1 更正）："接下来 7 天"那张表（happen.calendar，按美东今天起 7 天）里纳斯达克漏了的非农，
     从 BLS 发布日表补（qx/events.py bls_nfp()；同一天已经有"美国非农就业"的不补）。估的（表管不到的月份）不进这里。
-    只给页面用：推送读的 today.upcoming、happen.calendar 都不动。"""
-    from datetime import datetime, timezone
-    from qx import events as EV
-    now = now or datetime.now(timezone.utc)
+    只给页面用：推送读的 today.upcoming、happen.calendar 都不动。
+    7 天窗口和 happen.calendar_block() 用同一个钟（qx.happen 的 datetime），两边窗口一样；钉住 happen 的钟（推送闸那样）时这里一起钉住
+    （新3 复查改正：原来用墙上时钟，钉住时两边窗口不一样，每次跑结果都不同）。"""
+    from datetime import timezone
+    from qx import events as EV, happen as HP
+    now = now or HP.datetime.now(timezone.utc)
     d0 = now.astimezone(clock.NY).date()
     have = {(e["date"], e["title"]) for e in cal7 or []}
     return [e for e in EV.bls_nfp(d0.isoformat(), (d0 + timedelta(days=7)).isoformat()) if not e.get("est") and (e["date"], e["title"]) not in have]
@@ -463,7 +469,9 @@ def tl_fix(radar, t):
         旧代码把它记成 q 那天），这一版的标志是链接里的日子和事件日子一样；这种往前挪一天（日子和北京时间都挪）。改正后的代码重新生成以后就没有要挪的了。
       - 纳斯达克漏了的非农，从 BLS 发布日表补（qx/events.py bls_nfp()，估的不进）。
       - 六条线"接下来的检验"里读宏观日历的那几条线（forward.NEXT_KIND 里有 macro 的）按改正后的事件重排。
-    没有要改的给 None。→ dict(events, next={线: [...]}, moved=挪了几件, added=补了几件)"""
+      - "排不到的"那一句跟着改（新3 复查改正）：挪过的，"只排到"的日子按挪后的最后一件纳斯达克宏观事件写；非农从 BLS 表补了的，
+        从"美国 CPI、非农、韩国央行"里拿出来，另写"非农：用手抄的 BLS 发布日表排（表到 …）"——原来那句还写着非农只排到 11/11，和下面列到明年的非农对不上。
+    没有要改的给 None。→ dict(events, next={线: [...]}, missing=[...], moved=挪了几件, added=补了几件)"""
     from qx import events as EV, forward as FW, timeline as TL
     fw = (radar or {}).get("fwd") or {}
     ev = (fw.get("timeline") or {}).get("events") or []
@@ -495,7 +503,20 @@ def tl_fix(radar, t):
             n = [f"{e['bj']} {e['title']}" for e in soon if e["kind"] in ks][:6]
             if n != L.get("next"):
                 nxt[L["id"]] = n
-    return dict(events=out, next=nxt, moved=moved, added=len(add))
+    import re
+    nfp_bls = any(str(e.get("src") or "").startswith("BLS 发布日表") for e in out)
+    last_nq = max((e["date"] for e in out if e.get("src") == "纳斯达克宏观日历" and e.get("kind") == "macro"), default=None)
+    miss = []
+    for m in (fw.get("timeline") or {}).get("missing") or []:
+        g = re.match(r"美国 CPI、非农、韩国央行：只排到 (\d{4}-\d{2}-\d{2})（(.*)）$", m)
+        if g:
+            d = last_nq if moved and last_nq else g.group(1)
+            if nfp_bls:
+                miss += [f"美国 CPI、韩国央行：只排到 {d}（{g.group(2)}）", f"非农：用手抄的 BLS 发布日表排（表到 {EV.bls_table()['dates'][-1]}）"]
+                continue
+            m = f"美国 CPI、非农、韩国央行：只排到 {d}（{g.group(2)}）"
+        miss.append(m)
+    return dict(events=out, next=nxt, missing=miss, moved=moved, added=len(add))
 
 
 def opt_dates(opt, t):
