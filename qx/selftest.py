@@ -61,6 +61,8 @@ def radar_values(D, t):
     v.update({f"走向:{S['id']}:{w['id']}:{i}": str(x["hit"]) for S in sc for w in S["ways"] for i, x in enumerate(w["signals"])})
     for L in FW.lines(D, t, dict(sig=s, pos=p, narr=n, cards=c)):
         v["前瞻:" + L["id"]] = "；".join(L["signals"] + L["now"])
+    from qx import front as FR
+    v["前台:台积电营收"] = str(FR.tw_revenue(t))              # 前台⑤：只用 t 那天已经公布的月份
     return v
 
 
@@ -118,6 +120,8 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
         bad.append(("和 Worker 对拍", ["打标签、第一次或推送规则"]))
     if not event_check(log):
         bad.append(("期权拆财报", ["event_move"]))
+    if not front_check(log):
+        bad.append(("前台议息会", ["fomc、北京时间或日历取的日子"]))
     return not bad
 
 
@@ -198,6 +202,49 @@ def event_check(log=print):
         and all(earn._react_rows(hole(h), date(2026, 11, 5), tc) is None
                 for h, tc in (("2026-11-04", "time-pre-market"), ("2026-11-06", "time-after-hours"), ("2026-11-06", "time-not-supplied")))
     log("  期权拆财报（已知答案的曲线）：" + ("一致" if good else "不一致"))
+    return good
+
+
+def front_check(log=print):
+    """前台议息会那一行（qx/front.py fomc()）、"接下来 7 天"表和 48 小时的北京时间、"日历是哪天取的"：拿构造的日历、预测市场存档、时间轴算，答案已知。
+    下一次 = 决议日在 t 以后（决议日当天算已经开过）；概率只用 t 那天能看到的那一份——日历是 t 到下一个交易日之间取的才用，
+    不然用存档里 t 以前最近、7 天以内的那一行；那份里没有这一场：日历那份写"还没有盘口"，存档那份写"这天没存"；
+    北京时间：夏令时（10-28）决议是第二天 02:00，冬令时（12-09）是第二天 03:00，记者会晚半小时；三处写法一样。"""
+    from qx import front as FR
+    hist = [dict(date="2026-10-23", meeting="2026-10-28", hold="0.935", cut="0.002", hike="0.0685"),
+            dict(date="2026-10-27", meeting="2026-10-28", hold="0.95", cut="0.002", hike="0.048"),
+            dict(date="2026-10-27", meeting="2026-12-09", hold="0.6", cut="0.38", hike="0.02")]
+    tl = [dict(kind="fomc", date="2027-04-28")]
+    cal = dict(fetched="2026-10-27T21:00+00:00", events=[dict(kind="fomc", date="2026-10-28", pm=dict(hold=0.97, cut=0.01, hike=0.02))],
+               fomc_pm={"2026-12-09": dict(hold=0.7, cut=0.29, hike=0.01)})
+    f = lambda t, c=cal: FR.fomc(c, pd.Timestamp(t), hist, tl)
+    ok = []
+    a = f("2026-10-27")                                       # 日历是 t 当天取的：用日历
+    ok.append([(x["date"], x["bj"], x["bj_hm"], x.get("hold"), x.get("asof")) for x in a]
+              == [("2026-10-28", "2026-10-29", "02:00", 0.97, None), ("2026-12-09", "2026-12-10", "03:00", 0.7, None)])
+    ok.append(f("2026-10-26")[0].get("hold") == 0.97)         # 日历是 t 的下一个交易日取的：也用
+    a = f("2026-10-23")                                       # 日历晚于下一个交易日：用存档 t 那天那行，没存下下次
+    ok.append(a[0].get("hold") == 0.935 and a[0].get("asof") is None and a[1].get("why") == "nosave" and a[1].get("since") is None)
+    a = f("2026-10-22")                                       # 存档还没开始
+    ok.append([x.get("why") for x in a] == ["nosave", "nosave"] and a[0].get("since") == "2026-10-23")
+    a = f("2026-10-28")                                       # 决议日当天：下一次是 12-09，用前一天的存档
+    ok.append([x["date"] for x in a] == ["2026-12-09", "2027-01-27"] and a[0].get("hold") == 0.6 and a[0].get("asof") == "2026-10-27"
+              and a[1].get("why") == "nosave")
+    ok.append(f("2026-11-03")[0].get("hold") == 0.6 and f("2026-11-04")[0].get("why") == "nosave")    # 存档只往回找 7 天
+    a = f("2026-10-27", dict(cal, fomc_pm={}))                # 日历那份里没有下下次：还没有盘口
+    ok.append(a[1].get("why") == "nomkt")
+    ok.append([x["date"] for x in f("2027-03-18")] == ["2027-04-28"])   # 时间轴取到的场次并进来
+    ev = [dict(kind="fomc", date="2026-10-28", time="2:00 p.m. 美东", title="议息会（决议）"), dict(kind="presser", date="2026-10-28", time=" 美东", title="主席记者会"),
+          dict(kind="fomc", date="2026-12-09", time=" 美东", title="议息会（决议）"), dict(kind="cpi", date="2026-10-28", time="8:30 a.m.", title="CPI")]
+    ok.append(FR.fed_bj(ev) == {"fomc|2026-10-28": dict(bj="2026-10-29", hm="02:00"), "presser|2026-10-28": dict(bj="2026-10-29", hm="02:30"),
+                                "fomc|2026-12-09": dict(bj="2026-12-10", hm="03:00")})
+    h = FR.h48(ev[:1], now=pd.Timestamp("2026-10-27 17:00", tz="America/New_York"))
+    ok.append([(d["day"], [x["at"] for x in d["items"]]) for d in h] == [("10/29 周四", ["02:00"])])
+    got = dict(fetched="2026-10-30T07:58+00:00")
+    ok.append(FR.cal_late(got, pd.Timestamp("2026-10-29")) is None and FR.cal_late(got, pd.Timestamp("2026-10-28")) == "2026-10-30"
+              and FR.cal_late({}, pd.Timestamp("2026-10-28")) is None)
+    good = all(ok)
+    log("  前台议息会（构造的日历和存档）：" + ("一致" if good else "不一致 第 " + "、".join(str(i + 1) for i, x in enumerate(ok) if not x) + " 条"))
     return good
 
 

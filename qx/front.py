@@ -7,13 +7,12 @@
 这里只挑已经算好的结果、按五样摆；规则、阈值、排序一条不动，推送照旧（推送读的是 export 里原来的那几份）。
 其余照样算、照样推，进后台。
 """
-import csv, os
 from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
 
-from qx import clock, coverage as C, store
+from qx import clock, coverage as C
 
 PILLARS = [("emo", "情绪"), ("price", "价格位置"), ("flow", "买卖方结构和变化"), ("expect", "预期"), ("fund", "基本面")]
 STAGE_NAME = {0: "平稳", 1: "在卖", 2: "在怕", 3: "投降", 4: "在出清"}
@@ -188,11 +187,13 @@ def m1(D, t):
     return out
 
 
-# 美联储公布的议息会决议日（两天会的第二天，美东 14:00）。2026-10-30 从 federalreserve.gov/monetarypolicy/fomccalendars.htm 核对过（qx/timeline.py 的 fed()）。
-# 时间轴只存"今天起 6 个月"，截到以前的日子（自检、量页面）要靠这张表找"那天的下一次"；新的一年时间轴取到了会并进来。
+# 美联储公布的议息会决议日（两天会的第二天，美东 14:00），来源 federalreserve.gov/monetarypolicy/fomccalendars.htm。
+# 时间轴只存"今天起 6 个月"，截到以前的日子（自检、量页面）要靠这张表找"那天的下一次"；以后的场次由时间轴取到了并进来（fomc() 里合在一起）。
+# 2025、2026 两年和美联储公布的日程一致；2027 年只留本机时间轴（data/timeline.json，10-26 取的）里对得上的两场，其余等时间轴取到再并进来，
+# 不手写没核对过的日子（写错一场，"下一次"就会多出一场不存在的会）。2026-10-30 复查后改。
 FOMC_DATES = ("2025-01-29", "2025-03-19", "2025-05-07", "2025-06-18", "2025-07-30", "2025-09-17", "2025-10-29", "2025-12-10",
               "2026-01-28", "2026-03-18", "2026-04-29", "2026-06-17", "2026-07-29", "2026-09-16", "2026-10-28", "2026-12-09",
-              "2027-01-27", "2027-03-17", "2027-04-28", "2027-06-09", "2027-07-28", "2027-09-15", "2027-10-27", "2027-12-08")
+              "2027-01-27", "2027-03-17")
 
 
 def _next_trading(d):
@@ -202,16 +203,18 @@ def _next_trading(d):
     return d.isoformat()
 
 
-def fomc(cal, t):
+def fomc(cal, t, hist=None, tl=None):
     """议息会下一次和下下次（口径十四.2"常驻的数"），按数据那天 t 算，不看墙上时钟（2026-10-30 改：原来用墙上时钟，截到以前的日子也写今天的下一次和今天的概率，日历里的场次过了就整行不见；日期是美东的，和时间轴的北京时间对不上）。
     "下一次" = 决议日（美东）在 t 以后：t 当天 14:00 的决议在收盘前已经出了。
-    概率只用 t 那天能看到的那一份：日历（data/calendar.json）是 t 当天到下一个交易日之间取的才用；不然用 data/fomc_history.csv 里 t 以前最近的那一行（7 天以内）。
-    都没有的写"这天没存"；那份里没有这一场的写"预测市场还没有盘口"。日期给北京时间（决议在北京是第二天凌晨）。"""
+    概率只用 t 那天能看到的那一份：日历（data/calendar.json）是 t 当天到下一个交易日之间取的才用；不然用 data/fomc_history.csv 里 t 以前最近的那一行（7 天以内，只是显示时取哪一行，不是规则）。
+    都没有的写"这天没存"；那份里没有这一场的写"预测市场还没有盘口"。日期给北京时间（决议在北京是第二天凌晨）。
+    hist、tl：预测市场存档的行、时间轴的事件；不给就读 data/ 下的文件（自检用构造的传进来）。"""
     from qx import happen as HP, timeline as TL
     cal = cal or {}
     day = pd.Timestamp(t).strftime("%Y-%m-%d")
-    hist = HP._rows(HP.FOMC)
-    dates = set(FOMC_DATES) | {e["date"] for e in TL.load().get("events", []) if e.get("kind") == "fomc"} \
+    hist = HP._rows(HP.FOMC) if hist is None else hist
+    tl = TL.load().get("events", []) if tl is None else tl
+    dates = set(FOMC_DATES) | {e["date"] for e in tl if e.get("kind") == "fomc"} \
         | {e["date"] for e in cal.get("events", []) if e.get("kind") == "fomc"} | set(cal.get("fomc_pm") or {}) | {r["meeting"] for r in hist}
     nxt = sorted(d for d in dates if d > day)[:2]
     snap, asof, src = None, None, None
@@ -342,6 +345,42 @@ def h48(cal, now=None):
     return list(out.values())
 
 
+def h48_all(hap, cal):
+    """"全部"里旧的 48 小时列表：和前台同一个 h48()，另加褐皮书——旧列表（today.upcoming，qx/watch.py upcoming()）一直列着它，
+    前台那一行照口径三.8 不列（qx/happen.py 的日历块也不收）。两天里没有褐皮书时给 None，页面用前台那份。"""
+    beige = [e for e in (cal or {}).get("events", []) if e.get("kind") == "beige"]
+    if not beige:
+        return None
+    a, b = h48((hap or {}).get("calendar")), h48(list((hap or {}).get("calendar") or []) + beige)
+    return b if b != a else None
+
+
+FED_HM = {"fomc": "14:00", "presser": "14:30"}        # 美联储日程上没写时刻时的默认（决议 14:00、记者会 14:30，美东）
+
+
+def fed_bj(cal):
+    """"全部"里"接下来 7 天"那张表的议息会（决议、记者会）换成北京时间，和前台议息会那一行、48 小时、时间轴同一个写法（只给页面用，只改显示）。
+    → {"fomc|美东日期": {bj: 北京日期, hm: 北京时刻}}；日历（推送读的 today.upcoming）不动。"""
+    out = {}
+    for e in cal or []:
+        if e.get("kind") not in FED_HM:
+            continue
+        x = _et_time(e["date"], (e.get("time") or "").replace(" 美东", "")) or _et_time(e["date"], FED_HM[e["kind"]])
+        b = x.tz_convert(clock.SH)
+        out[f"{e['kind']}|{e['date']}"] = dict(bj=b.strftime("%Y-%m-%d"), hm=b.strftime("%H:%M"))
+    return out
+
+
+def cal_late(cal, t):
+    """日历是哪天取的：晚于 t 的下一个交易日（截到以前的日子做预览、自检时）才给，页面在 48 小时那几行写明"日历是哪天取的"——
+    以前的日历没存，截不回那天（只改显示）。线上每次运行都重取，给 None。"""
+    got = (cal or {}).get("fetched")
+    if not got:
+        return None
+    d = pd.Timestamp(got).tz_convert(clock.NY).date().isoformat()
+    return d if d > _next_trading(pd.Timestamp(t).strftime("%Y-%m-%d")) else None
+
+
 # ================================================================ ⑤ 基本面
 def earnings_season(t):
     from qx import earn
@@ -355,11 +394,12 @@ def earnings_season(t):
                 ai_n=len(ai), ai_beat=beat(ai))
 
 
-def tw_revenue():
-    p = os.path.join(store.HERE, "tw_revenue.csv")
-    if not os.path.exists(p):
-        return None
-    rows = [r for r in csv.DictReader(open(p, encoding="utf-8")) if r["code"] == "2330"]
+def tw_revenue(t):
+    """台积电最近一个月的营收同比：只用 t 那天已经公布的（pub ≤ t；2026-10-30 改：原来不截，截到 07-30 也写 9 月营收）。
+    读 qx/fundamentals.py 的 load_tw()，自检的 extras_cut 按同一列截。"""
+    from qx import fundamentals as FU
+    day = pd.Timestamp(t).strftime("%Y-%m-%d")
+    rows = [r for r in FU.load_tw() if r["code"] == "2330" and (r.get("pub") or "")[:10] <= day]
     if not rows:
         return None
     r = max(rows, key=lambda r: r["ym"])
@@ -389,6 +429,19 @@ def yield10(D, t):
     if s is None or len(s) < 21:
         return None
     return dict(now=_f(s.iloc[-1], 2), c20=_f((s.iloc[-1] - s.iloc[-21]) * 100, 0), date=s.index[-1].strftime("%Y-%m-%d"), src="Yahoo")
+
+
+def opt_market(D):
+    """期权块"大盘"那一行的数（只给页面用）：和 qx/options.py market() 同一个算法——过去 10 年（2,520 个交易日，含当天）里不高于当天的比例，
+    页面写"10 年分位 N"，不写"偏高 / 少见"（方案第五节第 5 条；options.py 的 95 / 70 / 30 只决定那几个词，不进任何规则）。"""
+    def one(k):
+        s = D[k]["c"].dropna()
+        return dict(now=_f(s.iloc[-1], 4), p=_f((s.iloc[-2520:] <= s.iloc[-1]).mean() * 100, 0))     # 原值留 4 位，页面只取整一次（和 market() 一样）
+    out = {k: one(sym) for k, sym in (("vix", "^VIX"), ("skew", "^SKEW"), ("vvix", "^VVIX")) if sym in D and len(D[sym]["c"].dropna())}
+    if "vix" in out and "^VIX9D" in D and len(D["^VIX9D"]["c"].dropna()):
+        r = D["^VIX9D"]["c"].dropna().iloc[-1] / D["^VIX"]["c"].dropna().iloc[-1]
+        out.update(r9=_f(r, 4), r9_ge1=bool(r >= 1))          # "眼前几天有事"照 market() 用没取整的比
+    return out or None
 
 
 # ================================================================ 触发行：今天（上一个交易日收盘以来）新的
@@ -458,6 +511,8 @@ def triggers(D, t, radar, today, hap, R):
     # 4) 配对读数升级（口径十：平常 → 偏高 / 少见，偏高 → 少见）
     try:
         rank = {"平常": 0, "偏高": 1, "少见": 2}
+        RG = NR.registry_at(t)                        # 门槛写成数：偏高 = 同方向更极端的不到 high_pct，少见 = 不到 rare_pct（登记/narratives.toml）
+        gate = {"偏高": RG["high_pct"], "少见": RG["rare_pct"]}
         prv = {p["id"]: p["level"] for b in NR.compute(D, tp)["baskets"] for p in b.get("pairs") or []}
         seen = set()
         for b in (radar.get("narr") or {}).get("baskets") or []:
@@ -467,7 +522,7 @@ def triggers(D, t, radar, today, hap, R):
                 seen.add(p["id"])
                 if rank.get(p["level"], 0) > rank.get(prv.get(p["id"], "平常"), 0):
                     k = "fund" if p["id"].startswith("BAML") or p["id"] in ("^TNX", "HYG/IEF") else "price"
-                    trig[k].append(dict(src="pair", key="pair:" + p["id"], title=f"{p['name']} 20 日变化：历史上 {p['frac'] * 100:.1f}% 的日子更极端（截至 {p['asof']}）"))
+                    trig[k].append(dict(src="pair", key="pair:" + p["id"], title=f"{p['name']} 20 日变化到了历史最极端的 {gate[p['level']] * 100:g}% 以内（历史上 {p['frac'] * 100:.1f}% 的日子更极端，截至 {p['asof']}）"))
     except Exception:
         pass
     # 5) 卡新满足（口径十二；第 1、3 类归买卖方，第 5 类归预期，第 6 类归价格；第 2、4 类放后台）
@@ -519,9 +574,11 @@ def build(D, R, radar, today, hap, ice, cal):
     out = dict(asof=t.strftime("%Y-%m-%d"), min_obs=PS.MIN_OBS)          # 仓位读数至少几个观测才和历史比（页面写"攒到第几期"用）
     parts = [("emo", lambda: emotion(R)), ("pos", lambda: position(D, t)), ("ends", lambda: baskets_ends(radar.get("narr"))),
              ("flow", lambda: flows(D, t, radar.get("pos"))), ("m1", lambda: m1(D, t)), ("fomc", lambda: fomc(cal, t)),
-             ("react", lambda: reaction(radar.get("cards"))), ("season", lambda: earnings_season(t)), ("tw", tw_revenue),
+             ("react", lambda: reaction(radar.get("cards"))), ("season", lambda: earnings_season(t)), ("tw", lambda: tw_revenue(t)),
              ("credit", lambda: credit(ice, radar.get("narr"))), ("y10", lambda: yield10(D, t)),
-             ("judge", lambda: judge_line(today)), ("h48", lambda: h48((hap or {}).get("calendar")))]
+             ("judge", lambda: judge_line(today)), ("h48", lambda: h48((hap or {}).get("calendar"))),
+             ("h48all", lambda: h48_all(hap, cal)), ("fed_bj", lambda: fed_bj((hap or {}).get("calendar"))), ("cal_late", lambda: cal_late(cal, t)),
+             ("optmkt", lambda: opt_market(D))]
     for k, f in parts:
         try:
             out[k] = f()
@@ -537,6 +594,8 @@ def build(D, R, radar, today, hap, ice, cal):
         from qx import oldrules
         xs, out["ddv_pct"] = oldrules.today(D, t)
         for x in xs:
+            if x["key"] == "old:y10_up":                  # 这条规则读 FRED DGS10（晚一天）；同一块的 10 年美债是 Yahoo ^TNX，写明来源和观测日，免得两个数对不上
+                x = dict(x, title=x["title"] + f"（FRED DGS10，截至 {int(x['date'][5:7])}/{int(x['date'][8:])}）")
             out["trig"][x["pillar"]].append(dict(src="old", key=x["key"], title=x["title"], why=x["why"]))
     except Exception as e:
         out["old_err"] = type(e).__name__
