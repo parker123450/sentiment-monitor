@@ -155,7 +155,7 @@
         const ch = (F.changed || []).map(x => x.runs ? `${esc(x.market)}${esc(x.word)}（之前连挤 ${x.runs} 期）` : `${esc(x.market)}新${esc(x.word)}`);
         const byWord = {}; for (const x of F.still || []) (byWord[x.word] = byWord[x.word] || []).push(x);
         const st = Object.entries(byWord).map(([w, xs]) => `${xs.map(x => `${esc(x.market)}（第 ${x.runs} 期）`).join("、")}还${esc(w)}${xs.every(x => x.dir === xs[0].dir) && xs[0].dir ? "，这一期都在" + xs[0].dir : ""}`);
-        const calm = (F.calm || []).map(x => `${esc(x.market)}${esc(x.word)}`);
+        const calm = (F.calm || []).map(x => x.why ? esc(x.why) : `${esc(x.market)}${esc(x.word)}`);   // why：方向不一致写出是哪个合约、谁在哪边（qx/front.py mixed_why()，新3）
         h += `<p class="hl">期货仓位（CFTC ${d2(F.asof)} 那期，${d2(F.pub)} 公布）：${[...ch, ...st, ...calm].join("；") || "没有挤在一边的市场"}</p>`;
         const ns = F.nums || [];
         if (ns.length) h += `<div class="rw">${ns.map(x => `${esc(x.lab || x.market)} ${x.prev == null ? "" : x.prev + "% → "}<b>${x.now}%</b>${x.pos == null ? "" : `（历史位置 ${Math.round(x.pos * 100)}%）`}`).join(" · ")}<small>　净多 ÷ 总持仓</small></div>`;

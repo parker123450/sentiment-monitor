@@ -104,6 +104,31 @@ def baskets_ends(narr):
 
 
 # ================================================================ ③ 买卖方
+TFF_SHORT = {"13874A": "标普", "209742": "纳指", "043602": "10 年美债", "042601": "2 年美债", "020601": "长期美债"}
+
+
+def side_word(r):
+    """一个读数在哪边，照口径十一的 10% 门槛写（新3）：位置在 10% 以外写"在多头一侧 / 在空头一侧（位置）"，
+    在中间的写离哪头近："偏多 / 偏空（位置，没过 90% / 没过 10%）"。读数高是空头拥挤的（long_is_crowded=False）反过来。"""
+    p = round(r["pos"] * 100)
+    if r.get("side") in ("多头", "空头"):
+        return f"在{r['side']}一侧（{p}%）"
+    hi = r["pos"] >= 0.5
+    return f"{'偏多' if hi == bool(r.get('long_is_crowded', True)) else '偏空'}（{p}%，没过 {90 if hi else 10}%）"
+
+
+def mixed_why(rs):
+    """"方向不一致"写出是哪个合约、谁在哪边（新3：③ 不写"多头挤在标普和美债"，照口径十一写）。只写 TFF 分开的合约（资管、杠杆基金两个读数）里
+    有读数在 10% 以外的那几个，例："标普：资管在多头一侧（94%），杠杆基金偏空（11%，没过 10%），方向不一致"。写不出就给 None，页面照旧写"方向不一致"。"""
+    by = {}
+    for r in rs:
+        if r.get("tff") and r.get("pos") is not None and r.get("code") in TFF_SHORT:
+            by.setdefault(r["code"], []).append(r)
+    ps = [f"{TFF_SHORT[c]}：" + "，".join(f"{r['who']}{side_word(r)}" for r in xs) for c, xs in by.items()
+          if any(r.get("side") in ("多头", "空头") for r in xs)]
+    return "；".join(ps) + "，方向不一致" if ps else None
+
+
 def flows(D, t, pos):
     """CFTC "挤在哪边"：这一期对上一期（新挤进 / 退出、连挤了几期、挤着的这一期在加还是在减）。只用口径十一已登记的结果。"""
     from qx import positioning as PS
@@ -156,7 +181,11 @@ def flows(D, t, pos):
     calm = sorted({mk for mk, w in word.items() if not hot(w) and w not in ("数据不够",) and mk not in {c["market"] for c in changed}})
     tff = [dict(code=r["code"], name={"13874A": "标普", "209742": "纳指"}[r["code"]], who=r["who"], now=r["value"], pos=_f(r["pos"], 2) if r["pos"] is not None else None, chg=r["chg"])
            for r in pos["readings"] if r.get("tff") and r["code"] in ("13874A", "209742")]       # 美股期指谁在场上（TFF，口径十四.6）：常驻
-    return dict(asof=asof, pub=pub, changed=changed, still=still, nums=nums, calm=[dict(market=m, word=word[m]) for m in calm if m in ("美股", "美债", "美股波动")],
+    crowd_rs = lambda mk: [r for r in pos["readings"] if r["market"] == mk and r.get("crowd", True)]
+    # 新3 只改标普那一句（steps2 新3："页面和现在一样，只有三处错和 ③ 那句改了"）；美债照旧写"方向不一致"，要不要也写开等新4 排版时定
+    why = lambda mk: mixed_why(crowd_rs(mk)) if mk == "美股" and word[mk] == "方向不一致" else None
+    return dict(asof=asof, pub=pub, changed=changed, still=still, nums=nums,
+                calm=[dict(market=m, word=word[m], **({"why": why(m)} if why(m) else {})) for m in calm if m in ("美股", "美债", "美股波动")],
                 tff=tff, tff_on=on, letf=pos.get("letf"))
 
 
