@@ -418,6 +418,9 @@ def five_check(D, aaii, R, log=print):
             e2["word"] == "下一件：11/3 CPI" and e2["lv"] == "gray" and e2["next"] == "离 11/3 还有 3 个交易日（北京时间）"
             and e2["if"]["t"] == "如果日历不变，到 10/30 收盘 ④ 就变成“明后天：CPI”",
             not if_bad(e1, secs) and not if_bad(e2, secs)]
+    # 验收修：日历不是那天的（cal_late 给了日子）、或者 5 天一件登记的事都没有（"这几天的日历没存下来"）：灰字，不写没事 / 下一件，不出"如果……就……"
+    e3, e4 = FR._st_expect(n5, [["11/9", "非农"]], "2026-10-30"), FR._st_expect([dict(md="10/19", ev=[], er=[]), dict(md="10/20"), dict(md="10/21")], [["10/29", "议息会"]])
+    good += [all(e and e["word"] == "这几天的日历没存下来" and e["lv"] == "gray" and not e.get("next") and not e.get("if") for e in (e3, e4))]
     ok &= all(good)
     log("  新5 ④ 两天清单（构造的）：" + ("一致" if all(good) else "不一致 第 " + "、".join(str(i + 1) for i, x in enumerate(good) if not x) + " 条"))
     # 离出清：代码里"在卖 / 在怕 / 投降"10 天没再亮、价格还在跌（回撤 ÷ 长期波动 ≤ −0.3）就退到"平稳 / 在出清"

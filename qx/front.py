@@ -183,12 +183,12 @@ def flows(D, t, pos):
         x["dir"] = None if not ns else ("加" if all((n["now"] - n["prev"]) * (1 if x["word"] == "挤在多头" else -1) > 0 for n in ns)
                                          else "减" if all((n["now"] - n["prev"]) * (1 if x["word"] == "挤在多头" else -1) < 0 for n in ns) else "有加有减")
     calm = sorted({mk for mk, w in word.items() if not hot(w) and w not in ("数据不够",) and mk not in {c["market"] for c in changed}})
-    tff = [dict(code=r["code"], name={"13874A": "标普", "209742": "纳指"}[r["code"]], who=r["who"], now=r["value"], pos=_f(r["pos"], 2) if r["pos"] is not None else None, chg=r["chg"],
+    tff = [dict(code=r["code"], market=r["market"], name=TFF_SHORT[r["code"]], who=r["who"], now=r["value"], pos=_f(r["pos"], 2) if r["pos"] is not None else None, chg=r["chg"],
                 side=r.get("side"))                                                       # side：10% 以外的"多头 / 空头"（positioning.side()，没取整的位置判的；新4 复查改正）
-           for r in pos["readings"] if r.get("tff") and r["code"] in ("13874A", "209742")]       # 美股期指谁在场上（TFF，口径十四.6）：新4 起并进 ③ 点开"期货持仓"那一行
+           for r in pos["readings"] if r.get("tff") and r["code"] in TFF_SHORT]       # 期指谁在场上（TFF，口径十四.6）：新4 起并进 ③ 点开"期货持仓"那一行
     crowd_rs = lambda mk: [r for r in pos["readings"] if r["market"] == mk and r.get("crowd", True)]
-    # 新3 只改标普那一句（steps2 新3："页面和现在一样，只有三处错和 ③ 那句改了"）；美债照旧写"方向不一致"，要不要也写开等新4 排版时定
-    why = lambda mk: mixed_why(crowd_rs(mk), mk) if mk == "美股" and word[mk] == "方向不一致" else None
+    # 新3 只改标普那一句；验收修：美债也写开（卡片写"美债：拥挤（多头挤）"时 ③ 要说得出美债是哪个合约、谁在哪边），和美股同一个写法
+    why = lambda mk: mixed_why(crowd_rs(mk), mk) if mk in ("美股", "美债") and word[mk] == "方向不一致" else None
     return dict(asof=asof, pub=pub, changed=changed, still=still, nums=nums,
                 calm=[dict(market=m, word=word[m], **({"why": why(m)} if why(m) else {})) for m in calm if m in ("美股", "美债", "美股波动")],
                 tff=tff, tff_on=on, letf=pos.get("letf"))
@@ -972,12 +972,17 @@ def _evword(rows):
     return ""
 
 
-def _st_expect(next5, later_ev):
+def _st_expect(next5, later_ev, late=None):
     """④ 两个交易日的清单（三.8，估的日子不算；和"接下来 5 个交易日"那一块同一份）：有事写"明后天：事件名"，没有写"下一件：日期 事件"。
-    "如果……就……"只写日历不变时下一个收盘后状态词变成什么（十四.12："就"后面只写状态怎么变）。"""
+    "如果……就……"只写日历不变时下一个收盘后状态词变成什么（十四.12："就"后面只写状态怎么变）。
+    验收修：日历不是那天的（late：cal_late() 给了日子，截到以前的日子用的是后来取的日历），或者这 5 天一件登记的事都没有
+    （"接下来 5 个交易日"那块写"这几天的日历没存下来"的同一个条件，page/k.js cal4()）：灰字"这几天的日历没存下来"，
+    不写"没事 / 下一件"，不出"如果……就……"——不拿后来取的日历给那天下结论。"""
     if not next5:
         return None
     has = lambda r: bool(r.get("ev") or r.get("er"))
+    if late or not any(has(r) for r in next5):
+        return dict(word="这几天的日历没存下来", lv="gray", sec=["三.8"], chips=[], nocal=True)
 
     def word(rows, rest, later):
         w = _evword(rows)
@@ -1085,13 +1090,13 @@ def _st_fund(D, t, rows=None):
     return o
 
 
-def five_state(D, R, t, pos=None, flow=None, credit_rows=None, next5=None, later_ev=None, since=None):
+def five_state(D, R, t, pos=None, flow=None, credit_rows=None, next5=None, later_ev=None, since=None, cal_late=None):
     """五样的状态词、颜色、离下一步、"如果……就……"（新5，只给页面用）。①②③⑤ 只用 t 以前的数据，截到以前重算和当天一样（自测查）；
     ④ 用日历那一份（日历没存历史，不在自测里）。"""
     t = pd.Timestamp(t)
     out = {}
     for k, f in (("emo", lambda: _st_emo(D, R, t)), ("price", lambda: _st_price(D, t)), ("flow", lambda: _st_flow(D, t, pos, flow, since)),
-                 ("expect", lambda: _st_expect(next5, later_ev)), ("fund", lambda: _st_fund(D, t, credit_rows))):
+                 ("expect", lambda: _st_expect(next5, later_ev, cal_late)), ("fund", lambda: _st_fund(D, t, credit_rows))):
         try:
             out[k] = f()
         except Exception as e:
@@ -1107,6 +1112,8 @@ def page_rows(out):
 
     def one(k, name, line):
         o = V.get(k) or {}
+        if o.get("today") and o.get("lv") == "yellow":       # 验收修：因为"今天有这一样的变化"才黄的（today_lv()，十四.12），黄的原因写在同一行最前面
+            line = "今天有变化" + ("；" + line if line else "")
         rows.append(dict(k=k, no="①②③④⑤"[NO[k] - 1], name=name, word=o.get("word") or "—", lv=o.get("lv") or "gray", sec=o.get("sec") or [],
                          chips=o.get("chips") or [], line=line or "", next=o.get("next") or "", **({"if": o["if"]} if o.get("if") else {})))
     E = V.get("emo") or {}
@@ -1146,10 +1153,10 @@ def page_rows(out):
         if Ff and not n_ok:
             bits.append("五档利差 5 日走阔都不算")
         elif w:
-            bits.append("、".join(f"{x['name']} 5 日 {_sg(x['c5'], 0)} 基点" for x in w) + "，到了最极端的 " + ("1%" if Ff.get("worse") else "5%")
+            bits.append("、".join(f"{x['name']} 5 日 {_sg(x['c5'], 0)} 基点" for x in w) + "，到了" + ("少见（1%）" if Ff.get("worse") else "偏高（5%）")
                         + (f"（{nas}）" if na else ""))
-        else:
-            bits.append((f"算得了的 {n_ok} 档" if na else "五档") + " 5 日走阔都没到最极端的 5%" + (f"（{nas}）" if na else ""))
+        else:                                                # 验收修：照样稿写"没到偏高"，括号里是门槛（同方向更极端的不到 5%，口径十一）
+            bits.append((f"算得了的 {n_ok} 档" if na else "五档") + " 5 日都没到偏高（5%）" + (f"（{nas}）" if na else ""))
     if Y:
         bits.append(f"10 年利率 20 日 {_sg(Y['c20'], 0)} 基点")
     one("fund", "基本面", "；".join(bits))
@@ -1361,7 +1368,7 @@ def page_keys(out, today, hap_p, cal, radar, t, D=None, R=None):
     if D is not None and R is not None:                   # 新5：五样的状态词、颜色、离下一步、"如果……就……"
         try:
             out["five"] = five_state(D, R, t, pos=radar.get("pos"), flow=out.get("flow"), credit_rows=out.get("credit"), next5=out.get("next5"),
-                                     later_ev=(out.get("later_ev") or [None])[0], since=out.get("since"))
+                                     later_ev=(out.get("later_ev") or [None])[0], since=out.get("since"), cal_late=out.get("cal_late"))
             today_lv(out["five"], out.get("changes"))
         except Exception as e:
             out["five"], out["five_err"] = None, type(e).__name__

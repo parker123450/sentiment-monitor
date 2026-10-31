@@ -152,16 +152,20 @@
     const t = e.target; if (!t.matches || !t.matches('[role="button"][aria-expanded][aria-controls]') || t.closest(".view")) return;
     e.preventDefault(); toggle(t);
   });
-  // "另有 N 件 / 其余 N 类 / 其余 N 张"：露出同一块里收着的 [data-mr] 行（一次露 data-more 行），露完按钮就不出了
+  // "另有 N 件 / 其余 N 类 / 其余 N 张"：露出同一块里收着的 [data-mr] 行，露完按钮就不出了。
+  // 一次最多露 data-more 行，剩下的平均分几次露（验收修：各市场 15 类一次露完要加 517 px，超过点开 260 的线；一次最多 6 行，15 类分 3 次、每次 5 类）。
+  // data-tpl 里 N = 还收着几行，K = 这一下露几行；"…K…"那一截只在分几次露的时候出（｛…｝括着）
+  const moreK = (b, n) => { const m = +b.dataset.more || 99; return Math.ceil(n / Math.ceil(n / m)); };
   function moreSync(bl) {
     if (!bl) return;
     const n = bl.querySelectorAll("[data-mr][hidden]").length;
-    for (const b of bl.querySelectorAll("[data-more]")) { b.hidden = !n; if (n) b.textContent = b.dataset.tpl.replace("N", n); }
+    for (const b of bl.querySelectorAll("[data-more]")) { b.hidden = !n; if (!n) continue; const k = moreK(b, n);
+      b.textContent = b.dataset.tpl.replace(/｛(.*?)｝/, (_, x) => k < n ? x : "").replace("N", n).replace("K", k); }
   }
   document.addEventListener("click", e => {
     const b = e.target.closest && e.target.closest("[data-more]"); if (!b) return; e.preventDefault();
-    const bl = b.closest("[data-blk]"); if (!bl) return; let n = +b.dataset.more || 99;
-    for (const r of bl.querySelectorAll("[data-mr][hidden]")) { if (n-- <= 0) break; r.hidden = false; }
+    const bl = b.closest("[data-blk]"); if (!bl) return; const hid = bl.querySelectorAll("[data-mr][hidden]"); let n = moreK(b, hid.length);
+    for (const r of hid) { if (n-- <= 0) break; r.hidden = false; }
     moreSync(bl);
   });
 
@@ -250,10 +254,11 @@
       for (const sym of ["SMH", "QQQ", "SPY"]) {
         const r = O && (O.rows || []).find(x => x.sym === sym), a = r && (r.ans || []).find(x => /押在哪个价位/.test(x.q));
         const up = a && /上方最大押注 ([\d,.]+)/.exec(a.a), dn = a && /下方最大押注 ([\d,.]+)/.exec(a.a);
-        if (up || dn) bet.push(`${sym} ${dn ? dn[1] : "—"}–${up ? up[1] : "—"}`);
+        if (up || dn) bet.push(`${sym} ${dn ? dn[1] : "—"} / ${up ? up[1] : "—"}`);
       }
       const od = OD.SMH || OD.SPY;
-      if (bet.length) rows.push(li("支撑压力", bet.join(" · "), `期权最大押注，45 天内${od ? `，${D2(od.date)} 的链` : ""}`));
+      // 验收修：标签写"支撑 / 压力"，每个品种"下方最大押注 / 上方最大押注"照这个次序（样稿是"上 800 / 下 750"，400 宽多一行，② 点开会到 260 的线）
+      if (bet.length) rows.push(li("支撑 / 压力", bet.join(" · "), `期权最大押注，45 天内${od ? `，${D2(od.date)} 的链` : ""}`));
       const HL = FR.hl;
       if (K.n20 || HL) rows.push(li("内部", [K.n20 ? `${K.nb20} / ${K.n20} 只在 20 日线下` : "", K.pct50 != null ? `${Math.round(K.pct50)}% 站上 50 日线` : "",
         HL ? `52 周新高减新低 ${HL.net > 0 ? "+" : HL.net < 0 ? "−" : ""}${Math.abs(HL.net)}（${HL.hi} − ${HL.lo}，算了 ${HL.n} 只）` : ""].filter(Boolean).join(" · ")));
@@ -291,16 +296,18 @@
           parts.push(xs.map(x => at(x.market) + (!same && x.dir ? `（${dw(x.dir)}）` : "")).join("、") + ` ${esc(w.replace("挤在", "挤"))}` + (same ? `，${xs.length > 1 ? "都" : ""}${dw(xs[0].dir)}` : "")); }
         for (const x of F.changed || []) { const p = ns.filter(n => n.market === x.market && n.pos != null);
           parts.push(`${esc(x.market)}${p.length ? " " + p.map(n => pc(n.pos)).join("、") : ""} ${x.runs ? "不再挤" : "新" + esc(x.word)}`); }
-        const us = (F.calm || []).find(x => x.market === "美股" && x.word === "方向不一致");
-        if (us) { const TF = F.tff || [], cs = [...new Set(TF.map(x => x.code))].map(c => TF.filter(x => x.code === c)).filter(xs => xs.some(x => x.side === "多头" || x.side === "空头"));
-          parts.push((cs.length ? cs.map(xs => xs.map((x, j) => `${j ? "" : esc(x.name)}${esc(x.who)} ${x.pos == null ? "—" : pc(x.pos)}`).join("、")).join("；") + "，" : "美股") + "方向不一致"); }
+        // 验收修：美债"方向不一致"也写开（"10 年美债资管 100%、杠杆基金 8%，方向不一致"），和标普同一个写法；只写有读数在 10% 以外的合约
+        for (const mk of ["美股", "美债"]) {
+          if (!(F.calm || []).some(x => x.market === mk && x.word === "方向不一致")) continue;
+          const TF = (F.tff || []).filter(x => (x.market || "美股") === mk), cs = [...new Set(TF.map(x => x.code))].map(c => TF.filter(x => x.code === c)).filter(xs => xs.some(x => x.side === "多头" || x.side === "空头"));
+          parts.push((cs.length ? cs.map(xs => xs.map((x, j) => `${j ? "" : esc(x.name)}${esc(x.who)} ${x.pos == null ? "—" : pc(x.pos)}`).join("、")).join("；") + "，" : mk) + "方向不一致"); }
         rows.push(li("期货持仓", parts.join("；") || "没有挤在一边的市场", `CFTC ${D2(F.asof)}，历史位置`));
       }
       if (K.pc != null || K.aaii != null) rows.push(li("保险和散户", [K.pc != null ? `买跌 ÷ 买涨 ${fmt(K.pc, 2)}（平时 ${fmt(K.pcm, 2)}）` : "", K.aaii != null ? `散户多减空 ${sgn(K.aaii, 1)}%（一周前 ${sgn(K.aaiip, 1)}%）` : ""].filter(Boolean).join(" · ")));
-      // 杠杆 ETF：SOXL 股数占比（qx/positioning.py letf_readings() 的份额比，口径十四.7 只作对照）；最近一天的净申赎（letf_flow()）连着两个交易日都有份额才算
+      // 杠杆 ETF：SOXL 份额占比（qx/positioning.py letf_readings() 的份额比"SOXL 份额 ÷（SOXL + SOXS）"，状态"在攒什么"同一个名字；口径十四.7 只作对照）；最近一天的净申赎（letf_flow()）连着两个交易日都有份额才算
       // 新8：5 天都算得出时写 5 日净申赎（qx/positioning.py letf_5d()，口径十四.15），代替最近一天那一句；算不出照旧写最近一天
       const LR = ((RR.pos && RR.pos.readings) || []).find(x => x.src === "Direxion" && /^SOXL 份额/.test(x.name || "")), L5 = FR.letf5 && FR.letf5.ok ? FR.letf5 : null, L = !L5 && F && F.letf;
-      if (LR || L || L5) rows.push(li("杠杆 ETF", [LR ? `SOXL 股数占比 ${LR.value}%（${D2(LR.asof)}${LR.pos == null ? "" : `，历史位置 ${pc(LR.pos)}`}）` : "",
+      if (LR || L || L5) rows.push(li("杠杆 ETF", [LR ? `SOXL 占多空两只份额的 ${LR.value}%（${D2(LR.asof)}${LR.pos == null ? "" : `，历史位置 ${pc(LR.pos)}`}）` : "",
         L5 ? `${D2(L5.start)}–${D2(L5.last)} 5 日净申赎 ${S1(L5.sum)} 亿美元（${D2(L5.last)} ${S1(L5.today)}）${L5.r_soxl == null ? "" : `，同期 SOXL ${S1(L5.r_soxl)}%`}` : "",
         L ? `${D2(L.day)} 净申赎 ${["soxl", "soxs"].map(k => `${k.toUpperCase()} ${L[k] == null ? "不算" : S1(L[k]) + " 亿美元"}`).join("、")}` +
           (L.net == null ? "" : `，合起来钱往${L.net >= 0 ? "做多" : "做空"}那边 ${Math.abs(L.net).toFixed(1)} 亿${L.pos == null ? "" : `（历史位置 ${pc(L.pos)}）`}`) : ""].filter(Boolean).join("；")));
@@ -516,8 +523,10 @@
     const li = n => `<li><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.t)}</a><small>${esc(n.topic ? n.topic + " · " : "")}${esc(n.src)} · ${esc(n.ago)}${n.k > 1 ? ` · ${n.k} 家报道` : ""}</small></li>`;
     if (nw.closest("[data-blk]")) {          // 新4："发生了什么"里的要闻按钮，点开是前 5 条；7 天日历、更多新闻不画（代码留着，docs/不再显示的.md）
       const top = (N.top || []).slice(0, 5), b = $("newsb");
+      // 验收修：一条一行（照样稿）：标题截成一行 · 来源 · 几小时前；话题和全文在 title 里
+      const li1 = n => `<li title="${esc((n.topic ? n.topic + "：" : "") + n.t)}"><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.t)}</a><small>${esc(n.src)} · ${esc(n.ago)}${n.k > 1 ? ` · ${n.k} 家` : ""}</small></li>`;
       if (top.length && b) { b.textContent = `要闻 ${top.length} 条 ›`; b.hidden = false;
-        nw.innerHTML = `<ul class="nw">${top.map(li).join("")}</ul><p class="vlink">新闻从哪几家取：<a href="#v-shuo" data-view="shuo" data-sec="s-news">说明 ›</a></p>`; }
+        nw.innerHTML = `<ul class="nw n1">${top.map(li1).join("")}</ul><p class="vlink">新闻从哪几家取：<a href="#v-shuo" data-view="shuo" data-sec="s-news">说明 ›</a></p>`; }
       return;
     }
     const what = e => e.kind === "earnings" ? `${esc(e.name || e.sym)} 财报` : esc(e.title);
@@ -708,7 +717,7 @@
       const it = { s: x.s, bp: !!x.bp, chg: x.chg }, ch = chg(it);
       return `<div class="mr" data-mk="${esc(tok)}"${i >= SHOW ? " data-mr hidden" : ""}><span class="mc">${esc(x.cls)}</span><span class="mi">${esc(x.n || x.s || "")} <b data-s="${esc(x.s || "")}" data-x="${esc(JSON.stringify(it))}"${cP(ch)}>${txt(it, ch)}</b>${x.day && x.day !== RAW.asof ? `<small>${D2(x.day)}</small>` : ""}</span><span class="mx num">${x.z == null ? "—" : Math.abs(x.z).toFixed(1) + " 倍"}</span></div>`; };
     el.innerHTML = `<div class="bh"><h2>各市场</h2><span class="meta">按今天多不寻常排 · 倍数 = 比平常一天</span></div>` + top.map(rowH).join("") +
-      `<button type="button" class="more" data-more="99" data-tpl="其余 N 类 ›" hidden></button>`;
+      `<button type="button" class="more" data-more="6" data-tpl="其余 N 类｛ · 先看 K 类｝ ›" hidden></button>`;
     el.dataset.done = "1"; moreSync(el);
   }
   async function live() {
@@ -852,9 +861,14 @@
   (function flash4() {
     const F = RAW.flash, el = $("flash"); if (!F || !el || !el.closest("[data-blk]")) return;
     const its = F.items || [], top = Math.max(1, Math.min(F.top || 3, 3));
-    el.innerHTML = its.map((x, i) => `<div class="fli" data-ks="${esc((x.k || []).join(" "))}"${i >= top ? " hidden" : ""}><a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.t)}</a>` +
-      `<div class="fm">${(x.src || []).map(esc).join("；")} · 看到 ${esc(x.seen)}（北京）${x.n > 1 ? ` · ${x.n} 家` : ""}</div>` +
-      `${(x.first || []).length ? `<div>${x.first.map(f => `<span class="tg first">第一次：${esc(f)}</span>`).join("")}</div>` : ""}</div>`).join("");
+    // 验收修：一条一行（照样稿）：［第一次］标题截成一行 · 来源 时刻（北京）。全文、各家来源、"第一次"是哪个和哪条线，写在 title 里；
+    // 推送点到这一条（.hit）时标题不截、下面露出那一行全文（.fx）
+    const s0 = s => String(s || "").split(" · ")[0];
+    el.innerHTML = its.map((x, i) => { const fs = x.first || [], src = x.src || [];
+      const fx = `${src.join("；")} · 看到 ${x.seen}（北京）${x.n > 1 ? ` · ${x.n} 家` : ""}${fs.length ? ` · 第一次：${fs.join("、")}` : ""}`;
+      return `<div class="fli" data-ks="${esc((x.k || []).join(" "))}"${i >= top ? " hidden" : ""} title="${esc(x.t + "\n" + fx)}">` +
+        (fs.length ? `<span class="tg first">第一次</span>` : "") + `<a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.t)}</a>` +
+        `<span class="fm">${esc(s0(src[0]))}${x.n > 1 ? ` 等 ${x.n} 家` : ""} ${esc(x.seen)}</span><span class="fx">${esc(fx)}</span></div>`; }).join("");
     el.hidden = !its.length;
     const m = $("happen-m"); if (m) m.textContent = its.length ? `快讯 ${F.hours} 小时内 ${its.length} 件` : `快讯 ${F.hours} 小时内没有打上标签的`;
   })();
@@ -889,7 +903,7 @@
 
   // ---------- K 线（照「科技情绪全景」）
   const KL = (function () {
-    const LS = "qx-kline-v2", LSD = "qx-draw-v1";          // v2（2026-10-29）：前台默认只画 200 日线、色带、恐慌热度副图
+    const LS = "qx-kline-v2", LSD = "qx-draw-v1";          // v2（2026-10-29）：前台默认只画 200 日线、色带、恐慌热度副图；验收修（10-31）：阶段标签、抛售 / 涨过头标签默认开（方案第一节"图上标出卖和慌的地方"，样稿上有 ▲ 抛售；存过设置的照存的）
     const ld = (k, dflt) => { try { const v = JSON.parse(localStorage.getItem(k) || "null"); return v == null ? dflt : v; } catch (e) { return dflt; } };
     const sv = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} };
     const SYMS = (RAW.chart || []).filter(s => s.rows && s.rows.length > 30);
@@ -897,7 +911,7 @@
     const MA_COL = { 5: ["#c98a00", "#e8b23a"], 10: ["#c2457a", "#ed93b1"], 20: ["#6250d6", "#a49cf0"], 50: ["#2a78d6", "#5b9be6"], 100: ["#178f66", "#3cc794"], 200: ["#d9561f", "#f08a5d"] };
     const XCOL = [["#7a6f5c", "#b5a98f"], ["#4d7c8a", "#86b6c4"], ["#8a5a44", "#c9967e"], ["#5c6b2e", "#a3b56a"]];
     const SUBS = [["heat", "恐慌热度（四行色块）"], ["fomc", "下次议息会降息概率"], ["sell", "抛售恐慌"], ["price", "定价恐慌"], ["pos", "仓位恐慌"], ["credit", "信用压力"], ["rsi", "RSI"], ["vix", "VIX"], ["t3", "VIX 期限结构"], ["breadth", "成分股广度"], ["none", "不显示"]];
-    const cfg = Object.assign({ sym: SYMS[0].k, n: 252, mas: DEF_MA.slice(), on: { 5: 0, 10: 0, 20: 0, 50: 0, 100: 0, 200: 1 }, sub: "heat", mk: false, smk: false, bg: true, sw: false, redUp: false }, ld(LS, {}));
+    const cfg = Object.assign({ sym: SYMS[0].k, n: 252, mas: DEF_MA.slice(), on: { 5: 0, 10: 0, 20: 0, 50: 0, 100: 0, 200: 1 }, sub: "heat", mk: true, smk: true, bg: true, sw: false, redUp: false }, ld(LS, {}));
     if (!SYMS.some(s => s.k === cfg.sym)) cfg.sym = SYMS[0].k;
     // 时间范围：手机第一次打开默认 6 个月。新6 复查：1200 以上 K 线在中栏（宽不到 560），也按 6 个月开——
     // 1 年 252 根挤在中栏约 430 px 里每根不到 2 px，draw() 就退成一条收盘线。存着的 252 多半是新6 以前电脑上的默认（cfg 整份存），在中栏也按 6 个月开；
@@ -1075,7 +1089,9 @@
         if (hover && hover.y <= G.pH) { g.strokeStyle = T.accent; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(xOf(pend.i), yP(pend.p)); g.lineTo(hover.x, hover.y); g.stroke(); g.setLineDash([]); } }
       // 标签：阶段在 K 线下方（出清在上方），抛售在下方，涨过头在上方；放不下时退成小圆点
       g.font = "700 11px " + fb; g.textBaseline = "middle"; g.textAlign = "center";
-      const placed = [], top = 4, bot = G.pH - STRIP() - 4;
+      // 验收修：标签默认开以后，左上角那行读数（#klegend，宽过 560 才画）会压住靠上的标签：标签的上沿从读数下面算起，放不下就退成小圆点
+      const lg = $("klegend"), lr = lg && lg.getClientRects().length ? lg.getBoundingClientRect() : null;
+      const placed = [], top = lr && lr.height ? Math.max(4, Math.round(lr.bottom - cv.getBoundingClientRect().top) + 2) : 4, bot = G.pH - STRIP() - 4;
       const hit = (x0, y0, x1, y1) => placed.some(r => x0 < r[2] && x1 > r[0] && y0 < r[3] && y1 > r[1]);
       for (let i = G.i0; i <= G.i1; i++) {
         const ms = MK.get(B[i].d); if (!ms) continue; const b = B[i], x0 = xOf(i);
@@ -1208,9 +1224,10 @@
       const hh = H[1].p > H[0].p, hl = L[1].p > L[0].p, st = hh && hl ? "上升结构" : !hh && !hl ? "下降结构" : "震荡结构";
       return `${st}（最近两个高点 ${fmtP(H[0].p)} → ${fmtP(H[1].p)}，低点 ${fmtP(L[0].p)} → ${fmtP(L[1].p)}）。现价离上一个摆动低点 ${sgn((c / L[1].p - 1) * 100, 1)}%，离上一个摆动高点 ${sgn((c / H[1].p - 1) * 100, 1)}%`;
     }
-    // 新7：#kma（最新一天的均线事实）、#kkey（标签说明）、#kpanel（那天的事实、画线面板）、#kpan 滑条都在 #kall 里，#kall 不画了（hidden），照算照写；
-    // 图下只留那一天（新7 复查：加上那天半导体市场的阶段、哪一型、四条读数，见 dayLine()）和"怎么看 ›"（到说明 s-k：标签、色带、均线的说明，
-    // 和"阶段、恐慌热度是整个半导体市场的，别的品种按同一天对照""投降日浅红""抛售 / 涨过头能单独关掉"都搬到那里）。放回去掉 template.html 里 #kall 的 hidden（docs/不再显示的.md）
+    // 新7：#kma（最新一天的均线事实）、#kkey（标签说明）、#kpanel（那天的事实、画线面板）、#kpan 滑条都在 #kall 里，照算照写；
+    // 图下那一天（新7 复查：加上那天半导体市场的阶段、哪一型、四条读数，见 dayLine()）右边"怎么看 ›"（到说明 s-k：标签、色带、均线的说明，
+    // 和"阶段、恐慌热度是整个半导体市场的，别的品种按同一天对照""投降日浅红""抛售 / 涨过头能单独关掉"都搬到那里），
+    // 下面"全部 ›"（那天的全部，验收修，#kallb）点开 #kall：滑条 #kpan、那天的面板 / 画线的面板（"删除这条线"）#kpanel；#kma、#kkey 在 #kall 里仍旧 hidden（docs/不再显示的.md）
     function renderMA() {
       const i = B.length - 1, m = maState(i);
       $("kma").innerHTML = `<span><b>均线（${B[i].d}）</b></span><span class="${m.cls}">${m.txt}</span><span>价格在 ${m.n} 条均线中的 ${m.below} 条下方</span><span>MA50 / MA200：${crossTxt(50, 200, i, 1000)}</span><span>MA5 / MA20：${crossTxt(5, 20, i, 120)}</span><span>趋势结构：${swingNow()}</span>`;
@@ -1282,10 +1299,13 @@
       const pv = B[i - 1], ch = pv ? (b.c / pv.c - 1) * 100 : null;
       el.innerHTML = `那一天：<b>${+b.d.slice(5, 7)}/${+b.d.slice(8, 10)} 周${"日一二三四五六"[new Date(b.d + "T12:00:00").getDay()]}</b> 收 <b class="num">${fmtP(b.c)}</b>${ch == null ? "" : ` <b${cP(ch)}>${sgn(ch, 1)}%</b>`}${semiDay(b)}${i === B.length - 1 ? "" : ` <button type="button" class="jd" data-act="latest">回到最新一天</button>`}`;
     }
+    // 验收修：画好一条线、或者点中一条线，"全部 ›"（#kall）自己打开，"删除这条线"就在图下（同一条线只开一次，收起来就不再自己开）
+    let kallFor = null;
     function panel() {
       const el = $("kpanel"); let html;
       if (previewI != null && !(sel && sel.type === "draw")) { el.innerHTML = dayPanel(previewI); return; }
-      if (sel && sel.type === "draw") { const dw = draws().find(x => x.id === sel.id); html = dw ? (dw.type === "h" ? hPanel(dw) : tPanel(dw)) : null; if (!dw) sel = null; }
+      if (sel && sel.type === "draw") { const dw = draws().find(x => x.id === sel.id); html = dw ? (dw.type === "h" ? hPanel(dw) : tPanel(dw)) : null; if (!dw) sel = null;
+        else if (kallFor !== dw.id) { kallFor = dw.id; const kb = $("kallb"); if (kb && kb.getAttribute("aria-expanded") !== "true") toggle(kb, true); } }
       if (!html) html = dayPanel(sel && sel.type === "day" ? clampI(sel.i) : B.length - 1);
       el.innerHTML = html;
       dayLine(previewI != null ? previewI : sel && sel.type === "day" ? clampI(sel.i) : B.length - 1);
