@@ -75,7 +75,7 @@
       if (lag > (nm.startsWith("AAII") ? 9 : 4)) warn.push(`${nm}最新只到 ${md(v.last)}`);
     }
     if (warn.length && $("warn")) { $("warn").hidden = false; $("warn").textContent = "数据提醒：" + warn.join("；") + "。相关读数沿用最近一次的。"; }
-    // 新4：情绪全部（大标题、导语、四条读数、三段、谁跌得最深、信用分层表）不画了，节点不在页面上；代码留着（_impl/design/hidden_draft.md）
+    // 新4：情绪全部（大标题、导语、四条读数、三段、谁跌得最深、信用分层表）不画了，节点不在页面上；代码留着（docs/不再显示的.md）
     if (!$("hero")) return;
     $("asof").textContent = `数据截至 ${RAW.asof} 收盘`;
     const tail = { 0: "没有在下跌。", 1: "抛售开始了，还没人怕。", 2: "投降还没来。", 3: "历史上最低点多在这几天或之后。", 4: "恐慌在退。" }[st];
@@ -117,7 +117,7 @@
   })();
 
   // ---------- 前台（新4，qx/front.py page_keys()；口径十四）：①–⑤ 每样一行，整行点开，一次只开一样；点开里每样最多 5 行
-  // 旧的五样写法（结论句、表格、触发行）不画了：触发行全进"今天变了什么"（qx/front.py page_changes()），其余见 _impl/design/hidden_draft.md
+  // 旧的五样写法（结论句、表格、触发行）不画了：触发行全进"今天变了什么"（qx/front.py page_changes()），其余见 docs/不再显示的.md
   const FR = RAW.front || {};
   const D2 = s => s ? `${+s.slice(5, 7)}/${+s.slice(8, 10)}` : "";
   const N0 = x => x == null || !isFinite(x) ? "—" : Math.round(x).toLocaleString("en-US");
@@ -372,7 +372,7 @@
 
   // ---------- 今天要知道的（规则在 口径.md 第三节；文字在 qx/watch.py 写好，这里只排版）
   (function today() {
-    const T = RAW.today, el = $("today"); if (!T || !el || el.dataset.blk) return;      // 新4：today4() 画（这段留着，见 _impl/design/hidden_draft.md）
+    const T = RAW.today, el = $("today"); if (!T || !el || el.dataset.blk) return;      // 新4：today4() 画（这段留着，见 docs/不再显示的.md）
     const wk = d => "周" + "日一二三四五六"[new Date(d + "T12:00:00").getDay()];
     const card = x => `<div class="it${x.us ? " us" : ""}" data-k="${esc(x.key + "|" + x.date)}"><div class="it-h"><span>${x.n10 == null ? esc(x.hist || "") : `过去 10 年 ${x.n10 < 1 ? "不到 1" : Math.round(x.n10)} 次`}</span>${x.live ? `<span class="it-tag">${esc(x.state || "盘中")}</span>` : ""}<span>${md(x.date)}</span></div>
       <div class="it-t">${esc(rwd(x.title))}</div>${(x.facts || []).length ? `<ul>${x.facts.map(f => `<li>${esc(rwd(f))}</li>`).join("")}</ul>` : ""}${x.mean ? `<p class="it-m"><b>说明什么：</b>${esc(rwd(x.mean))}</p>` : ""}${(x.news || []).length ? `<div class="nwh">同一时间的新闻（程序按关键词配的，可能不是原因）</div><ul class="nw">${x.news.map(n => `<li><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.t)}</a><small>${esc(n.src)} · ${esc(n.ago)}</small></li>`).join("")}</ul>` : ""}</div>`;
@@ -505,7 +505,7 @@
     const nw = $("news"); if (!nw) return;
     const N = H.news || {}, C = (H.calendar || []).concat((RAW.front && RAW.front.cal_add) || []);   // cal_add：纳斯达克漏了的非农，BLS 发布日表补的（qx/front.py nfp_add()，新3）
     const li = n => `<li><a href="${esc(n.url)}" target="_blank" rel="noopener">${esc(n.t)}</a><small>${esc(n.topic ? n.topic + " · " : "")}${esc(n.src)} · ${esc(n.ago)}${n.k > 1 ? ` · ${n.k} 家报道` : ""}</small></li>`;
-    if (nw.closest("[data-blk]")) {          // 新4："发生了什么"里的要闻按钮，点开是前 5 条；7 天日历、更多新闻不画（代码留着，_impl/design/hidden_draft.md）
+    if (nw.closest("[data-blk]")) {          // 新4："发生了什么"里的要闻按钮，点开是前 5 条；7 天日历、更多新闻不画（代码留着，docs/不再显示的.md）
       const top = (N.top || []).slice(0, 5), b = $("newsb");
       if (top.length && b) { b.textContent = `要闻 ${top.length} 条 ›`; b.hidden = false;
         nw.innerHTML = `<ul class="nw">${top.map(li).join("")}</ul><p class="vlink">新闻从哪几家取：<a href="#v-shuo" data-view="shuo" data-sec="s-news">说明 ›</a></p>`; }
@@ -776,7 +776,7 @@
     const cs = K.cards || [], SHOW = 3, MORE = 5;
     // 新5 复查：点开一张卡最多加 160 px。压字（推送读的卡字不动，只改页面上怎么露）：栏名放在句首不占一列；今年的日期写 10/27；
     // "用什么做"去掉 3 倍杠杆每月损耗那半句，"空间"去掉重复的"还没回放"；卡底那行（类别 · 日期 · 历史上同样极端的 x% · 还没有回放）不画，
-    // "情景，不是买卖建议"块头已经写了。放回要做什么见 _impl/design/hidden_draft.md。
+    // "情景，不是买卖建议"块头已经写了。放回要做什么见 docs/不再显示的.md。
     const cy = String((RAW.front || {}).asof || K.asof || "").slice(0, 4);
     const sd = s => esc(String(s == null ? "" : s).replace(/(\d{4})-(\d{2})-(\d{2})/g, (m, y, a, b) => (y === cy ? "" : y + "/") + (+a) + "/" + (+b)));
     const use = c => String(c.use || "").replace(/；3 倍做多每月损耗.*$/, "");
@@ -1199,6 +1199,8 @@
       const hh = H[1].p > H[0].p, hl = L[1].p > L[0].p, st = hh && hl ? "上升结构" : !hh && !hl ? "下降结构" : "震荡结构";
       return `${st}（最近两个高点 ${fmtP(H[0].p)} → ${fmtP(H[1].p)}，低点 ${fmtP(L[0].p)} → ${fmtP(L[1].p)}）。现价离上一个摆动低点 ${sgn((c / L[1].p - 1) * 100, 1)}%，离上一个摆动高点 ${sgn((c / H[1].p - 1) * 100, 1)}%`;
     }
+    // 新7：#kma（最新一天的均线事实）、#kkey（标签说明）、#kpanel（那天的事实、画线面板）、#kpan 滑条都在 #kall 里，#kall 不画了（hidden），照算照写；
+    // 图下只留那一天和"怎么看 ›"（到说明 s-k，标签和均线的说明搬到那里）。放回去掉 template.html 里 #kall 的 hidden（docs/不再显示的.md）
     function renderMA() {
       const i = B.length - 1, m = maState(i);
       $("kma").innerHTML = `<span><b>均线（${B[i].d}）</b></span><span class="${m.cls}">${m.txt}</span><span>价格在 ${m.n} 条均线中的 ${m.below} 条下方</span><span>MA50 / MA200：${crossTxt(50, 200, i, 1000)}</span><span>MA5 / MA20：${crossTxt(5, 20, i, 120)}</span><span>趋势结构：${swingNow()}</span>`;

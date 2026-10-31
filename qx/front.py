@@ -1419,12 +1419,13 @@ def build(D, R, radar, today, hap, ice, cal, opt=None):
 
 # ---------- 说明 / 状态（第四轮后台精简第 2 步，方案第四节）：两个点了才加载的视图。HTML 在这里写好，export.write_views 用页面同一把钥匙加密成 v/*.enc，
 # k.js 点了才取回、解开、放进页面。只读已经算好的 data（推送读的那几份不动），一样不删：从页面搬过来的每一处都记进 MOVED（说明第一节的索引）。
+# 新7 起说明、状态是短的那版（view_shuo、view_zt，在本节后面）；MOVED 这张搬家表不画了，"不再显示"的索引改在仓库 docs/不再显示的.md。
 import html as _html
 
 _e = lambda s: _html.escape(str("" if s is None else s), quote=True)
 _md = lambda s: f"{int(s[5:7])} 月 {int(s[8:10])} 日" if s and len(s) >= 10 else "—"
 
-# 从页面移到这里的：（原来在哪，搬了什么，现在在哪）。"现在在哪"写视图和那一节的名字；原处只留一行指过来
+# 从页面移到这里的：（原来在哪，搬了什么，现在在哪）。"现在在哪"写视图和那一节的名字；原处只留一行指过来。新7 起不画（_view_shuo_v1 还用）
 MOVED = [
     ("① 情绪 · 全部，最下面的折叠", "四条恐慌读数是怎么算的（含三段、在加速 / 在减速、哪一型、转折标签、抛售和涨过头标签）", "说明 · 四条读数怎么算的"),
     ("① 情绪 · 全部，四条读数下面", "CNN 恐慌贪婪那一行（今天的数、一周前、一个月前）", "说明 · CNN 恐慌贪婪"),
@@ -1502,22 +1503,25 @@ def _stale(status, asof):
 
 
 def accrue(data):
-    """"在攒什么、哪天能用"：每行（什么，现在攒了多少 / 要多少，大约哪天够，说明）。只读已经算好的数。"""
+    """"在攒什么、哪天能用"：每行（什么，现在攒了多少 / 要多少，大约哪天够，说明，还差多少）。只读已经算好的数。
+    第 5 项"还差多少"是新7 加的（状态页写"还差几天"）；新7 以前的表只用前 4 项。"""
     from qx import options as OP, positioning as PS
     asof, R = data.get("asof"), data.get("radar") or {}
     rows = []
     O = data.get("options") or {}
     if O.get("days") is not None and O["days"] < OP.MIN_HIST:
-        rows.append(("期权链（和自己历史比）", f"{O['days']} 天 / {OP.MIN_HIST} 个交易日", "约 " + ready_by(asof, O["days"], OP.MIN_HIST), "攒满以前期权读数不叫\"少见\""))
+        rows.append(("期权链（和自己历史比）", f"{O['days']} 天 / {OP.MIN_HIST} 个交易日", "约 " + ready_by(asof, O["days"], OP.MIN_HIST),
+                     "攒满以前只和 10 月 19 日以来比", f"还差 {OP.MIN_HIST - O['days']} 个交易日"))
     H = (R.get("narr") or {}).get("heat") or {}
     if H.get("note") and not H.get("rows"):
         m = __import__("re").search(r"从 (\d{4}-\d{2}-\d{2}) 起攒", H["note"])
         if m:
             from qx import news as NW
             got = len(NW.load()[1])        # 和 narrative.heat() 同一个数：存下条数的天数（heat 不按页面那天截，这里也不截）
-            rows.append(("主题热度（新闻条数）", f"{got} / 10 天（从 {m.group(1)} 起）", "约 " + (pd.Timestamp(m.group(1)) + pd.Timedelta(days=9)).strftime("%Y-%m-%d"), "满 10 天才算"))
+            rows.append(("主题热度（新闻条数）", f"{got} / 10 天（从 {m.group(1)} 起）", "约 " + (pd.Timestamp(m.group(1)) + pd.Timedelta(days=9)).strftime("%Y-%m-%d"), "满 10 天才算",
+                         f"还差 {max(0, 10 - got)} 天"))
         else:
-            rows.append(("主题热度（新闻条数）", H["note"], "—", "满 10 天才算"))
+            rows.append(("主题热度（新闻条数）", H["note"], "—", "满 10 天才算", ""))
     by = {}
     for r in ((R.get("pos") or {}).get("readings") or []):
         if r.get("pos") is None and r.get("n") is not None and r["n"] <= PS.MIN_OBS:
@@ -1527,14 +1531,16 @@ def accrue(data):
         n = min(x["n"] for x in xs)
         half = kind == "空头回补天数"
         rows.append((f"{kind}（{src}，{len(xs)} 个）" if len(xs) > 1 else f"{kind}（{src}）", f"{n} {'期' if half else '天'} / 第 {PS.MIN_OBS + 1} {'期' if half else '天'}才和历史比",
-                     "约 " + ready_by(asof, n, PS.MIN_OBS + 1, "half" if half else "bday"), "不够以前只写数，不说挤不挤"))
+                     "约 " + ready_by(asof, n, PS.MIN_OBS + 1, "half" if half else "bday"), "不够以前只写数，不说挤不挤",
+                     f"还差 {PS.MIN_OBS + 1 - n} {'期' if half else '个交易日'}"))
     from qx.radar import NAMES as CN
     for k, v in sorted(((R.get("cards") or {}).get("pending") or {}).items()):
         m = __import__("re").search(r"（(\d{4}-\d{2}-\d{2})）", v)
-        rows.append((f"第 {k} 类卡的回放（{CN.get(int(k), '')}）", v, m.group(1) if m else "—", "回放以前卡上写\"还没有回放\""))
+        rows.append((f"第 {k} 类卡的回放（{CN.get(int(k), '')}）", v, m.group(1) if m else "—", "回放以前卡上写\"还没有回放\"",
+                     f"还差 {max(0, (pd.Timestamp(m.group(1)) - pd.Timestamp(asof)).days)} 天" if m and asof else ""))
     fl = data.get("flash") or {}
     if fl and not fl.get("backfill_done"):
-        rows.append(("快讯过去 30 天回补", "还没回补完", "—", "回补完以前\"第一次\"只标不推"))
+        rows.append(("快讯过去 30 天回补", "还没回补完", "—", "回补完以前\"第一次\"只标不推", ""))
     return rows
 
 
@@ -1547,7 +1553,8 @@ def _sec(id_, title, body):
     return f"<h3 class=\"vh\" id=\"{id_}\">{_e(title)}</h3>{body}"
 
 
-def view_shuo(data):
+def _view_shuo_v1(data):
+    """新7 以前的说明（含搬家表 S01、CNN 一段 S03）。新7 起不画，代码照留：放回把 views() 里的 view_shuo 换回这个（docs/不再显示的.md）。"""
     h = "<p class=\"knote\">怎么算的、怎么看、数据从哪来。页面上只留一行指到这里；内容和原来一样，一样没删。</p>"
     h += _sec("s-moved", "从页面移到这里的", _table(["原来在哪", "搬了什么", "现在在哪"], [(_e(a), _e(b), _e(c)) for a, b, c in MOVED])
               + "<p class=\"knote\">方案里列了、这一步没搬的：" + "；".join(f"{_e(a)}的{_e(b)}：{_e(c)}" for a, b, c in KEPT) + "。</p>")
@@ -1567,7 +1574,8 @@ def view_shuo(data):
     return h
 
 
-def view_zt(data):
+def _view_zt_v1(data):
+    """新7 以前的状态（各数据源表 Z01、快讯各条路表 Z02、接口备注 Z05、关键词配错 Z06）。新7 起不画，照算：放回把 views() 里的 view_zt 换回这个。"""
     asof = data.get("asof")
     h = f"<p class=\"knote\">数据和各条路的状态：哪条路断了、哪些在攒、缺了什么。页面截至 {_md(asof)}，页面生成于北京时间 {_e(data.get('updated'))}。</p>"
     fl = data.get("flash") or {}
@@ -1586,7 +1594,7 @@ def view_zt(data):
                   + "<p class=\"knote\">延迟 = 我们看到的时间 − 发布时间，只算每条路开始取以后新出现的条目；云端每 15 分钟取一次，所以含最多 15 分钟的等待。"
                   + ("" if fl.get("backfill_done") else "过去 30 天还没回补完，\"第一次\"只标不推。") + "路透经 TradingView、谷歌新闻取，是你 10-27 定的。</p>")
     A = accrue(data)
-    h += _sec("z-accrue", "在攒什么、哪天能用", _table(["什么", "攒了多少", "大约哪天够", "够以前"], [tuple(_e(c) for c in r) for r in A]) if A else "<p>没有在攒的。</p>")
+    h += _sec("z-accrue", "在攒什么、哪天能用", _table(["什么", "攒了多少", "大约哪天够", "够以前"], [tuple(_e(c) for c in r[:4]) for r in A]) if A else "<p>没有在攒的。</p>")
     R = data.get("radar") or {}
     miss = [(_e("各市场 · " + m["cls"]), _e("、".join(m["miss"])), "没取到行情") for m in (R.get("mkts") or []) if m.get("miss")]
     miss += [(_e("AI 账本 · " + _plain(x.get("chain"))), _e(x["name"]), _e(x["value"]) + (f"<small>（{_e(x['src'])}）</small>" if x.get("src") and x["src"] != "—" else ""))
@@ -1595,6 +1603,121 @@ def view_zt(data):
     h += _sec("z-api", "接口备注", SHUO_API)
     h += _sec("z-kw", "关键词可能配错的新闻", (_table(["哪天", "配进的话题", "标题"], mis) if (mis := miskw(data)) else "<p>这次没挑出来。</p>")
               + "<p class=\"knote\">扫新闻块和 K 线每天存下的新闻（这一页那天以前的），按词组挑（bargaining chip、blue chip、人名 Chip 这类，\"chip\" 不是芯片），可能漏。只列出来，词表没改：改词表要登记新版本。</p>")
+    return h
+
+
+# ---------- 新7：说明、状态变短（方案第四节 S、Z 两组；steps2 新7）。上面的 MOVED、KEPT、SHUO_FOUR / SHUO_K / SHUO_NEWS / SHUO_SRC / SHUO_API、
+# _view_shuo_v1、_view_zt_v1、miskw() 照留不画（照算），放回只改 views() 这一层，索引在 docs/不再显示的.md。下面只读已经算好的 data，推送读的那几份不动。
+SHUO_STAGE = ("<p>只在费城半导体回撤 ÷ 长期波动到 −0.3 以下时分阶段，否则是平稳。三段按顺序走，最近 10 天里有一项到过历史最极端的 10% 就算亮："
+              "<b>在卖</b>（成分股跌破 20 日线、放量、10 日跌幅、创新低）→ <b>在怕</b>（VIX、VXN 比自己最近 60 天贵，近月保险比远月贵，散户转空）→ "
+              "<b>投降</b>（认沽认购比平时高、Baa 利差 20 日走阔、VIX 水平）。价格回到 −0.3 以上就重来，某一段 10 天没再亮就退回去，怕过以后都不亮了算<b>在出清</b>。"
+              "半导体 21 次大跌全到了在怕、19 次到了投降，到了投降的约两成在 3 周内见底；阶段没有前瞻检验。</p>")
+SHUO_FOUR2 = ("<p><b>四条读数</b>（0–100，100 = 当天以前全部历史里最恐慌）：<b>抛售</b> 28 只成分股 5 日平均创 20 日新低的比例；<b>定价</b> VXN 比自己最近 60 天贵多少；"
+              "<b>仓位</b> 认沽认购比平时高多少、散户看多减看空 5 日掉多少，取较高的；<b>信用</b> 7 只信用 ETF 里 20 日跑输国债到最差 10% 的比例。"
+              "5 天里降 10 分以上叫<b>在回落</b>；升 10 分以上看比 5 天前升得快还是慢，写在加速或在减速。</p>"
+              "<p><b>哪一型</b>：这一段下跌以来 VIX 收盘到过 30 是宏观冲击型，大盘读数都会亮；没到过是板块自己跌型，大盘读数看不出来，要看成分股和比自己最近的读数。</p>")
+SHUO_BASE = ("<p><b>全部历史</b>（只和当天以前比）：四条读数；仓位读数（至少 104 个观测）；小信号和信用五档的 5 日走阔（历史不满 504 天不算）。"
+             "<b>近 10 年</b>：VIX、SKEW、VVIX，和\"过去 10 年 N 次\"的涨跌（2520 个交易日）。"
+             "<b>期权链</b>：从 10 月 19 日起攒，不满 250 个交易日只和 10 月 19 日以来比。同一行只用一个基数。</p>")
+SHUO_K2 = ("<p>点图上某一天，图下那一行就换成那天；左右拖动平移，两指缩放；电脑上方向键一天一天走，+ / − 缩放。"
+           "价格区最下面的色带是每天在哪一段（<b style=\"color:var(--s1i)\">在卖</b> → <b style=\"color:var(--s2i)\">在怕</b> → <b style=\"color:var(--s3i)\">投降</b> → "
+           "<b style=\"color:var(--s4i)\">在出清</b>，空白是平稳）；副图默认是恐慌热度，四条读数各一行，颜色越深越恐慌，最深的是历史上最恐慌的 10%。</p>"
+           "<p><b>标签</b>：阶段标签标在进入某一段的那天，同一段相邻 10 天只标一次。<b style=\"color:var(--fear)\">恐慌高峰</b> 一段下跌里抛售、定价、仓位平均最高的那天，要等退潮才标出来；"
+           "<b style=\"color:var(--s4i)\">恐慌退潮</b> 第一次进入在出清；空心的 <b style=\"color:var(--violet)\">二次探底</b> 退潮以后收盘回到这一段最低的 3% 以内、恐慌比高峰低 20 分以上；"
+           "空心的 <b style=\"color:var(--watch)\">参与度先走</b> 指数离一年高点不到 3%，站上 50 日线的成分股比最近 60 天最多时少 20 个百分点以上（只是描述）；"
+           "空心的 <b style=\"color:var(--alert)\">抛售</b> 量是 50 日均量 2 倍以上、跌 2% 以上、RSI 低于 40（费城半导体用 SMH 的量）；"
+           "空心的 <b style=\"color:var(--greed)\">涨过头</b> RSI 高于 75、比 50 日线高 15% 以上。<b>gamma 转负 / 转正</b>（SMH、英伟达、美光、台积电，10 月 19 日起）："
+           "按期权持仓估的做市商对冲从压住波动变成放大波动，或反过来；<b>判断</b> 是你提出判断的那天。</p>"
+           "<p><b>均线</b>是简单平均，默认只开 200 日线，5、10、20、50、100 日在\"工具\"里打开，也能加 2–400 日的。5 到 200 日从短到长一条比一条低叫多头排列，反过来叫空头排列；"
+           "短线上穿长线叫金叉，下穿叫死叉。灰色小圈是摆动高点和低点，虚线连着最近两个高点（橙）和最近两个低点（蓝）。成交量里颜色深的柱子是 50 日均量 2 倍以上。</p>"
+           "<p id=\"s-trend\"><b>趋势状态</b>：上行 = 收盘在均线上方、均线在升；下行反过来；其他是震荡。日线用 20 日均线比 5 天前，周线 10 周比 2 周前，月线 10 个月比 2 个月前。</p>")
+SHUO_OPT2 = ("<p>每个代码回答五个问题，只描述：<b>保险贵不贵</b>，30 天平值隐含波动 ÷ 过去 21 天实际波动，1.2 以上算贵、0.8 以下算便宜；<b>更怕跌还是更想涨</b>，下跌保护比上涨押注贵百分之几；"
+             "<b>押在哪个价位</b>，45 天内到期、现价上下 15% 以内持仓最多的行权价；<b>做市商对冲</b>，按常用的近似假设估，为正会压住波动、为负会放大，翻转价是由正变负的那个价；"
+             "<b>定价了多大的涨跌</b>，最接近 30 天那个到期日上下各一倍的幅度，和到期时涨跌超 10%、20% 的风险中性概率（是市场的定价，不是真实概率）。</p>")
+SHUO_NEWS2 = ("<p>新闻只取路透、彭博、华尔街日报、金融时报、CNBC、日经亚洲、美联储、韩联社、CoinDesk 和华尔街见闻\"重要\"快讯。"
+              "日历里的期权幅度：财报是反应日的涨跌（时间未定的算当天加下一天），拆掉了别的日子平常的波动；议息会是到期以前的总幅度，偏大一点。</p>"
+              "<p id=\"s-src\">数据：Yahoo（行情、VIX、VXN、成分股、信用 ETF）、CBOE（认沽认购、期权链）、AAII 散户调查、FRED（信用利差、美债收益率）、CFTC 期货持仓、"
+              "纳斯达克（财报、宏观日历）、劳工统计局发布日表（补纳斯达克漏掉的非农）、美联储和日本央行日程、美国经济分析局、Polymarket、台湾证交所、美国财政部、日本财务省。</p>")
+SHUO_LABUBU = ("<p>Labubu 认投降要等收盘：VVIX 125 以上、下跌成交量占全部成交量 80%–90% 以上，而且收盘时还在高位，开盘达标、收盘回落的不算。"
+               "成分股隐含相关性（COR1M）极低时他会小心，一两周后常回调。这些阈值没检验过，只当参考，不进任何触发；这两个数页面上还没有。</p>")
+
+
+def _rep2(data):
+    """第 2 类卡（信用和股价背离）最近 2 年的回放：几次、20 个交易日后方向对的几次（ret20 已经按看好的方向算，> 0 就是对的）。"""
+    rp = ((data.get("radar") or {}).get("cards") or {}).get("replay") or {}
+    r2 = rp.get(2) or rp.get("2") or []          # 算的时候键是 2，写进 JSON 以后是 "2"
+    ok = [x for x in r2 if x.get("ret20") is not None]
+    k = sum(1 for x in ok if x["ret20"] > 0)
+    return len(ok), k, (int(k * 100 / len(ok) + 0.5) if ok else None)
+
+
+def view_shuo(data):
+    h = _sec("s-four", "阶段和四条读数", SHUO_STAGE + SHUO_FOUR2)
+    h += _sec("s-base", "分位和哪段历史比", SHUO_BASE)
+    h += _sec("s-k", "K 线怎么看", SHUO_K2)
+    h += _sec("s-opt", "期权五个问题", SHUO_OPT2)
+    h += _sec("s-news", "新闻、日历和数据从哪来", SHUO_NEWS2)
+    n, k, pct = _rep2(data)
+    if n:
+        h += _sec("s-card", "卡的回放", f"<p>第 2 类卡（信用和股价背离）最近 2 年回放 {n} 次，20 个交易日后方向对的 {k} 次（{pct}%）。卡是情景，不是买卖建议。</p>")
+    h += _sec("s-lab", "Labubu 的参考阈值", SHUO_LABUBU)
+    return h
+
+
+_DEV = ("SEC_CONTACT", "XBRL", "Fiscal Data")      # 开发用的接口名（measure_all 的禁词），状态页不写
+
+
+def _scrub(s):
+    """去掉括号里带开发用接口名的那一段："缺：SEC 接口要联系邮箱（用户给了 SEC_CONTACT 才接）" → "缺：SEC 接口要联系邮箱"。"""
+    import re
+    s = re.sub(r"（[^（）]*(?:" + "|".join(map(re.escape, _DEV)) + r")[^（）]*）", "", str(s or ""))
+    for w in _DEV:
+        s = s.replace(w, "")
+    return s.strip()
+
+
+def _ago(m):
+    m = int(m)
+    return f"{m} 分钟" if m < 120 else f"{round(m / 60)} 小时" if m < 48 * 60 else f"{round(m / 1440)} 天"
+
+
+def view_zt(data):
+    asof = data.get("asof")
+    fl = data.get("flash") or {}
+    H = fl.get("health") or []
+    bad = broken_routes(fl)
+    st = data.get("status") or {}
+    warn = _stale(st, asof)
+    h = f"<p class=\"knote\">页面截至 {_md(asof)}，生成于北京时间 {_e(data.get('updated'))}。</p>"
+    nm = lambda x: _e(x.get("src") or x.get("name") or "") + (f"（{_e(x['sec'])} 栏目）" if x.get("sec") else "")
+    li = [f"<li><b class=\"bad\">快讯 · {nm(x)}</b>：" + ("还没取到过" if x.get("ago") is None else f"上次取到是 {_ago(x['ago'])}前") + "</li>" for x in bad]
+    li += [f"<li><b class=\"bad\">{_e(w)}</b>，相关读数沿用最近一次的</li>" for w in warn]
+    h += _sec("z-flash", "断了的、旧了的", f"<ul class=\"zl\">{''.join(li)}</ul>" if li else "<p>没有断的路，也没有旧了的数据。</p>")
+    A = accrue(data)
+    cards = [r for r in A if r[0].startswith("第 ") and "类卡的回放" in r[0]]
+    li = []
+    for r in A:
+        if r in cards:
+            continue
+        what, have, ready, note, left = r
+        li.append(f"<li><b>{_e(what)}</b>：{_e(have)}" + (f"，{_e(left)}" if left else "") + (f"，{_e(ready)} 够" if ready not in ("—", "") else "")
+                  + f"<small>（{_e(note)}）</small></li>")
+    if cards:
+        by = {}
+        for r in cards:
+            by.setdefault((r[2], r[4]), []).append(__import__("re").search(r"第 (\d+) 类", r[0]).group(1))
+        li.append("<li><b>卡的回放</b>：" + "；".join(f"第 {'、'.join(ks)} 类约 {_e(d)} 够" + (f"（{_e(left)}）" if left else "") for (d, left), ks in sorted(by.items()))
+                  + "<small>（攒满一年才回放，以前卡上写\"还没有回放\"）</small></li>")
+    h += _sec("z-accrue", "在攒什么、还差几天", f"<ul class=\"zl\">{''.join(li)}</ul>" if li else "<p>没有在攒的。</p>")
+    R = data.get("radar") or {}
+    li = [f"<li><b>各市场 · {_e(m['cls'])}</b>：没取到 {_e('、'.join(m['miss']))}</li>" for m in (R.get("mkts") or []) if m.get("miss")]
+    li += [f"<li><b>AI 账本 · {_e(x['name'])}</b>：{_e(_scrub(x['value']))}</li>"
+           for x in ((R.get("fwd") or {}).get("ledger") or []) if str(x.get("value", "")).startswith(("缺", "没有免费"))]
+    h += _sec("z-miss", "缺的", f"<ul class=\"zl\">{''.join(li)}</ul>" if li else "<p>这次没有缺的。</p>")
+    ok_src = [k for k in st if not any(w.startswith(k) for w in warn)]
+    ok_rt = [x for x in H if x.get("ok")]
+    h += (f"<p class=\"zok\"><b>正常的</b>：" + (f"{_e('、'.join(ok_src))} 都没落后" if ok_src else "数据源都落后了")
+          + (f"；快讯其余 {len(ok_rt)} 条路都通" if H else "") + "。</p>")
     return h
 
 
@@ -1622,5 +1745,5 @@ def miskw(data):
 
 
 def views(data):
-    """说明、状态两个视图的 HTML（export.write_views 写成 v/shuo.enc、v/zt.enc）。"""
+    """说明、状态两个视图的 HTML（export.write_views 写成 v/shuo.enc、v/zt.enc）。新7 起是短的那版；新7 以前的是 _view_shuo_v1、_view_zt_v1（不画，照留）。"""
     return {"shuo": view_shuo(data), "zt": view_zt(data)}

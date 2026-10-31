@@ -280,6 +280,10 @@ svg.sp circle { fill: var(--ink); }
 .kall > summary { cursor: pointer; color: var(--fear); font-size: 13px; font-weight: 500; min-height: 28px; }
 .kall[open] > summary { margin-bottom: 8px; }
 .kall > * + * { margin-top: 10px; }
+/* 新7：K 线"图的全部"（#kall）不画了，换成那一天右边的"怎么看 ›"，到说明的 K 线那一段（docs/不再显示的.md） */
+.kdrow { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.kdrow .kday { flex: 1; min-width: 0; }
+.kgo { flex: none; font-size: 13px; color: var(--fear); text-decoration: none; white-space: nowrap; }
 @media (max-width: 560px) { .klegend { display: none; } }
 @media (max-width: 760px) {
   .kpc .three { grid-template-columns: 1fr; }
@@ -296,6 +300,13 @@ svg.sp circle { fill: var(--ink); }
 .view h3.vh { font-size: 15px; color: var(--ink); margin: 18px 0 6px; padding-top: 8px; border-top: 1px solid var(--line); }
 .view .tbl td { vertical-align: top; }
 .view .bad { color: var(--alert); font-weight: 700; }
+/* 新7：说明、状态变短（段落间距收紧，状态用短列表） */
+#v-shuo p, #v-zt p { margin: 6px 0; }
+#v-shuo h3.vh, #v-zt h3.vh { margin: 14px 0 4px; padding-top: 8px; }
+.view ul.zl { margin: 4px 0; padding-left: 18px; }
+.view ul.zl li { margin: 3px 0; }
+.view ul.zl small { color: var(--ink-3); font-size: 12px; }
+.view .zok { color: var(--ink-3); }
 .view details { margin-top: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 14px; color: var(--ink-2); }
 .view details summary { cursor: pointer; color: var(--ink); font-weight: 600; }
 .tbl { width: 100%; border-collapse: collapse; font-size: 13.5px; }
@@ -421,8 +432,8 @@ svg.sp circle { fill: var(--ink); }
     <div class="kbox kline" id="kline" data-blk="kline">
       <div class="ktools" id="ktools"></div>
       <div class="kwrap"><canvas id="kc" tabindex="0" role="img" aria-label="K 线、200 日线、成交量和恐慌热度副图，点某一天看那天"></canvas><div class="klegend" id="klegend"></div><div class="kpl" id="kvl"></div><div class="kpl" id="ksl"></div><div class="khint" id="khint" hidden></div></div>
-      <div class="kday" id="kday" aria-live="polite"></div>
-      <details class="kall" id="kall"><summary>图的全部：怎么看、标签说明、均线、那天的事实</summary>
+      <div class="kdrow"><div class="kday" id="kday" aria-live="polite"></div><a class="kgo" href="#v-shuo" data-view="shuo" data-sec="s-k">怎么看 ›</a></div>
+      <details class="kall" id="kall" hidden><summary>图的全部：怎么看、标签说明、均线、那天的事实</summary>
         <input type="range" class="kpan" id="kpan" step="1" aria-label="左右移动 K 线（不用拖图）">
         <div class="kread"><b>怎么看</b>：点图上某一天，图下那一行就换成那天；左右拖动平移，两指缩放。色带、副图和各个标签的意思见 <a href="#v-shuo" data-view="shuo" data-sec="s-k">说明 ›</a></div>
         <div class="kkey" id="kkey"></div>
