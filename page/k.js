@@ -204,8 +204,18 @@
     }
     // 顶上判断条（只在错的条件第一次出现、要人看的事两个交易日内）：点了开"我的判断"
     const dk = x => x.key && x.date ? ` data-ks="${esc(x.key + "|" + x.date)}"` : "";
+    // 新6 复查：手机露 1 行、电脑（1200 以上）露 2 行，每行截成 1 行字，多的写"另 N 张 ›"（plan 第三节第 3 小节"我的判断"）；
+    // 第 2 行（data-w2）宽度到 1200 才露；藏着的那几张节点在，推送点到哪张 reveal() 就露哪张
     const tl = $("tline"), J = FR.judge || [];
-    if (tl && J.length) { tl.hidden = false; tl.innerHTML = J.map(x => `<a class="tg2" href="#v-pd" data-view="pd" data-k="${esc(x.key)}"${dk(x)}>${esc(x.title)} → 我的判断 ›</a>`).join(""); }
+    if (tl && J.length) { tl.hidden = false;
+      tl.innerHTML = J.map((x, i) => `<a class="tg2" href="#v-pd" data-view="pd" data-k="${esc(x.key)}"${dk(x)}${i === 1 ? " data-w2" : ""}${i ? " data-mr hidden" : ""}><span class="kt">${esc(x.title)}</span><span class="go" aria-hidden="true">›</span></a>`).join("") +
+        `<button type="button" class="more" data-more="99" data-tpl="另 N 张 ›" hidden></button>`;
+      const w2 = () => { const r = tl.querySelector("[data-w2]"); if (!r) return;
+        if (matchMedia("(min-width: 1200px)").matches) { if (r.hidden) { r.hidden = false; r.dataset.w2 = "on"; } }
+        else if (r.dataset.w2 === "on" && !r.classList.contains("hit") && !tl.querySelector("[data-mr]:not([data-w2]):not([hidden])")) { r.hidden = true; r.dataset.w2 = ""; }
+        moreSync(tl); };
+      w2();
+      try { const wide = matchMedia("(min-width: 1200px)"); if (wide.addEventListener) wide.addEventListener("change", w2); else wide.addListener(w2); } catch (e) {} }
     const dy = s => s ? (s.slice(0, 4) === String(FR.asof || "").slice(0, 4) ? D2(s) : `${s.slice(0, 4)} 年 ${D2(s)}`) : "";
 
     // ① 情绪：四个数一周前到今天（全部历史分位）、保险（近 10 年分位，VIX 只在这里出）、这一段、热的一头、离出清 / 离平稳
@@ -880,7 +890,12 @@
     const SUBS = [["heat", "恐慌热度（四行色块）"], ["fomc", "下次议息会降息概率"], ["sell", "抛售恐慌"], ["price", "定价恐慌"], ["pos", "仓位恐慌"], ["credit", "信用压力"], ["rsi", "RSI"], ["vix", "VIX"], ["t3", "VIX 期限结构"], ["breadth", "成分股广度"], ["none", "不显示"]];
     const cfg = Object.assign({ sym: SYMS[0].k, n: 252, mas: DEF_MA.slice(), on: { 5: 0, 10: 0, 20: 0, 50: 0, 100: 0, 200: 1 }, sub: "heat", mk: false, smk: false, bg: true, sw: false, redUp: false }, ld(LS, {}));
     if (!SYMS.some(s => s.k === cfg.sym)) cfg.sym = SYMS[0].k;
-    if (ld(LS, null) == null && window.innerWidth < 560) cfg.n = 126;      // 手机第一次打开默认 6 个月
+    // 时间范围：手机第一次打开默认 6 个月。新6 复查：1200 以上 K 线在中栏（宽不到 560），也按 6 个月开——
+    // 1 年 252 根挤在中栏约 430 px 里每根不到 2 px，draw() 就退成一条收盘线。存着的 252 多半是新6 以前电脑上的默认（cfg 整份存），在中栏也按 6 个月开；
+    // 别的范围（3 月、3 年、全部）照存的。小于 1200 和以前一样。不加新键
+    const fitN = () => { const s = ld(LS, null), n = s ? (s.n != null ? +s.n : 252) : window.innerWidth < 560 ? 126 : 252;
+      return n === 252 && matchMedia("(min-width: 1200px)").matches ? 126 : n; };
+    cfg.n = fitN();
     if (!SUBS.some(s => s[0] === cfg.sub)) cfg.sub = "heat";
     cfg.mas = [...new Set((cfg.mas || []).map(Number).filter(p => p >= 2 && p <= 400))].sort((a, b) => a - b);
     if (!cfg.mas.length) cfg.mas = DEF_MA.slice();
@@ -1354,8 +1369,10 @@
       else if (e.key === "Escape") setTool("pick"); });
     $("kpan").addEventListener("input", e => { view.end = +e.target.value; clampView(); schedule(); });
     window.addEventListener("resize", () => schedule());
-    // 新6：窗口宽度跨过 1200（一栏 ↔ 三栏），K 线所在的那一栏宽度变了：工具栏回到那种宽度的默认（一栏展开、三栏收起），K 线按新宽度重画
-    try { const wide = matchMedia("(min-width: 1200px)"), onWide = () => { toolsOpen = matchMedia(TOOLS_MQ).matches; toolbar(); schedule(); };
+    // 新6：窗口宽度跨过 1200（一栏 ↔ 三栏），K 线所在的那一栏宽度变了：工具栏回到那种宽度的默认（一栏展开、三栏收起），K 线按新宽度重画；
+    // 新6 复查：时间范围也按 fitN() 换（进中栏 1 年换成 6 个月，回到一栏换回存的或默认的）
+    try { const wide = matchMedia("(min-width: 1200px)"), onWide = () => { toolsOpen = matchMedia(TOOLS_MQ).matches;
+        const n = fitN(); if (n !== cfg.n) { cfg.n = n; setRange(n); } toolbar(); schedule(); };
       if (wide.addEventListener) wide.addEventListener("change", onWide); else wide.addListener(onWide); } catch (e) {}
     build(); buildMarkers(); setRange(cfg.n); toolbar(); renderMA(); panel(); draw();
     try { new MutationObserver(() => schedule()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) {}
