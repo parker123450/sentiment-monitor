@@ -740,6 +740,8 @@ NEXT_LABEL = {"fomc": "议息会决议", "presser": "主席发布会", "minutes"
 BIG_SYMS = {"AAPL", "AMZN", "GOOGL", "META", "MSFT", "NVDA", "TSLA", "AVGO", "TSM"}      # "再往后"里两周以外的 1 万亿美元以上公司（时间轴不带市值；两周以内用日历的市值）
 NAME_ADD = {"BRK.A": "伯克希尔"}                     # events.NAMES 只有 BRK.B；页面补一个（events.py 不动，推送读的那几份跟着它）
 ISM_LAB = (("Non-Manufacturing|Services", "ISM 服务业"), ("Manufacturing", "ISM 制造业"))   # 日历的 note 写了是哪一份（纳斯达克原名）；时间轴没写的照旧"ISM"
+FORCE_LAB = {"vix": "VIX 到期", "mend": "月末", "qend": "季末"}    # 新8（口径十四.15）：qx/events.py force_days() 算的日子，只写在"接下来 5 个交易日"里，不进 ④ 的状态词
+CLOSE_CLS = ("opex", "mend", "qend")                  # 收盘那一刻的事：写在美东那天，标"（收盘时）"
 
 
 def _mds(d):
@@ -1196,7 +1198,8 @@ def _ev_class(kind, title):
 
 def page_next5(out, hap_p, cal, radar, t):
     """接下来 5 个美股交易日（北京时间）和"再往后"一行（只给页面用；名单照口径三.8，估的日子不算）。
-    日历（happen 的 7 天、BLS 补的非农）先用，带市值、期权幅度；时间轴补日历没有的。同一件事（财报按代码、别的按类）同一个美东日子只算一次。"""
+    日历（happen 的 7 天、BLS 补的非农）先用，带市值、期权幅度；时间轴补日历没有的。同一件事（财报按代码、别的按类）同一个美东日子只算一次。
+    新8：加 VIX 到期、月末、季末（qx/events.py force_days()，口径十四.15），只写进每天那一行的字，不进 ev（④ 的状态词照三.8 的清单，不变）。"""
     from qx import events as EV
     t = pd.Timestamp(t).strftime("%Y-%m-%d")
     rows = []
@@ -1266,12 +1269,15 @@ def page_next5(out, hap_p, cal, radar, t):
         if len(b) >= 16 and b[13] == ":":
             bj = pd.Timestamp(b[:16], tz=clock.SH)
         add(e["date"], c, bj=bj, untimed=bj is None and c != "opex")
+    for e in EV.force_days(rows[0], rows[-1]):          # 新8：VIX 到期（美东 09:30 开盘结算，写北京时间）、月末、季末（收盘时）
+        add(e["date"], e["kind"], bj=pd.Timestamp(f"{e['date']} {e['hm']}", tz=clock.NY).tz_convert(clock.SH) if e["kind"] == "vix" else None,
+            lab=FORCE_LAB[e["kind"]])
     first, last = rows[0], rows[-1]
     slot = {d: [] for d in rows}
     for x in evs:
         if not (t < x["us"] <= last or (x["cls"] == "E" and x["us"] == t and x["bj"] is not None and x["bj"].hour < 12)):
             continue
-        if x["cls"] == "E" or x["untimed"] or x["cls"] == "opex":
+        if x["cls"] == "E" or x["untimed"] or x["cls"] in CLOSE_CLS:
             ed = x["bj"].strftime("%Y-%m-%d") if x["cls"] == "E" and x["bj"] is not None else x["us"]
         else:
             ed = x["bj"].strftime("%Y-%m-%d")
@@ -1281,10 +1287,11 @@ def page_next5(out, hap_p, cal, radar, t):
     out5 = []
     for d in rows:
         xs = slot[d]
-        timed = sorted([x for x in xs if x["cls"] != "E" and not x["untimed"] and x["cls"] != "opex"], key=lambda x: x["bj"])
+        timed = sorted([x for x in xs if x["cls"] != "E" and not x["untimed"] and x["cls"] not in CLOSE_CLS], key=lambda x: x["bj"])
         txt = [f"{x['pre']}{x['bj'].strftime('%H:%M')} {x['lab']}" for x in timed]
-        txt += [f"{x['lab']}（{'收盘时' if x['cls'] == 'opex' else '时间未定'}）" for x in xs if x["cls"] != "E" and (x["untimed"] or x["cls"] == "opex")]
-        ev = [EV_SHORT.get(x["lab"], x["lab"]) for x in timed] + [EV_SHORT.get(x["lab"], x["lab"]) for x in xs if x["cls"] != "E" and (x["untimed"] or x["cls"] == "opex")]
+        txt += [f"{x['lab']}（{'收盘时' if x['cls'] in CLOSE_CLS else '时间未定'}）" for x in xs if x["cls"] != "E" and (x["untimed"] or x["cls"] in CLOSE_CLS)]
+        ev = [EV_SHORT.get(x["lab"], x["lab"]) for x in timed if x["cls"] not in FORCE_LAB] + \
+             [EV_SHORT.get(x["lab"], x["lab"]) for x in xs if x["cls"] != "E" and x["cls"] not in FORCE_LAB and (x["untimed"] or x["cls"] in CLOSE_CLS)]   # 新8 的日子不进 ④
         for pre in dict.fromkeys(x["pre"] for x in xs if x["cls"] == "E"):
             er = sorted([x for x in xs if x["cls"] == "E" and x["pre"] == pre], key=lambda x: -(x.get("cap") or 0))
             top = er[0]
@@ -1408,6 +1415,9 @@ def build(D, R, radar, today, hap, ice, cal, opt=None):
     for c in out.get("cross200") or []:                   # 跌破 200 日线（旧终端 risk below200，能衡量风险）那天出一行
         out["trig"]["price"].append(dict(src="ma200", key="ma200:" + c["k"], title=f"{c['name']}收盘跌破 200 日线（{c['ma200']}）；在线下时，60 天内再跌一大段的比例历来高 7–8 个百分点（只说风险，不说方向）"))
     for k, f in (("hl", lambda: W.highs_lows(D, t)),                                  # 新5：② 点开"52 周新高减新低"（口径十四.13，只作描述）
+                 ("dvol", lambda: W.downvol(D, t)),                                    # 新8：① 点开"这一段"后面接 28 只收盘下跌量占比（口径十四.15，只作描述）
+                 ("ema", lambda: W.ema_order(D, t)),                                   # 新8：② 点开"均线"后面接指数均线排列（口径十四.15，没检验）
+                 ("letf5", lambda: PS.letf_5d(D, t)),                                  # 新8：③ 点开"杠杆 ETF"的 5 日净申赎（口径十四.15；算得出才写）
                  ("move", lambda: (lambda s: dict(now=_f(s.iloc[-1], 1), date=s.index[-1].strftime("%Y-%m-%d")))(D["^MOVE"]["c"].dropna().loc[:t]) if "^MOVE" in D else None)):
         try:
             out[k] = f()
@@ -1660,7 +1670,7 @@ SHUO_NEWS2 = ("<p>新闻只取路透、彭博、华尔街日报、金融时报�
               "纳斯达克（财报、宏观日历）、劳工统计局发布日表（补纳斯达克漏掉的非农）、美联储和日本央行日程、美国经济分析局、Polymarket、台湾证交所、美国财政部（美债拍卖）、日本财务省。</p>")
 SHUO_LABUBU = ("<p>Labubu 认投降要等收盘：VVIX 125 以上、下跌成交量占全部 80%–90% 以上，收盘时还在高位才算，开盘达标、收盘回落的不算。"
                "成分股隐含相关性（COR1M）他看过去一年的分位，到最低一头会小心，说一两周后常回调（没给具体分位）。"
-               "这些阈值没检验过，只当参考，不进任何触发；下跌成交量占比和 COR1M 页面上还没有。</p>")
+               "这些阈值没检验过，只当参考，不进任何触发；页面上的下跌量只算 28 只半导体（不是全市场），COR1M 还没有。</p>")
 
 
 def _rep2(data):

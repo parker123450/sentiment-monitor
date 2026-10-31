@@ -419,6 +419,49 @@ def letf_flow(t):
     return last
 
 
+LETF_N = 5                      # 5 日净申赎（口径十四.15，新8 登记）
+
+
+def letf_5d(D, t, n=LETF_N):
+    """SOXL / SOXS 最近 5 个交易日的净申赎合计（口径十四.15，十四.7 的新版本；新8 登记，只作描述：不进卡、不推送、不进 today 和 radar）。
+    每天的数照十四.7（letf_flow() 同一套：连着两个交易日都有份额才算后一天，份额一天变 1.8 倍以上按合股不算，单位亿美元，
+    钱往做多那边为正）；letf_flow() 只留最后一天、不动，这里另算。5 天 = 份额对应的最新那天和它往前连着 4 个交易日；
+    有一天算不出（缺份额、合股、没有收盘价）整个不算，写出是哪几天，不拿几天的差合成一天，也不拿 4 天的凑。
+    同期涨跌 = 第一天前一个交易日收盘 → 最后一天收盘（行情日线 D 的 SOXL、SOXS）。先不和历史比：每天的数攒满 104 天才和历史比（十四.7）。"""
+    d = _letf(t)
+    if d.empty:
+        return dict(ok=False, why="还没有份额")
+    by = {}
+    for i in range(1, len(d)):
+        a, b = d.iloc[i - 1], d.iloc[i]
+        if a["flow_day"] != _prev_td(b["flow_day"]):
+            continue
+        x = {}
+        for s in ("soxl", "soxs"):
+            q = b[s] / a[s] if a[s] else np.nan
+            x[s] = None if not np.isfinite(q) or q >= SPLIT or q <= 1 / SPLIT or pd.isna(b["px_" + s]) else round(float((b[s] - a[s]) * b["px_" + s]) / 1e8, 2)
+        x["net"] = None if x["soxl"] is None or x["soxs"] is None else round(x["soxl"] - x["soxs"], 2)
+        by[b["flow_day"]] = x
+    last = d["flow_day"].iloc[-1]
+    days = [last]
+    while len(days) < n:
+        days.append(_prev_td(days[-1]))
+    days = days[::-1]
+    miss = [x for x in days if x not in by or by[x]["net"] is None]
+    if miss:
+        return dict(ok=False, last=last, why="算不出的日子：" + "、".join(miss), have=n - len(miss))
+    out = dict(ok=True, start=days[0], last=last, n=n, sum=round(sum(by[x]["net"] for x in days), 2), today=by[last]["net"],
+               soxl=round(sum(by[x]["soxl"] for x in days), 2), soxs=round(sum(by[x]["soxs"] for x in days), 2),
+               old=(pd.Timestamp(t) - pd.Timestamp(last)).days > 7)
+    p0 = pd.Timestamp(_prev_td(days[0]))
+    for s in ("SOXL", "SOXS"):
+        c = D[s]["c"].dropna() if s in D else pd.Series(dtype=float)
+        c = c[c.index <= pd.Timestamp(t)]
+        a, b = c[c.index == p0], c[c.index == pd.Timestamp(last)]
+        out["r_" + s.lower()] = round((float(b.iloc[0]) / float(a.iloc[0]) - 1) * 100, 1) if len(a) and len(b) else None
+    return out
+
+
 def si_readings(t):
     d = _df(SI_CSV, t)
     out = []

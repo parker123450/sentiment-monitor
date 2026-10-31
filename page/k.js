@@ -226,8 +226,11 @@
       rows.push(li("保险", (m10 ? [`VIX ${Number(M.vix.now).toFixed(1)}（${M.vix.p}）`, M.skew ? `SKEW ${M.skew.now}（${M.skew.p}）` : "", M.vvix ? `VVIX ${M.vvix.now}（${M.vvix.p}）` : ""].filter(Boolean).join(" · ")
         : E.vix != null ? `VIX ${E.vix}${E.vix_pct != null ? `（${E.vix_pct}）` : ""}` : "") + (E.t3 != null ? ` · 1 个月 ÷ 3 个月 ${E.t3}${E.t3 >= 1 ? "（倒挂）" : ""}` : ""),
         m10 ? "近 10 年分位" : E.vix_pct != null ? "全部历史分位" : ""));
-      if (E.asof) rows.push(li("这一段", E.stage ? `${esc(E.name)}，${D2(E.since)} 起第 ${E.ndays} 个交易日` +
-        (E.regime === 2 ? `；板块自己跌，VIX 最高 ${E.vixmax}，没到 30` : E.regime === 1 ? `；宏观冲击，VIX 最高到过 ${E.vixmax}` : "") : "平稳：费城半导体没在跌"));
+      // 新8：后面接 28 只收盘下跌量占比（qx/watch.py downvol()，口径十四.15，只作描述；那天没数就不写）。"28 只"是 ② 内部那一行同一个池子，
+      // "不是全市场"写在说明里；全部历史分位算了不写（07-30 这一行多一行，① 点开就超过 +260，记在 docs/不再显示的.md）
+      const DV = FR.dvol, dv = DV && DV.share != null ? `；28 只收盘下跌量 ${DV.share.toFixed(1)}%` : "";
+      if (E.asof) rows.push(li("这一段", (E.stage ? `${esc(E.name)}，${D2(E.since)} 起第 ${E.ndays} 个交易日` +
+        (E.regime === 2 ? `；板块自己跌，VIX 最高 ${E.vixmax}，没到 30` : E.regime === 1 ? `；宏观冲击，VIX 最高到过 ${E.vixmax}` : "") : "平稳：费城半导体没在跌") + dv));
       if (S.hot_last || S.lead_last) rows.push(li("热的一头", [S.hot_last ? `涨过头最近 ${dy(S.hot_last)}` : "", S.lead_last ? `参与度先走最近 ${dy(S.lead_last)}` : ""].filter(Boolean).join(" · ") +
         ((S.chips || []).some(c => c.w === "涨过头") ? "；今天涨过头" : ""), "只作描述"));
       const s2 = x => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(2);
@@ -239,8 +242,10 @@
     { const rows = [], P = FR.pos || [], S = V.price || {};
       const SN = { "^SOX": "半导体", "^NDX": "纳指", "^GSPC": "标普" };
       if (P.length) rows.push(li("离一年高点", P.map(x => `${esc(SN[x.k] || x.name)} ${S1(x.dd)}%${x.below_since ? `（200 日线下第 ${x.below_days} 天）` : ""}`).join(" · ")));
+      // 新8：后面接指数均线排列（qx/watch.py ema_order()，口径十四.15，没检验）：费城半导体 5 / 10 / 21 / 50 日 EMA 的排列，28 只里几只多头、几只空头排列
+      const EM = FR.ema, em = EM && EM.word ? `；EMA 5/10/21/50 ${esc(EM.word)}（没检验），28 只里多头 ${EM.bull}、空头 ${EM.bear}` : "";
       if (S.m20 != null) rows.push(li("均线", `收盘 ${N0(S.close)} 在 20 日线 ${N0(S.m20)} ${S.close >= S.m20 ? "上" : "下"}，20 日线比 5 天前（${N0(S.m20_5)}）${S.m20 > S.m20_5 ? "高" : S.m20 < S.m20_5 ? "低" : "持平"}` +
-        (S.trend ? `；${esc(S.trend)}第 ${S.trend_n} 天` : "")));
+        (S.trend ? `；${esc(S.trend)}第 ${S.trend_n} 天` : "") + em));
       const O = RAW.options, OD = FR.optdate || {}, bet = [];
       for (const sym of ["SMH", "QQQ", "SPY"]) {
         const r = O && (O.rows || []).find(x => x.sym === sym), a = r && (r.ans || []).find(x => /押在哪个价位/.test(x.q));
@@ -293,8 +298,10 @@
       }
       if (K.pc != null || K.aaii != null) rows.push(li("保险和散户", [K.pc != null ? `买跌 ÷ 买涨 ${fmt(K.pc, 2)}（平时 ${fmt(K.pcm, 2)}）` : "", K.aaii != null ? `散户多减空 ${sgn(K.aaii, 1)}%（一周前 ${sgn(K.aaiip, 1)}%）` : ""].filter(Boolean).join(" · ")));
       // 杠杆 ETF：SOXL 股数占比（qx/positioning.py letf_readings() 的份额比，口径十四.7 只作对照）；最近一天的净申赎（letf_flow()）连着两个交易日都有份额才算
-      const LR = ((RR.pos && RR.pos.readings) || []).find(x => x.src === "Direxion" && /^SOXL 份额/.test(x.name || "")), L = F && F.letf;
-      if (LR || L) rows.push(li("杠杆 ETF", [LR ? `SOXL 股数占比 ${LR.value}%（${D2(LR.asof)}${LR.pos == null ? "" : `，历史位置 ${pc(LR.pos)}`}）` : "",
+      // 新8：5 天都算得出时写 5 日净申赎（qx/positioning.py letf_5d()，口径十四.15），代替最近一天那一句；算不出照旧写最近一天
+      const LR = ((RR.pos && RR.pos.readings) || []).find(x => x.src === "Direxion" && /^SOXL 份额/.test(x.name || "")), L5 = FR.letf5 && FR.letf5.ok ? FR.letf5 : null, L = !L5 && F && F.letf;
+      if (LR || L || L5) rows.push(li("杠杆 ETF", [LR ? `SOXL 股数占比 ${LR.value}%（${D2(LR.asof)}${LR.pos == null ? "" : `，历史位置 ${pc(LR.pos)}`}）` : "",
+        L5 ? `${D2(L5.start)}–${D2(L5.last)} 5 日净申赎 ${S1(L5.sum)} 亿美元（${D2(L5.last)} ${S1(L5.today)}）${L5.r_soxl == null ? "" : `，同期 SOXL ${S1(L5.r_soxl)}%`}` : "",
         L ? `${D2(L.day)} 净申赎 ${["soxl", "soxs"].map(k => `${k.toUpperCase()} ${L[k] == null ? "不算" : S1(L[k]) + " 亿美元"}`).join("、")}` +
           (L.net == null ? "" : `，合起来钱往${L.net >= 0 ? "做多" : "做空"}那边 ${Math.abs(L.net).toFixed(1)} 亿${L.pos == null ? "" : `（历史位置 ${pc(L.pos)}）`}`) : ""].filter(Boolean).join("；")));
       put("flow", rows); }
@@ -425,11 +432,13 @@
   (function cal4() {
     const el = $("cal"), N5 = FR.next5 || []; if (!el) return;
     if (!N5.length && !FR.later) { el.hidden = true; return; }
-    const none = N5.length && N5.every(x => x.text === "—");
+    // 新8：VIX 到期、月末、季末是自己算的（不进 ev），日历没存下来时只剩它们，照旧写那句提示
+    const none = N5.length && N5.every(x => !(x.ev || []).length && !(x.er || []).length),
+      own = [...new Set(N5.flatMap(x => x.text.match(/VIX 到期|月末|季末/g) || []))].join("、");
     el.innerHTML = `<div class="bh"><h2>接下来 5 个交易日</h2><span class="meta">北京时间${FR.cal_late ? ` · 日历是 ${D2(FR.cal_late)} 取的` : ""}</span></div>` +
       N5.map(x => `<div class="cr"><span class="cdt num">${esc(x.md)}</span><span class="cwd">${esc(x.wd)}</span><span class="ct">${esc(x.text)}</span></div>`).join("") +
       (FR.later ? `<div class="cr later"><span class="cdt">再往后</span><span class="ct">${esc(FR.later)}</span></div>` : "") +
-      (none ? `<p class="knote">这几天的日历没存下来，只列得出日子。</p>` : "");
+      (none ? `<p class="knote">这几天的日历没存下来，${own ? `只列得出自己算的${/^[A-Z]/.test(own) ? " " : ""}${own}` : "只列得出日子"}。</p>` : "");
   })();
 
   // ---------- 期权：五个问题（规则在 口径.md 第四节；白话在 qx/options.py 写好）

@@ -251,6 +251,55 @@ def bls_nfp(start, end):
     return sorted(out, key=lambda e: e["date"])
 
 
+# ---------- 新8：VIX 到期、月末、季末（口径十四.15）。只给页面"接下来 5 个交易日"用：不进 load()、不进 opex()，推送读的 today.upcoming 不动；
+# 不进 ④ 的状态词、不算口径三.8 的大事（要进得先给三.8 加新版本，等用户定）。只写日子，不写"到期前会怎样"。
+def _third_fri(y, m):
+    d = date(y, m, 1)
+    return d + timedelta(days=(4 - d.weekday()) % 7 + 14)
+
+
+def _prev_open(d):
+    d -= timedelta(days=1)
+    while not clock.is_trading_day(d):
+        d -= timedelta(days=1)
+    return d
+
+
+def vix_expiry(y, m):
+    """m 月那一期 VIX 的到期（VX 期货、VIX 月度期权的结算日；美东 09:30 开盘按特别报价结算）。
+    Cboe 期货交易所 VX 合约细则（Final Settlement Date）：下一个月第三个周五往前 30 天的那个周三；那个周五或那个周三是假日，
+    提前到那个周三之前的一个交易日。假日用 NYSE 的表（qx/clock，排到 HOLIDAYS_UNTIL）。
+    例：2025-04-18 耶稣受难日休市 → 3 月那一期 2025-03-18（周二）；2026-06-19 六月节休市 → 5 月那一期 2026-05-19（周二）。
+    下一个月第三个周五在 15–21 号，往前 30 天总落在 m 月里。"""
+    ny, nm = (y + 1, 1) if m == 12 else (y, m + 1)
+    fr = _third_fri(ny, nm)
+    wd = fr - timedelta(days=30)
+    if not clock.is_trading_day(fr) or not clock.is_trading_day(wd):
+        wd = _prev_open(wd)
+    return wd
+
+
+def month_end(y, m):
+    """这个月最后一个美股交易日（收盘那一刻算月末；3、6、9、12 月的就是季末）。"""
+    d = date(y + (m == 12), m % 12 + 1, 1) - timedelta(days=1)
+    while not clock.is_trading_day(d):
+        d -= timedelta(days=1)
+    return d
+
+
+def force_days(start, end):
+    """[start, end]（美东日子，含两头）里的 VIX 到期、月末、季末，按日子排。季末那天只写季末（不再另写月末）。
+    kind：vix（美东 09:30 开盘结算）、mend / qend（美东 16:00 收盘）；nohol：qx/clock 的休市表没排到那一年（表从 2025 年排到 HOLIDAYS_UNTIL），假日没算进去。"""
+    a, b = date.fromisoformat(str(start)[:10]), date.fromisoformat(str(end)[:10])
+    out, y, m = [], a.year, a.month
+    while date(y, m, 1) <= b:
+        for d, kind in ((vix_expiry(y, m), "vix"), (month_end(y, m), "qend" if m in (3, 6, 9, 12) else "mend")):
+            if a <= d <= b:
+                out.append(dict(date=d.isoformat(), kind=kind, hm="09:30" if kind == "vix" else "16:00", nohol=not ("2025-01-01" <= d.isoformat() <= clock.HOLIDAYS_UNTIL)))
+        y, m = (y + 1, 1) if m == 12 else (y, m + 1)
+    return sorted(out, key=lambda e: (e["date"], e["hm"]))
+
+
 OFFICIAL = {"gdp": "美国 GDP", "pce": "美国 PCE", "boj": "日本央行利率决议"}
 
 

@@ -298,6 +298,91 @@ def highs_lows(D, t):
     return dict(date=days[-1].strftime("%Y-%m-%d"), n=n, of=len(SEMIS), hi=hi, lo=lo, net=hi - lo) if n else None
 
 
+DV_MIN = 10                     # 下跌量占比：28 只里当天至少 10 只有数才算（和 sentiment.raw_series 的 n20 >= 10 一样）
+
+
+def downvol(D, t):
+    """28 只半导体收盘时下跌成交量的占比（口径十四.15，新8 登记；只作描述：不进规则、不设阈值、不推送、不进 today 和 radar）。
+    不是全市场：全市场的 DVOL / UVOL 没有免费又稳定的来源。日子按费城半导体的交易日；一只股票当天收盘比前一个交易日收盘低，
+    它当天的成交量（股数，和交易所 DVOL / UVOL 一样按股数）算下跌量；分母是当天全部有数的成交量（平盘的算进分母）。
+    前一个交易日没有收盘、当天没有成交量的那只当天不算；当天至少 10 只才算。只用 t 以前（含 t）的日线，最后一天要是 t（这天没数就不出）。
+    pct = 当天的占比在自己到 t 为止全部历史里的分位（扩张窗口，算法同 sentiment.pct，至少 250 天）；高 = 下跌的量占得多。"""
+    from qx.registry import SEMIS
+    t = pd.Timestamp(t)
+    if "^SOX" not in D:
+        return None
+    days = D["^SOX"]["c"].dropna()
+    days = days.index[days.index <= t]
+    days = days[~days.duplicated()]
+    if not len(days) or days[-1] != t:
+        return None
+    C, V = {}, {}
+    for k in SEMIS:
+        if k not in D or "v" not in D[k]:
+            continue
+        f = D[k][~D[k].index.duplicated(keep="last")]
+        f = f[f.index <= t]
+        C[k], V[k] = f["c"].reindex(days), f["v"].reindex(days)
+    if not C:
+        return None
+    C, V = pd.DataFrame(C), pd.DataFrame(V)
+    r = C / C.shift(1) - 1
+    ok = r.notna() & (V > 0)
+    dn, tot, n = V.where(ok & (r < 0)).sum(axis=1), V.where(ok).sum(axis=1), ok.sum(axis=1)
+    sh = (dn / tot * 100).where((n >= DV_MIN) & (tot > 0)).dropna()
+    if not len(sh) or sh.index[-1] != t:
+        return None
+    p = pct(sh).iloc[-1]
+    return dict(date=t.strftime("%Y-%m-%d"), share=round(float(sh.iloc[-1]), 1), ndn=int((ok & (r < 0)).loc[t].sum()), n=int(n.loc[t]), of=len(SEMIS),
+                pct=None if pd.isna(p) else round(float(p), 1), since=sh.index[0].strftime("%Y-%m-%d"), days=len(sh))
+
+
+EMA_N = (5, 10, 21, 50)         # 指数均线排列（口径十四.15，新8 登记；周期照 Labubu 原话"5>10>21>50 EMA"）
+
+
+def _ema_word(c):
+    """一串收盘（截到 t）→ (5 / 10 / 21 / 50 日 EMA, 排列)。EMA：span = N（α = 2 / (N + 1)），从这串第一根起递推（adjust=False）；
+    5 > 10 > 21 > 50 是"多头排列"，反过来是"空头排列"，其余是"交织"。"""
+    e = [float(c.ewm(span=n, adjust=False).mean().iloc[-1]) for n in EMA_N]
+    w = "多头排列" if all(e[i] > e[i + 1] for i in range(3)) else "空头排列" if all(e[i] < e[i + 1] for i in range(3)) else "交织"
+    return e, w
+
+
+def ema_order(D, t):
+    """费城半导体和 28 只的指数均线排列（口径十四.15，新8 登记；没检验，只作描述：不进规则、不设阈值、不推送、不进 today 和 radar）。
+    费城半导体：5 / 10 / 21 / 50 日 EMA 和排列，收盘在哪几条下方，另算 8 周 EMA（周线 = 每周最后一个交易日的收盘，先截到 t 再合周线，
+    t 所在那一周只到 t；Labubu 当失效位用，不进排列）。28 只（registry.SEMIS）：收盘最后一天是 t、至少 260 根的那些，几只多头排列、几只空头排列。
+    只用 t 以前（含 t）的收盘；EMA 是往前递推的，截到任何一天重算，那天的数不变。"""
+    from qx.registry import SEMIS
+    t = pd.Timestamp(t)
+    if "^SOX" not in D:
+        return None
+    c = D["^SOX"]["c"].dropna()
+    c = c[~c.index.duplicated(keep="last")]
+    c = c[c.index <= t]
+    if len(c) < 260 or c.index[-1] != t:
+        return None
+    e, w = _ema_word(c)
+    wk = c.resample("W-FRI").last().dropna()
+    e8 = float(wk.ewm(span=8, adjust=False).mean().iloc[-1])
+    last = float(c.iloc[-1])
+    bull = bear = n = 0
+    for k in SEMIS:
+        if k not in D:
+            continue
+        s = D[k]["c"].dropna()
+        s = s[~s.index.duplicated(keep="last")]
+        s = s[s.index <= t]
+        if len(s) < 260 or s.index[-1] != t:
+            continue
+        n += 1
+        x = _ema_word(s)[1]
+        bull += x == "多头排列"
+        bear += x == "空头排列"
+    return dict(date=t.strftime("%Y-%m-%d"), close=round(last, 2), ema={str(k): round(v, 2) for k, v in zip(EMA_N, e)}, word=w,
+                below=[str(k) for k, v in zip(EMA_N, e) if last < v], w8=round(e8, 2), n=n, of=len(SEMIS), bull=bull, bear=bear)
+
+
 def trend_items(D, t):
     out = []
     for k in TREND_ROWS:

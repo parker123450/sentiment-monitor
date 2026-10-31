@@ -153,6 +153,8 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
         bad.append(("新5 点开", ["行数或套了折叠"]))
     if not fund_na_check(D, log):
         bad.append(("新5 ⑤ 不算的档", ["历史不满 504 天、读数旧过 7 天的档进了状态词，或句子写了算不出的门槛"]))
+    if not new8_check(D, aaii, R, log):
+        bad.append(("新8 Labubu 新读数", ["截到以前重算、5 日净申赎缺天和合股、VIX 到期、月末或 5 天日历"]))
     return not bad
 
 
@@ -434,6 +436,73 @@ def five_check(D, aaii, R, log=print):
     good = bool(ex) and not wrong
     ok &= good
     log(f"  新5 离出清（最近 {len(ex)} 次退出，逐日 {n_all} 天）：" + ("一致" if good else "不一致 " + "、".join(wrong[:4])))
+    return ok
+
+
+VIX_2025 = "01-22 02-19 03-18 04-16 05-21 06-18 07-16 08-20 09-17 10-22 11-19 12-17"   # Cboe 公布的 2025 年 VIX 到期（3 月那一期因耶稣受难日提前到周二）
+
+
+def new8_check(D, aaii, R, log=print):
+    """新8 Labubu 新读数（口径十四.15）：
+    28 只收盘下跌量占比（watch.downvol()）、指数均线排列（watch.ema_order()）、SOXL 5 日净申赎（positioning.letf_5d()）
+    截到以前重算 = 全量（FIVE_DAYS 五个日子加最新一天；5 日净申赎按 extras_cut 截份额文件）；
+    5 日净申赎用构造的份额查：6 天连着 → 算 5 天合计；中间缺一天、有一天合股 → 整个不算，写出是哪几天；
+    VIX 到期（events.vix_expiry()）和 Cboe 公布的 2025 年 12 期对得上，月末遇假日往前挪；
+    "接下来 5 个交易日"（front.page_next5()）里 VIX 到期写北京时间（夏令时 21:30、冬令时 22:30），月末、季末写收盘时，都不进 ④ 用的 ev。"""
+    from qx import events as EV, front as FR, positioning as PS
+    ok, idx = True, R["P"].index
+    for t in dict.fromkeys([idx[idx <= pd.Timestamp(d)][-1] for d in FIVE_DAYS] + [idx[-1]]):
+        Dt, _ = cut(D, aaii, t)
+        a, diff = W.downvol(D, t), []
+        if a != W.downvol(Dt, t):
+            diff.append("下跌量占比")
+        if t.strftime("%Y-%m-%d") in FIVE_DAYS and not (a and 0 <= a["share"] <= 100 and a["n"] >= W.DV_MIN):
+            diff.append("下跌量占比没算出")
+        if W.ema_order(D, t) != W.ema_order(Dt, t):
+            diff.append("EMA 排列")
+        a = PS.letf_5d(D, t)
+        with extras_cut(t):
+            b = PS.letf_5d(Dt, t)
+        if a != b:
+            diff.append("5 日净申赎")
+        ok &= not diff
+        log(f"  新8 截到以前 {t.date()}：" + ("一致" if not diff else "不一致 " + "、".join(diff)))
+    # 5 日净申赎：构造 6 个连着的交易日的份额和收盘（10-16、10-19 … 10-23）
+    tds = ["2026-10-23"]
+    while len(tds) < 6:
+        tds.append(PS._prev_td(tds[-1]))
+    tds = tds[::-1]
+    sl, ss = [100e6, 101e6, 99e6, 103e6, 104e6, 102e6], [50e6, 50e6, 51e6, 49e6, 50e6, 52e6]
+    pl, px = [40, 41, 39, 42, 43, 41.5], [10, 9.8, 10.2, 9.6, 9.5, 9.9]
+    frame = lambda sl: pd.DataFrame(dict(date=tds, flow_day=tds, soxl=sl, soxs=ss, px_soxl=pl, px_soxs=px, pub=tds))
+    Dx = {"SOXL": pd.DataFrame(dict(c=pl), index=pd.DatetimeIndex(tds)), "SOXS": pd.DataFrame(dict(c=px), index=pd.DatetimeIndex(tds))}
+    want = sum((sl[i] - sl[i - 1]) * pl[i] / 1e8 - (ss[i] - ss[i - 1]) * px[i] / 1e8 for i in range(1, 6))
+    f0, good = PS._letf, []
+    try:
+        PS._letf = lambda t: frame(sl)
+        o = PS.letf_5d(Dx, tds[-1])
+        good.append(o.get("ok") and o["start"] == tds[1] and o["last"] == tds[-1] and abs(o["sum"] - want) <= 0.03
+                    and abs(o["r_soxl"] - (pl[-1] / pl[0] - 1) * 100) <= 0.06 and abs(o["r_soxs"] - (px[-1] / px[0] - 1) * 100) <= 0.06)
+        PS._letf = lambda t: frame(sl).drop(index=3).reset_index(drop=True)          # 缺 tds[3]：那天和后一天都算不出
+        o = PS.letf_5d(Dx, tds[-1])
+        good.append(not o.get("ok") and o.get("why") == "算不出的日子：" + "、".join(tds[3:5]))
+        PS._letf = lambda t: frame(sl[:4] + [sl[3] * 2.5, sl[5]])                        # tds[4] SOXL 份额变 2.5 倍：按合股，那天和后一天都不算
+        o = PS.letf_5d(Dx, tds[-1])
+        good.append(not o.get("ok") and o.get("why") == "算不出的日子：" + "、".join(tds[4:6]))
+    finally:
+        PS._letf = f0
+    # VIX 到期、月末
+    got = " ".join(EV.vix_expiry(2025, m).strftime("%m-%d") for m in range(1, 13))
+    good.append(got == VIX_2025 and str(EV.vix_expiry(2026, 5)) == "2026-05-19")
+    good.append([str(EV.month_end(y, m)) for y, m in ((2026, 10), (2025, 11), (2027, 5))] == ["2026-10-30", "2025-11-28", "2027-05-28"])
+    good.append([(e["date"], e["kind"]) for e in EV.force_days("2026-09-14", "2026-10-02")] == [("2026-09-16", "vix"), ("2026-09-30", "qend")])
+    # "接下来 5 个交易日"：没有日历时只剩自己算的日子；都不进 ev
+    for t, d, txt in (("2026-10-16", "2026-10-21", "21:30 VIX 到期"), ("2026-11-13", "2026-11-18", "22:30 VIX 到期"),
+                      ("2026-10-26", "2026-10-30", "月末（收盘时）"), ("2026-09-25", "2026-09-30", "季末（收盘时）")):
+        n5, _ = FR.page_next5({}, None, None, None, t)
+        good.append([x["text"] for x in n5 if x["d"] == d] == [txt] and not any(x["ev"] for x in n5))
+    ok &= all(good)
+    log("  新8 构造的份额、VIX 到期、月末、5 天日历：" + ("一致" if all(good) else "不一致 第 " + "、".join(str(i + 1) for i, x in enumerate(good) if not x) + " 条"))
     return ok
 
 
