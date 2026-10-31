@@ -183,8 +183,9 @@ def flows(D, t, pos):
         x["dir"] = None if not ns else ("加" if all((n["now"] - n["prev"]) * (1 if x["word"] == "挤在多头" else -1) > 0 for n in ns)
                                          else "减" if all((n["now"] - n["prev"]) * (1 if x["word"] == "挤在多头" else -1) < 0 for n in ns) else "有加有减")
     calm = sorted({mk for mk, w in word.items() if not hot(w) and w not in ("数据不够",) and mk not in {c["market"] for c in changed}})
-    tff = [dict(code=r["code"], name={"13874A": "标普", "209742": "纳指"}[r["code"]], who=r["who"], now=r["value"], pos=_f(r["pos"], 2) if r["pos"] is not None else None, chg=r["chg"])
-           for r in pos["readings"] if r.get("tff") and r["code"] in ("13874A", "209742")]       # 美股期指谁在场上（TFF，口径十四.6）：常驻
+    tff = [dict(code=r["code"], name={"13874A": "标普", "209742": "纳指"}[r["code"]], who=r["who"], now=r["value"], pos=_f(r["pos"], 2) if r["pos"] is not None else None, chg=r["chg"],
+                side=r.get("side"))                                                       # side：10% 以外的"多头 / 空头"（positioning.side()，没取整的位置判的；新4 复查改正）
+           for r in pos["readings"] if r.get("tff") and r["code"] in ("13874A", "209742")]       # 美股期指谁在场上（TFF，口径十四.6）：新4 起并进 ③ 点开"期货持仓"那一行
     crowd_rs = lambda mk: [r for r in pos["readings"] if r["market"] == mk and r.get("crowd", True)]
     # 新3 只改标普那一句（steps2 新3："页面和现在一样，只有三处错和 ③ 那句改了"）；美债照旧写"方向不一致"，要不要也写开等新4 排版时定
     why = lambda mk: mixed_why(crowd_rs(mk), mk) if mk == "美股" and word[mk] == "方向不一致" else None
@@ -629,7 +630,7 @@ def _pillar_of_item(x):
     if kind == "pm":
         return "expect"
     if kind == "gamma":
-        return None                                   # 做市商 gamma 是简化模型，放后台（五样方案第八节第 5 条）
+        return "flow"                                 # 做市商 gamma 转向：没有后台了，③ 点开第 2 行是做市商（plan 第三节第 3 小节；新4 复查改正，原来放后台）
     return None
 
 
@@ -737,6 +738,8 @@ NO = {"emo": 1, "price": 2, "flow": 3, "expect": 4, "fund": 5}
 NEXT_LABEL = {"fomc": "议息会决议", "presser": "主席发布会", "minutes": "议息会纪要", "boj": "日本央行利率决议", "bok": "韩国央行利率决议",
               "cpi": "CPI", "nfp": "非农", "pce": "PCE", "gdp": "GDP", "retail": "零售销售", "ism": "ISM", "opex": "月度期权到期"}
 BIG_SYMS = {"AAPL", "AMZN", "GOOGL", "META", "MSFT", "NVDA", "TSLA", "AVGO", "TSM"}      # "再往后"里两周以外的 1 万亿美元以上公司（时间轴不带市值；两周以内用日历的市值）
+NAME_ADD = {"BRK.A": "伯克希尔"}                     # events.NAMES 只有 BRK.B；页面补一个（events.py 不动，推送读的那几份跟着它）
+ISM_LAB = (("Non-Manufacturing|Services", "ISM 服务业"), ("Manufacturing", "ISM 制造业"))   # 日历的 note 写了是哪一份（纳斯达克原名）；时间轴没写的照旧"ISM"
 
 
 def _mds(d):
@@ -814,7 +817,7 @@ def page_changes(out, today):
         if x.get("kind") == "judge":
             continue                                       # 判断卡在顶上判断条、"我的判断"里
         k = home.get((x["key"], x.get("date")))
-        res.append(dict(p=NO.get(k, 0), key=x["key"], date=x.get("date"), title=x["title"], src="today", hide=k is None))
+        res.append(dict(p=NO.get(k, 0), key=x["key"], date=x.get("date"), title=x["title"], src="today", hide=False))   # today 条目原样都画（plan 第四节 H11）；归不到五样的标"·"
     for k, _ in PILLARS:
         for x in trig.get(k) or []:
             if x.get("src") != "today":
@@ -857,12 +860,24 @@ def page_next5(out, hap_p, cal, radar, t):
     caps = {e.get("sym"): e.get("cap") for e in list((hap_p or {}).get("calendar") or []) + list((cal or {}).get("events") or []) if e.get("sym") and e.get("cap")}
     evs, seen = [], set()
 
-    def add(us, cls, bj=None, untimed=False, sym=None, name=None, implied=None, cap=None, est=False, src=""):
+    def add(us, cls, bj=None, untimed=False, sym=None, name=None, implied=None, cap=None, est=False, src="", lab=None):
         key = ("E", sym, us) if cls == "E" else (cls, us)
         if key in seen:
             return
         seen.add(key)
-        evs.append(dict(us=us, cls=cls, bj=bj, untimed=untimed, sym=sym, name=name, implied=implied, cap=cap, est=est))
+        evs.append(dict(us=us, cls=cls, bj=bj, untimed=untimed, sym=sym, name=name, implied=implied, cap=cap, est=est, lab=lab or NEXT_LABEL.get(cls)))
+
+    def big(sym, cap):
+        """口径三.8 的财报名单：关注的公司（events.WATCH，日历里 why=关注）或 1 万亿美元以上（日历的市值；没有市值的用 BIG_SYMS）。
+        时间轴（qx/timeline.py）的财报名单还多收了 coverage 的代码（MSTR、COIN 这些），日历没收的不从时间轴补进来（新4 复查改正）。"""
+        return sym in EV.WATCH or (cap or 0) >= 1e12 or (cap is None and sym in BIG_SYMS)
+
+    def nm(sym, fallback):
+        return EV.NAMES.get(sym) or NAME_ADD.get(sym) or short_name(fallback or sym)
+
+    def ism(e):
+        n = str(e.get("note") or "")
+        return next((lab for rx, lab in ISM_LAB if __import__("re").search(rx, n)), None)
 
     for e in list((hap_p or {}).get("calendar") or []) + list(out.get("cal_add") or []):
         c = _ev_class(e.get("kind"), e.get("title"))
@@ -873,7 +888,7 @@ def page_next5(out, hap_p, cal, radar, t):
                 continue
             tm = e.get("time") or ""
             bj = pd.Timestamp(f"{e['date']} {'08:00' if tm == '盘前' else '16:00'}", tz=clock.NY).tz_convert(clock.SH) if tm in ("盘前", "盘后") else None
-            add(e["date"], c, bj=bj, untimed=bj is None, sym=e.get("sym"), name=EV.NAMES.get(e.get("sym")) or short_name(e.get("name") or e.get("sym")),
+            add(e["date"], c, bj=bj, untimed=bj is None, sym=e.get("sym"), name=nm(e.get("sym"), e.get("name")),
                 implied=(e.get("implied") or [{}])[0].get("move"), cap=e.get("cap"))
             continue
         bj = pd.Timestamp(e["utc"]).tz_convert(clock.SH) if e.get("utc") else None
@@ -883,7 +898,7 @@ def page_next5(out, hap_p, cal, radar, t):
         if bj is None and e.get("time"):
             x = _et_time(e["date"], (e.get("time") or "").replace(" 美东", ""))
             bj = x.tz_convert(clock.SH) if x is not None else None
-        add(e["date"], c, bj=bj, untimed=bj is None and c != "opex")
+        add(e["date"], c, bj=bj, untimed=bj is None and c != "opex", lab=ism(e) if c == "ism" else None)
     tl = (out.get("tlfix") or {}).get("events") or (((radar or {}).get("fwd") or {}).get("timeline") or {}).get("events") or []
     for e in tl:
         c = _ev_class(e.get("kind"), e.get("title"))
@@ -892,11 +907,13 @@ def page_next5(out, hap_p, cal, radar, t):
         b = str(e.get("bj") or "")
         bj, untimed = None, False
         if c == "E":
+            if not big(e.get("sym"), caps.get(e.get("sym"))):
+                continue
             if b[11:] in ("盘前", "盘后"):
                 bj = pd.Timestamp(f"{e['date']} {'08:00' if b[11:] == '盘前' else '16:00'}", tz=clock.NY).tz_convert(clock.SH)
             else:
                 untimed = True
-            add(e["date"], c, bj=bj, untimed=untimed, sym=e.get("sym"), name=EV.NAMES.get(e.get("sym")) or short_name(str(e.get("title") or "").replace(" 财报", "")),
+            add(e["date"], c, bj=bj, untimed=untimed, sym=e.get("sym"), name=nm(e.get("sym"), str(e.get("title") or "").replace(" 财报", "")),
                 cap=caps.get(e.get("sym")))
             continue
         if len(b) >= 16 and b[13] == ":":
@@ -918,8 +935,8 @@ def page_next5(out, hap_p, cal, radar, t):
     for d in rows:
         xs = slot[d]
         timed = sorted([x for x in xs if x["cls"] != "E" and not x["untimed"] and x["cls"] != "opex"], key=lambda x: x["bj"])
-        txt = [f"{x['pre']}{x['bj'].strftime('%H:%M')} {NEXT_LABEL[x['cls']]}" for x in timed]
-        txt += [f"{NEXT_LABEL[x['cls']]}（{'收盘时' if x['cls'] == 'opex' else '时间未定'}）" for x in xs if x["cls"] != "E" and (x["untimed"] or x["cls"] == "opex")]
+        txt = [f"{x['pre']}{x['bj'].strftime('%H:%M')} {x['lab']}" for x in timed]
+        txt += [f"{x['lab']}（{'收盘时' if x['cls'] == 'opex' else '时间未定'}）" for x in xs if x["cls"] != "E" and (x["untimed"] or x["cls"] == "opex")]
         for pre in dict.fromkeys(x["pre"] for x in xs if x["cls"] == "E"):
             er = sorted([x for x in xs if x["cls"] == "E" and x["pre"] == pre], key=lambda x: -(x.get("cap") or 0))
             top = er[0]
@@ -937,11 +954,12 @@ def page_next5(out, hap_p, cal, radar, t):
             if not ((x.get("cap") or 0) >= 1e12 or x.get("sym") in BIG_SYMS) or "E" in got:
                 continue
             got.add("E")
-            later.append((x["us"], f"{_mds(x['us'])} {x['name']} 财报"))
+            dd = x["us"] if x["bj"] is None else x["bj"].strftime("%Y-%m-%d")          # 北京日子（盘后的财报是第二天早上），和上面 5 天同一个口径
+            later.append((dd, f"{_mds(dd)} {x['name']} 财报"))
         elif x["cls"] in ("nfp", "cpi", "opex", "fomc") and x["cls"] not in got:
             got.add(x["cls"])
             dd = x["us"] if x["cls"] == "opex" or x["bj"] is None else x["bj"].strftime("%Y-%m-%d")
-            later.append((dd, f"{_mds(dd)} {NEXT_LABEL[x['cls']]}"))
+            later.append((dd, f"{_mds(dd)} {x['lab']}"))
     if "nfp" not in got:
         for e in out.get("nfp_later") or []:
             if last < e["date"] <= end:

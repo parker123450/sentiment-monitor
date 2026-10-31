@@ -129,6 +129,7 @@
     if (["stage", "line", "term", "small", "ivrv"].includes(k)) return 1;
     if (k === "move") return x.group === "美股保险" ? 1 : x.group === "美元和美债" && /美债/.test(String(x.title || "").split("：").pop().slice(0, 8)) ? 5 : 2;
     if (["trend", "relation", "rel"].includes(k)) return 2;
+    if (k === "gamma") return 3;                     // 做市商 gamma 转向：③ 点开第 2 行是做市商（新4 复查改正，和 page_changes() 一样）
     return k === "pm" ? 4 : 0; };
   // 点开：整行（[aria-expanded][aria-controls]）点一下开那一块，再点收；前台一次只开一样（开新的，旧的自动收）
   const ctlOf = t => $(t.getAttribute("aria-controls"));
@@ -191,9 +192,11 @@
     // ① 情绪
     { const rows = [];
       rows.push(li("一周前 → 今天", LN.map(([key, nm]) => `${nm} ${LVS(K5[key])} → ${LVS(K[key])}`).join(" · "), "全部历史分位"));
-      const M = FR.optmkt;
-      rows.push(li("保险", (M && M.vix ? [`VIX ${Number(M.vix.now).toFixed(1)}（${M.vix.p}）`, M.skew ? `SKEW ${M.skew.now}（${M.skew.p}）` : "", M.vvix ? `VVIX ${M.vvix.now}（${M.vvix.p}）` : ""].filter(Boolean).join(" · ")
-        : E.vix != null ? `VIX ${E.vix}（${E.vix_pct}）` : "") + (E.t3 != null ? ` · 1 个月 ÷ 3 个月 ${E.t3}${E.t3 >= 1 ? "（倒挂：近的比远的贵）" : ""}` : ""), "括号里是近 10 年分位"));
+      // 分位写清基数：opt_market() 是近 10 年（2,520 天）；它没算出来时退回 emotion() 的 VIX，那个分位是全部历史，注也跟着写全部历史
+      const M = FR.optmkt, m10 = !!(M && M.vix);
+      rows.push(li("保险", (m10 ? [`VIX ${Number(M.vix.now).toFixed(1)}（${M.vix.p}）`, M.skew ? `SKEW ${M.skew.now}（${M.skew.p}）` : "", M.vvix ? `VVIX ${M.vvix.now}（${M.vvix.p}）` : ""].filter(Boolean).join(" · ")
+        : E.vix != null ? `VIX ${E.vix}${E.vix_pct != null ? `（${E.vix_pct}）` : ""}` : "") + (E.t3 != null ? ` · 1 个月 ÷ 3 个月 ${E.t3}${E.t3 >= 1 ? "（倒挂：近的比远的贵）" : ""}` : ""),
+        m10 ? "括号里是近 10 年分位" : E.vix_pct != null ? "括号里是全部历史分位（近 10 年的没算出来）" : ""));
       if (E.asof) rows.push(li("这一段", E.stage ? `${esc(E.name)}：${D2(E.since)} 起第 ${E.ndays} 个交易日` +
         (E.regime === 2 ? `；板块自己跌，这一段 VIX 最高 ${E.vixmax}` : E.regime === 1 ? `；宏观冲击，这一段 VIX 最高到过 ${E.vixmax}` : "") : "平稳：费城半导体没在跌", "阶段没有前瞻检验"));
       rows.push(`<li class="vlink">四条读数、三段怎么算：<a href="#v-shuo" data-view="shuo" data-sec="s-four">说明 ›</a></li>`);
@@ -218,23 +221,48 @@
       if (N) rows.push(li("在交易什么", `${N.main ? `主线 ${esc(N.main.name)}（领跌）· ` : ""}最弱 ${esc(N.lo.name)}（${S1(N.lo.z)}）· 最强 ${esc(N.hi.name)}（${S1(N.hi.z)}）`, "20 日涨跌 ÷ 平常 20 日波动"));
       put("price", rows); }
 
-    // ③ 买卖方
-    { const rows = [], F = FR.flow;
-      if (F) {
-        const ns = F.nums || [];
-        if (ns.length) rows.push(li(`期货仓位（CFTC ${D2(F.asof)} 那期）`, ns.map(x => `${esc(x.lab || x.market)} ${x.prev == null ? "" : x.prev + "% → "}${x.now}%${x.pos == null ? "" : `（${Math.round(x.pos * 100)}%）`}`).join(" · "), "净多 ÷ 总持仓；括号里是历史位置"));
-        const TF = F.tff || [];
-        if (TF.length) { const by = {}; for (const x of TF) (by[x.name] = by[x.name] || []).push(x);
-          rows.push(li("美股期指谁在场上", Object.entries(by).map(([n, xs]) => `${esc(n)} ${xs.map(x => `${esc(x.who)} ${String(x.now).replace("-", "−")}%${x.pos == null ? "" : `（${Math.round(x.pos * 100)}%）`}`).join("、")}`).join("；"), "TFF 分类，括号里是历史位置")); }
-      }
+    // ③ 买卖方：照 plan 第三节第 3 小节的五行——趋势基金、做市商、期货持仓（CFTC 和美股期指 TFF 并成一行）、保险和散户、杠杆 ETF
+    { const rows = [], F = FR.flow, pc = p => `${Math.round(p * 100)}%`;
       const TR = (RR.pos && RR.pos.trend) || [], tsel = ["^SOX", "^NDX", "^GSPC"].map(s => TR.find(x => x.sym === s)).filter(Boolean);
       if (tsel.length) { const so = tsel.find(x => x.sym === "^SOX");
         rows.push(li("趋势基金（估）", tsel.map(x => `${esc(x.name)} ${x.score > 0 ? "+" : x.score < 0 ? "−" : ""}${Math.abs(x.score)}`).join(" · ") +
           (so ? `；费城半导体翻转价 20 日 ${N0(so.flip[20])} · 60 日 ${N0(so.flip[60])} · 120 日 ${N0(so.flip[120])}` : ""), "简化模型，不是真实持仓")); }
+      // 做市商：SPY、QQQ 的 gamma 和翻转价，数取期权块那一句（qx/options.py），写明是哪天的期权链（qx/front.py opt_dates()）
+      const O = RAW.options, OD = FR.optdate || {}, gm = [];
+      for (const sym of ["SPY", "QQQ"]) {
+        const r = O && (O.rows || []).find(x => x.sym === sym), a = r && (r.ans || []).find(x => /做市商/.test(x.q)), s = a && /([正负]) gamma/.exec(a.a);
+        if (!s) continue;
+        const f = s[1] === "负" ? /涨回 ([\d,.]+) 以上/.exec(a.a) : /跌破 ([\d,.]+) 附近/.exec(a.a);
+        gm.push({ sym, s: s[1], f: f && f[1], od: OD[sym] });
+      }
+      if (gm.length) {
+        const g0 = gm[0], one = g => `${g.sym} ${g.s} gamma${g.f ? (g.s === "负" ? `，${g.f} 以上才翻正` : `，跌破 ${g.f} 翻负`) : ""}`;
+        const ds = [...new Set(gm.filter(g => g.od).map(g => `${D2(g.od.date)} 的期权链${g.od.lag ? `，晚 ${g.od.lag} 天` : ""}`))];
+        rows.push(li("做市商（估）", gm.map((g, i) => i && g.f && g0.f && g.s === g0.s ? `${g.sym} 要 ${g.f}` : one(g)).join("；"),
+          (ds.length > 1 ? gm.filter(g => g.od).map(g => `${g.sym} ${D2(g.od.date)}`).join("、") + " 的期权链" : ds[0] || "") + (ds.length ? "；" : "") + "简化模型"));
+      }
+      // 期货持仓：挤着的、这一期变了的（CFTC 那几个读数的历史位置），美股"方向不一致"时写资管、杠杆基金各在哪（TFF，只写有读数在 10% 以外的合约）
+      if (F) {
+        const ns = F.nums || [], dw = d => d === "有加有减" ? d : `在${d}`;
+        const at = m => { const xs = ns.filter(x => x.market === m && x.pos != null); return xs.length ? xs.map(x => `${esc(xs.length > 1 ? x.lab || m : m)} ${pc(x.pos)}`).join("、") : esc(m); };
+        const parts = [], by = {};
+        for (const x of F.still || []) (by[x.word] = by[x.word] || []).push(x);
+        for (const [w, xs] of Object.entries(by)) { const same = xs[0].dir && xs.every(x => x.dir === xs[0].dir);
+          parts.push(xs.map(x => at(x.market) + (!same && x.dir ? `（${dw(x.dir)}）` : "")).join("、") + ` ${esc(w)}` + (same ? `，${xs.length > 1 ? "都" : ""}${dw(xs[0].dir)}` : "")); }
+        for (const x of F.changed || []) { const p = ns.filter(n => n.market === x.market && n.pos != null);
+          parts.push(`${esc(x.market)}${x.runs ? "" : "新"}${esc(x.word)}${p.length ? `（${p.map(n => pc(n.pos)).join("、")}）` : ""}`); }
+        const us = (F.calm || []).find(x => x.market === "美股" && x.word === "方向不一致");
+        if (us) { const TF = F.tff || [], cs = [...new Set(TF.map(x => x.code))].map(c => TF.filter(x => x.code === c)).filter(xs => xs.some(x => x.side === "多头" || x.side === "空头"));
+          parts.push((cs.length ? cs.map(xs => xs.map((x, j) => `${j ? "" : esc(x.name)}${esc(x.who)} ${x.pos == null ? "—" : pc(x.pos)}`).join("、")).join("；") + "，" : "美股") + "方向不一致"); }
+        rows.push(li(`期货持仓（CFTC ${D2(F.asof)} 那期）`, parts.join("；") || "没有挤在一边的市场", "百分数是历史位置"));
+      }
       if (K.pc != null || K.aaii != null) rows.push(li("保险和散户", [K.pc != null ? `股票期权买跌 ÷ 买涨 ${fmt(K.pc, 2)}（平时 ${fmt(K.pcm, 2)}）` : "", K.aaii != null ? `散户看多减看空 ${sgn(K.aaii, 1)}%（一周前 ${sgn(K.aaiip, 1)}%）` : ""].filter(Boolean).join(" · ")));
-      const L = F && F.letf;
-      if (L) rows.push(li(`SOXL / SOXS ${D2(L.day)} 净申赎`, ["soxl", "soxs"].map(k => `${k.toUpperCase()} ${L[k] == null ? "不算" : S1(L[k]) + " 亿美元"}`).join("、") +
-        (L.net == null ? "" : `；合起来钱往${L.net >= 0 ? "做多" : "做空"}那边 ${Math.abs(L.net).toFixed(1)} 亿${L.pos == null ? "" : `（历史位置 ${Math.round(L.pos * 100)}%）`}`), "份额差 × 收盘价"));
+      // 杠杆 ETF：SOXL 股数占比（qx/positioning.py letf_readings() 的份额比，口径十四.7 只作对照）；最近一天的净申赎（letf_flow()）连着两个交易日都有份额才算
+      const LR = ((RR.pos && RR.pos.readings) || []).find(x => x.src === "Direxion" && /^SOXL 份额/.test(x.name || "")), L = F && F.letf;
+      if (LR || L) rows.push(li("杠杆 ETF", [LR ? `SOXL 股数占比 ${LR.value}%（${D2(LR.asof)}${LR.pos == null ? "" : `，历史位置 ${pc(LR.pos)}`}）` : "",
+        L ? `${D2(L.day)} 净申赎 ${["soxl", "soxs"].map(k => `${k.toUpperCase()} ${L[k] == null ? "不算" : S1(L[k]) + " 亿美元"}`).join("、")}` +
+          (L.net == null ? "" : `，合起来钱往${L.net >= 0 ? "做多" : "做空"}那边 ${Math.abs(L.net).toFixed(1)} 亿${L.pos == null ? "" : `（历史位置 ${pc(L.pos)}）`}`) : "净申赎攒够了才写"].filter(Boolean).join("；"),
+        "股数占比 = SOXL ÷（SOXL + SOXS）；净申赎 = 份额差 × 收盘价"));
       put("flow", rows); }
 
     // ④ 预期（期权五个问题、预测市场照旧放在点开里，第 7 件）
@@ -341,11 +369,13 @@
     for (const x of T.recent || []) { const c = by.get(x.key + "|" + x.date);
       rows.push({ p: c ? c.p : pil(x), hide: true, k: x.key + "|" + x.date, t: `${D2(x.date)} 的 ${x.title}` }); }
     const vis = rows.filter(r => !r.hide), hid = rows.filter(r => r.hide), SHOW = 2, MORE = 10;
-    const one = (r, i) => `<div class="ti"${r.k ? ` data-k="${esc(r.k)}"` : ""}${r.ks ? ` data-ks="${esc(r.ks)}"` : ""}${i < 0 ? " hidden" : i >= SHOW + MORE ? " hidden" : i >= SHOW ? " data-mr hidden" : ""}><b class="bn">${NOS[r.p] || "·"}</b><span class="tt"><span class="kt">${esc(rwd(r.t))}</span></span></div>`;
+    // 第 13 件以后（data-xr）："另有 N 件"不露（最多再露 10 件），节点在；推送点到那一件、每日汇总点进来才露
+    const one = (r, i) => `<div class="ti"${r.k ? ` data-k="${esc(r.k)}"` : ""}${r.ks ? ` data-ks="${esc(r.ks)}"` : ""}${i < 0 ? " hidden" : i >= SHOW + MORE ? " data-xr hidden" : i >= SHOW ? " data-mr hidden" : ""}><b class="bn">${NOS[r.p] || "·"}</b><span class="tt"><span class="kt">${esc(rwd(r.t))}</span></span></div>`;
+    // #dg：每日汇总（digest:）点进来才出，在行的上面（plan 第三节第 5 小节），字在 jumpK 里按推送标题写
     el.innerHTML = `<div class="bh"><h2>今天变了什么</h2><span class="meta">${D2(T.asof || RAW.asof)} 收盘${(T.items || []).some(x => x.live) ? " · 含盘中" : ""}</span></div>` +
+      `<p class="dg" id="dg" hidden></p>` +
       (vis.length ? "" : `<p class="quiet">今天没有值得看的变化。</p>`) + vis.map(one).join("") + hid.map(r => one(r, -1)).join("") +
-      `<button type="button" class="more" data-more="99" data-tpl="另有 N 件 ›" hidden></button>` +
-      `<p class="dg" id="dg" hidden>推送里"没推的几件"合成了一条：标题都在推送正文里；页面上还在的都在这一块，上面已经全露出来了。</p>`;
+      `<button type="button" class="more" data-more="99" data-tpl="另有 N 件 ›" hidden></button>`;
     moreSync(el);
   })();
 
@@ -544,10 +574,11 @@
     try { history.replaceState(null, "", location.pathname + location.search); } catch (e) {}   // 刷新不再跳
     const g = $("gone"); if (g) g.hidden = true;
     const p = k.split(/[:|]/)[0], all = x => [...document.querySelectorAll(`[data-k="${CSS.escape(x)}"],[data-ks~="${CSS.escape(x)}"]`)].filter(e => !e.closest(".view"));
-    if (p === "digest") {                               // 每日汇总：今天变了什么全露出来，加一行灰字说没推的几件在哪
+    if (p === "digest") {                               // 每日汇总：今天变了什么里今天的全露出来（"另有 N 件"打开，第 13 件以后也露；前几天说过的不露），上面加一行灰字说没推的几件在哪
       const tb = $("today"); if (!tb) return;
-      tb.querySelectorAll("[data-mr][hidden]").forEach(x => { x.hidden = false; }); moreSync(tb);
-      const dg = $("dg"); if (dg) dg.hidden = false;
+      tb.querySelectorAll("[data-mr][hidden],[data-xr][hidden]").forEach(x => { x.hidden = false; }); moreSync(tb);
+      const dg = $("dg"), x = pushed().find(y => y.key === k);
+      if (dg) { dg.textContent = `"${(x && x.title) || "没推的几件"}"的标题在推送正文里；页面上还在的，都在下面和"机会和风险"里。`; dg.hidden = false; }
       return hitEl(dg || tb);
     }
     if (p === "selftest" || p === "stale") return hitEl(sysl(k, p));
