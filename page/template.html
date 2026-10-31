@@ -57,7 +57,7 @@ small { font-size: max(12px, .9em); }
 .vlink { font-size: 13px; color: var(--ink-3); margin: 8px 0 0; }
 .vlink a, .kread a { color: var(--accent); text-decoration: none; }
 
-/* —— 新4 骨架（_impl/design/mockup.html）：手机一栏；三个外层盒子 display: contents，用 order 排回手机顺序；1200 以上也先一栏（新6 再排三栏） */
+/* —— 新4 骨架（_impl/design/mockup.html）：小于 1200 一栏；外层盒子 display: contents，用 order 排回手机顺序；1200 以上三栏见最后的 @media（新6） */
 .pg { max-width: 760px; margin: 0 auto; padding: 10px 16px 24px; display: flex; flex-direction: column; gap: 10px; }
 .col { display: contents; }
 #top { order: 0; } .emo { order: 1; } .today { order: 2; } .five { order: 3; } .kline { order: 4; } .cal { order: 5; }
@@ -316,6 +316,55 @@ svg.sp circle { fill: var(--ink); }
 .trial label { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 99px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
 .trial textarea { width: 100%; font: inherit; font-size: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 8px; background: var(--bg); color: var(--ink); min-height: 3em; }
 .trial button { font: inherit; font-weight: 700; padding: 8px 16px; border-radius: 8px; border: 0; background: var(--accent); color: #fff; cursor: pointer; margin-top: 8px; }
+
+/* —— 新6 电脑排法（plan 第三节第 4 小节，_impl/design/mockup.html）：1200 以上三栏，左 400、中至少 420、右 300；节点只有一份，只靠 CSS 换位置。
+   三个外层盒子恢复成普通盒子，各自往下排；左栏点开一样只让左栏变长。右栏跨两行，"发生了什么"在右栏最底下；"机会和风险"占左、中两栏的宽，接在左栏、中栏下面。
+   小于 1200 不改：上面的一栏（最宽 760 居中，外层盒子 display: contents）。 */
+@media (min-width: 1200px) {
+  .pg { max-width: 1280px; display: grid; grid-template-columns: 400px minmax(420px, 1fr) 300px; grid-template-rows: auto auto 1fr auto; gap: 14px 16px; align-items: start; padding: 14px 16px 18px; }
+  .col { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  #top { grid-column: 1 / -1; grid-row: 1; }
+  .cl-l { grid-column: 1; grid-row: 2; } .cl-m { grid-column: 2; grid-row: 2; } .cl-r { grid-column: 3; grid-row: 2 / 4; }
+  .cl-b { grid-column: 1 / 3; grid-row: 3; }
+  .ent { grid-column: 1 / 3; grid-row: 4; grid-template-columns: repeat(3, 180px); }
+  .foot { grid-column: 3; grid-row: 4; align-self: center; }
+  .detail, .view { grid-column: 1 / -1; }
+  /* 顶条：时间、状态、各截到哪天并成一行，推送记录在右；断了的路另起一行 */
+  .times { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; column-gap: 8px; align-items: baseline; }
+  .tb1 { display: contents; }
+  .tb1 > span { grid-column: 1; grid-row: 1; }
+  .tb2 { grid-column: 2; grid-row: 1; }
+  .tb2::before { content: "· "; }
+  .tb1 > a { grid-column: 3; grid-row: 1; }
+  .tb3 { grid-column: 1 / -1; grid-row: 2; }
+  /* 中栏 K 线：中栏约 516 宽（1280 时），图按 K 线自己的规矩画成 420 高（k.js draw()：宽不到 560 就 420）；图例照窄屏收一行 */
+  .cl-m .kwrap canvas { height: 420px; }
+  .cl-m .klegend .l2 { display: none; }
+  .cl-m .klegend { right: 58px; }
+  .cl-m .kpc .three { grid-template-columns: 1fr; }
+  /* 右栏 300 宽：字小一号、行距收紧 */
+  .cl-r .card { padding: 10px 12px; }
+  .cl-r .ti { font-size: 13px; line-height: 1.45; padding: 5px 0 4px; grid-template-columns: 18px minmax(0, 1fr); }
+  .cl-r .cr { font-size: 13px; line-height: 1.4; padding: 4px 0; grid-template-columns: 38px 14px minmax(0, 1fr); gap: 5px; }
+  .cl-r .cr.later { grid-template-columns: 42px minmax(0, 1fr); }
+  .cl-r .cr.later .ct { font-size: 12px; }
+  .cl-r .mr { grid-template-columns: 58px minmax(0, 1fr) auto; gap: 6px; padding: 5px 0; font-size: 13px; }
+  .cl-r .mc { font-size: 12px; }
+  .cl-r .more { font-size: 13px; padding: 7px 0 0; }
+  .cl-r .fli { font-size: 13px; padding: 5px 0; }
+  .cl-r .happen .xp { margin: 0 -12px -10px; }
+  /* 机会和风险：3 张标题横排，点开一张就占一整行、露它的五栏（其余的往前补位） */
+  .cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); grid-auto-flow: row dense; gap: 8px 10px; }
+  .cards > .bh, .cards > .quiet, .cards > .more { grid-column: 1 / -1; }
+  .cards .bh { margin-bottom: 0; }
+  .cards .cw { border: 1px solid var(--grid); border-radius: 10px; min-width: 0; }
+  .cards .cw:has(> .cc[aria-expanded="true"]) { grid-column: 1 / -1; }
+  .cards .cc { border-top: 0; padding: 7px 10px; }
+  .cards .ctx b { white-space: normal; }
+  .cards .ctx small { display: block; }
+  .cards .cw .xp { margin: 0; border-radius: 0 0 10px 10px; }
+  .cards .more { border-top: 0; padding-top: 2px; }
+}
 </style>
 </head>
 <body>
@@ -372,22 +421,22 @@ svg.sp circle { fill: var(--ink); }
     </div>
   </div>
 
-  <!-- 右盒子：今天变了什么、接下来 5 个交易日、各市场 -->
+  <!-- 右盒子：今天变了什么、接下来 5 个交易日、各市场、发生了什么（新6：电脑上"发生了什么"排在右栏最底下，照 _impl/design/mockup.html；手机上 order 排回原来的位置） -->
   <div class="col cl-r">
     <section class="card today" id="today" data-blk="today"></section>
     <section class="card cal" id="cal" data-blk="cal"></section>
     <section class="card mk" id="mkts" data-blk="mk"></section>
-  </div>
-
-  <!-- 后面：机会和风险、发生了什么 -->
-  <div class="col cl-b">
-    <section class="card cards" id="cards" data-blk="cards"></section>
     <section class="card happen" id="happen" data-blk="happen">
       <div class="bh"><h2>发生了什么</h2><span class="meta" id="happen-m"></span></div>
       <div class="fl" id="flash" hidden></div>
       <button type="button" class="more" id="newsb" aria-expanded="false" aria-controls="news" hidden></button>
       <div class="xp" id="news" hidden></div>
     </section>
+  </div>
+
+  <!-- 后面：机会和风险（电脑上占左、中两栏的宽，接在左栏、中栏下面） -->
+  <div class="col cl-b">
+    <section class="card cards" id="cards" data-blk="cards"></section>
   </div>
 
   <nav class="ent" id="ventry" data-blk="ent"><a href="#v-pd" data-view="pd">我的判断 ›</a><a href="#v-shuo" data-view="shuo">说明 ›</a><a href="#v-zt" data-view="zt">状态 ›</a></nav>

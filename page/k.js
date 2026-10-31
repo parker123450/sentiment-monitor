@@ -395,13 +395,20 @@
       rows.push({ p: c ? c.p : pil(x), hide: true, k: x.key + "|" + x.date, t: `${D2(x.date)} 的 ${x.title}` }); }
     const vis = rows.filter(r => !r.hide), hid = rows.filter(r => r.hide), SHOW = 2, MORE = 10;
     // 第 13 件以后（data-xr）："另有 N 件"不露（最多再露 10 件），节点在；推送点到那一件、每日汇总点进来才露
-    const one = (r, i) => `<div class="ti"${r.k ? ` data-k="${esc(r.k)}"` : ""}${r.ks ? ` data-ks="${esc(r.ks)}"` : ""}${i < 0 ? " hidden" : i >= SHOW + MORE ? " data-xr hidden" : i >= SHOW ? " data-mr hidden" : ""}><b class="bn">${NOS[r.p] || "·"}</b><span class="tt"><span class="kt">${esc(rwd(r.t))}</span></span></div>`;
+    // 新6：手机露 2 行、电脑（1200 以上）露 3 行（口径十四.12）：第 3 行（data-w3）平时和"另有 N 件"里的一样收着，宽度到 1200 就露出来
+    const one = (r, i) => `<div class="ti"${r.k ? ` data-k="${esc(r.k)}"` : ""}${r.ks ? ` data-ks="${esc(r.ks)}"` : ""}${i === SHOW ? " data-w3" : ""}${i < 0 ? " hidden" : i >= SHOW + MORE ? " data-xr hidden" : i >= SHOW ? " data-mr hidden" : ""}><b class="bn">${NOS[r.p] || "·"}</b><span class="tt"><span class="kt">${esc(rwd(r.t))}</span></span></div>`;
     // #dg：每日汇总（digest:）点进来才出，在行的上面（plan 第三节第 5 小节），字在 jumpK 里按推送标题写
     el.innerHTML = `<div class="bh"><h2>今天变了什么</h2><span class="meta">${D2(T.asof || RAW.asof)} 收盘${(T.items || []).some(x => x.live) ? " · 含盘中" : ""}</span></div>` +
       `<p class="dg" id="dg" hidden></p>` +
       (vis.length ? "" : `<p class="quiet">今天没有值得看的变化。</p>`) + vis.map(one).join("") + hid.map(r => one(r, -1)).join("") +
       `<button type="button" class="more" data-more="99" data-tpl="另有 N 件 ›" hidden></button>`;
-    moreSync(el);
+    // 跨过 1200：变宽时露出第 3 行；变窄时收回去（"另有 N 件"已经点开、或推送正标着它的，不收）
+    const w3 = () => { const r = el.querySelector("[data-w3]"); if (!r) return;
+      if (matchMedia("(min-width: 1200px)").matches) { if (r.hidden) { r.hidden = false; r.dataset.w3 = "on"; } }
+      else if (r.dataset.w3 === "on" && !r.classList.contains("hit") && !el.querySelector("[data-mr]:not([data-w3]):not([hidden])")) { r.hidden = true; r.dataset.w3 = ""; }
+      moreSync(el); };
+    w3();
+    try { const wide = matchMedia("(min-width: 1200px)"); if (wide.addEventListener) wide.addEventListener("change", w3); else wide.addListener(w3); } catch (e) {}
   })();
 
   // ---------- 接下来 5 个交易日（新4，qx/front.py page_next5()；北京时间）
@@ -1246,7 +1253,10 @@
       el.innerHTML = html;
       dayLine(previewI != null ? previewI : sel && sel.type === "day" ? clampI(sel.i) : B.length - 1);
     }
-    let toolsOpen = matchMedia("(min-width: 700px)").matches;     // 手机上默认收起（第四轮验收：工具栏 370 px 把图挤出两屏），宽屏默认展开
+    // 手机上默认收起（第四轮验收：工具栏 370 px 把图挤出两屏），宽屏默认展开；
+    // 新6：1200 以上 K 线在中栏（约 516 宽，和手机差不多窄），工具栏也默认收起，不然中栏多出约 200 px
+    const TOOLS_MQ = "(min-width: 700px) and (max-width: 1199.98px)";
+    let toolsOpen = matchMedia(TOOLS_MQ).matches;
     function toolbar() {
       const on = c => c ? " on" : "";
       $("ktools").innerHTML = `
@@ -1344,6 +1354,9 @@
       else if (e.key === "Escape") setTool("pick"); });
     $("kpan").addEventListener("input", e => { view.end = +e.target.value; clampView(); schedule(); });
     window.addEventListener("resize", () => schedule());
+    // 新6：窗口宽度跨过 1200（一栏 ↔ 三栏），K 线所在的那一栏宽度变了：工具栏回到那种宽度的默认（一栏展开、三栏收起），K 线按新宽度重画
+    try { const wide = matchMedia("(min-width: 1200px)"), onWide = () => { toolsOpen = matchMedia(TOOLS_MQ).matches; toolbar(); schedule(); };
+      if (wide.addEventListener) wide.addEventListener("change", onWide); else wide.addListener(onWide); } catch (e) {}
     build(); buildMarkers(); setRange(cfg.n); toolbar(); renderMA(); panel(); draw();
     try { new MutationObserver(() => schedule()).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] }); } catch (e) {}
     return {
