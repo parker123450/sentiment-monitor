@@ -284,6 +284,8 @@ svg.sp circle { fill: var(--ink); }
 .kdrow { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .kdrow .kday { flex: 1; min-width: 0; }
 .kgo { flex: none; font-size: 13px; color: var(--fear); text-decoration: none; white-space: nowrap; }
+/* 新7 复查：可点的地方放到 44 px 高（往上 8、往下 16，左边补进 8 px 的空隙），负外边距抵掉，那一行的高度和宽度不变 */
+.kdrow .kgo { padding: 8px 0 16px 8px; margin: -8px 0 -16px -8px; }
 @media (max-width: 560px) { .klegend { display: none; } }
 @media (max-width: 760px) {
   .kpc .three { grid-template-columns: 1fr; }
@@ -303,6 +305,8 @@ svg.sp circle { fill: var(--ink); }
 /* 新7：说明、状态变短（段落间距收紧，状态用短列表） */
 #v-shuo p, #v-zt p { margin: 6px 0; }
 #v-shuo h3.vh, #v-zt h3.vh { margin: 14px 0 4px; padding-top: 8px; }
+/* 新7 复查：宽屏上正文一行不超过约 44 个字（1280 宽时原来一行 1,248 px，长段落难读）；收起那一栏照旧占满 */
+#v-shuo > :not(.vbar), #v-zt > :not(.vbar) { max-width: 44em; }
 .view ul.zl { margin: 4px 0; padding-left: 18px; }
 .view ul.zl li { margin: 3px 0; }
 .view ul.zl small { color: var(--ink-3); font-size: 12px; }

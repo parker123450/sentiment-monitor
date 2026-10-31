@@ -1200,7 +1200,8 @@
       return `${st}（最近两个高点 ${fmtP(H[0].p)} → ${fmtP(H[1].p)}，低点 ${fmtP(L[0].p)} → ${fmtP(L[1].p)}）。现价离上一个摆动低点 ${sgn((c / L[1].p - 1) * 100, 1)}%，离上一个摆动高点 ${sgn((c / H[1].p - 1) * 100, 1)}%`;
     }
     // 新7：#kma（最新一天的均线事实）、#kkey（标签说明）、#kpanel（那天的事实、画线面板）、#kpan 滑条都在 #kall 里，#kall 不画了（hidden），照算照写；
-    // 图下只留那一天和"怎么看 ›"（到说明 s-k，标签和均线的说明搬到那里）。放回去掉 template.html 里 #kall 的 hidden（docs/不再显示的.md）
+    // 图下只留那一天（新7 复查：加上那天半导体市场的阶段、哪一型、四条读数，见 dayLine()）和"怎么看 ›"（到说明 s-k：标签、色带、均线的说明，
+    // 和"阶段、恐慌热度是整个半导体市场的，别的品种按同一天对照""投降日浅红""抛售 / 涨过头能单独关掉"都搬到那里）。放回去掉 template.html 里 #kall 的 hidden（docs/不再显示的.md）
     function renderMA() {
       const i = B.length - 1, m = maState(i);
       $("kma").innerHTML = `<span><b>均线（${B[i].d}）</b></span><span class="${m.cls}">${m.txt}</span><span>价格在 ${m.n} 条均线中的 ${m.below} 条下方</span><span>MA50 / MA200：${crossTxt(50, 200, i, 1000)}</span><span>MA5 / MA20：${crossTxt(5, 20, i, 120)}</span><span>趋势结构：${swingNow()}</span>`;
@@ -1257,10 +1258,20 @@
         <div class="kpc"><h4>区间里的标签</h4>${sigs.length ? `<div class="chips">${sigs.join("")}</div>` : "<p>没有。</p>"}</div>
         <div class="kpc"><h4>延伸到今天</h4>${b < L ? `<div class="big num">${fmtP(pNow)}</div><p>现价 ${fmtP(B[L].c)}，在线${dNow >= 0 ? "上方" : "下方"} ${fmt(Math.abs(dNow), 1)}%</p>` : "<p>终点就是最新一天。</p>"}</div></div>`;
     }
+    // 新7 复查：图下那一行照样稿接上那天半导体市场在哪一段（第几天、哪一型）和四条读数（全部历史分位，和 ① 同一份 RAW.daily）；
+    // 别的品种（KOSPI、海力士……）前面写"半导体市场"，按同一天（或之前最近一个美股交易日，dayIdx()）对照。
+    // 放不下 3 行（400 宽），"量是 50 日均量的 N 倍"和最新一天后面的"点图上哪天，这一行就换成那天"不画了（docs/不再显示的.md）
+    function semiDay(b) {
+      const k = b.di; if (k == null) return " · 这天没有半导体市场的读数";
+      const s = D.state[k]; let j = k; while (j > 0 && D.state[j - 1] === s) j--;
+      const nd = s && j > 0 ? k - j + 1 : null, rg = s ? ({ 1: "宏观冲击", 2: "板块自己跌" })[D.regime[k]] : null;
+      const who = cur.k === "SOX" ? "" : "半导体市场" + (D.d[k] !== b.d ? `（按 ${+D.d[k].slice(5, 7)}/${+D.d[k].slice(8, 10)}）` : "");
+      return ` · ${who}<b style="color:${SINK(s)}">${NAMES[s]}${nd ? ` 第 ${nd} 天` : ""}</b>${rg ? `（${rg}）` : ""} · ` + LN.map(([key, nm]) => `${nm} ${LVS(D[key][k])}`).join(" · ") + "（全部历史分位）";
+    }
     function dayLine(i) {
       const el = $("kday"), b = B[i]; if (!el || !b) return;
-      const pv = B[i - 1], ch = pv ? (b.c / pv.c - 1) * 100 : null, vr = hasVol && isFinite(V50[i]) && V50[i] > 0 ? b.v / V50[i] : null;
-      el.innerHTML = `那一天：<b>${+b.d.slice(5, 7)}/${+b.d.slice(8, 10)} 周${"日一二三四五六"[new Date(b.d + "T12:00:00").getDay()]}</b> 收 <b class="num">${fmtP(b.c)}</b>${ch == null ? "" : `，<b${cP(ch)}>${sgn(ch, 1)}%</b>`}${vr == null ? "" : `，量是 50 日均量的 ${fmt(vr, 1)} 倍`}${i === B.length - 1 ? "<small>　点图上哪天，这一行就换成那天</small>" : ` <button type="button" class="jd" data-act="latest">回到最新一天</button>`}`;
+      const pv = B[i - 1], ch = pv ? (b.c / pv.c - 1) * 100 : null;
+      el.innerHTML = `那一天：<b>${+b.d.slice(5, 7)}/${+b.d.slice(8, 10)} 周${"日一二三四五六"[new Date(b.d + "T12:00:00").getDay()]}</b> 收 <b class="num">${fmtP(b.c)}</b>${ch == null ? "" : ` <b${cP(ch)}>${sgn(ch, 1)}%</b>`}${semiDay(b)}${i === B.length - 1 ? "" : ` <button type="button" class="jd" data-act="latest">回到最新一天</button>`}`;
     }
     function panel() {
       const el = $("kpanel"); let html;

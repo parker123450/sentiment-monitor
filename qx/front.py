@@ -1509,15 +1509,24 @@ def accrue(data):
     asof, R = data.get("asof"), data.get("radar") or {}
     rows = []
     O = data.get("options") or {}
-    if O.get("days") is not None and O["days"] < OP.MIN_HIST:
-        rows.append(("期权链（和自己历史比）", f"{O['days']} 天 / {OP.MIN_HIST} 个交易日", "约 " + ready_by(asof, O["days"], OP.MIN_HIST),
-                     "攒满以前只和 10 月 19 日以来比", f"还差 {OP.MIN_HIST - O['days']} 个交易日"))
+    if O.get("days") is not None:
+        # 新7 复查：攒了几天按页面那天截（期权链存的是美股交易日；截到以前的页面不再数到页面以后的链）；那天还没开始攒的不列
+        days, since = O["days"], None
+        Hs = OP._hist()
+        if len(Hs) and asof:
+            days, since = int(Hs.loc[Hs.date <= pd.Timestamp(asof), "date"].nunique()), Hs.date.min().strftime("%Y-%m-%d")
+        if 0 < days < OP.MIN_HIST:
+            rows.append(("期权链（和自己历史比）", f"{days} 天 / {OP.MIN_HIST} 个交易日", "约 " + ready_by(asof, days, OP.MIN_HIST),
+                         f"攒满以前只和 {_md(since)}以来比" if since else "攒满以前只和开始攒以来比", f"还差 {OP.MIN_HIST - days} 个交易日"))
     H = (R.get("narr") or {}).get("heat") or {}
     if H.get("note") and not H.get("rows"):
         m = __import__("re").search(r"从 (\d{4}-\d{2}-\d{2}) 起攒", H["note"])
-        if m:
+        if m and asof and m.group(1) > asof:
+            pass                           # 页面那天还没开始攒（截到以前的页面），不列
+        elif m:
             from qx import news as NW
-            got = len(NW.load()[1])        # 和 narrative.heat() 同一个数：存下条数的天数（heat 不按页面那天截，这里也不截）
+            # 存下条数的天数，按页面那天截（新7 复查）；narrative.heat() 满 10 天才出表，出了表这一行就不列，两边不会对不上
+            got = len([d for d in NW.load()[1] if not asof or d <= asof])
             rows.append(("主题热度（新闻条数）", f"{got} / 10 天（从 {m.group(1)} 起）", "约 " + (pd.Timestamp(m.group(1)) + pd.Timedelta(days=9)).strftime("%Y-%m-%d"), "满 10 天才算",
                          f"还差 {max(0, 10 - got)} 天"))
         else:
@@ -1616,30 +1625,42 @@ SHUO_FOUR2 = ("<p><b>四条读数</b>（0–100，100 = 当天以前全部历史
               "<b>仓位</b> 认沽认购比平时高多少、散户看多减看空 5 日掉多少，取较高的；<b>信用</b> 7 只信用 ETF 里 20 日跑输国债到最差 10% 的比例。"
               "5 天里降 10 分以上叫<b>在回落</b>；升 10 分以上看比 5 天前升得快还是慢，写在加速或在减速。</p>"
               "<p><b>哪一型</b>：这一段下跌以来 VIX 收盘到过 30 是宏观冲击型，大盘读数都会亮；没到过是板块自己跌型，大盘读数看不出来，要看成分股和比自己最近的读数。</p>")
-SHUO_BASE = ("<p><b>全部历史</b>（只和当天以前比）：四条读数；仓位读数（至少 104 个观测）；小信号和信用五档的 5 日走阔（历史不满 504 天不算）。"
-             "<b>近 10 年</b>：VIX、SKEW、VVIX，和\"过去 10 年 N 次\"的涨跌（2520 个交易日）。"
-             "<b>期权链</b>：从 10 月 19 日起攒，不满 250 个交易日只和 10 月 19 日以来比。同一行只用一个基数。</p>")
-SHUO_K2 = ("<p>点图上某一天，图下那一行就换成那天；左右拖动平移，两指缩放；电脑上方向键一天一天走，+ / − 缩放。"
+
+
+def _shuo_base():
+    """"分位和哪段历史比"：数都从代码里的常量取（新7 复查：常量改了文字跟着改；出处见 口径.md 十四.14）。"""
+    from qx import options as OP, positioning as PS, smallsignal as SS, watch as WA
+    Hs = OP._hist()
+    since = _md(Hs.date.min().strftime("%Y-%m-%d")) if len(Hs) else "开始攒"
+    return (f"<p><b>全部历史</b>（只和当天以前比）：四条读数；仓位读数（至少 {PS.MIN_OBS} 个观测）；小信号和信用五档的 5 日走阔（历史不满 {SS.MIN_DAYS} 天不算）。"
+            f"<b>近 10 年</b>：VIX、SKEW、VVIX，和\"过去 10 年 N 次\"的涨跌（{WA.WIN} 个交易日）。"
+            f"<b>期权链</b>：{since}起攒，不满 {OP.MIN_HIST} 个交易日只和攒到的比。同一行只用一个基数。</p>")
+
+
+SHUO_K2 = ("<p>点图上某一天，图下那一行就换成那天；左右拖动平移，两指缩放；电脑上方向键逐日走，+ / − 缩放。"
            "价格区最下面的色带是每天在哪一段（<b style=\"color:var(--s1i)\">在卖</b> → <b style=\"color:var(--s2i)\">在怕</b> → <b style=\"color:var(--s3i)\">投降</b> → "
-           "<b style=\"color:var(--s4i)\">在出清</b>，空白是平稳）；副图默认是恐慌热度，四条读数各一行，颜色越深越恐慌，最深的是历史上最恐慌的 10%。</p>"
-           "<p><b>标签</b>：阶段标签标在进入某一段的那天，同一段相邻 10 天只标一次。<b style=\"color:var(--fear)\">恐慌高峰</b> 一段下跌里抛售、定价、仓位平均最高的那天，要等退潮才标出来；"
-           "<b style=\"color:var(--s4i)\">恐慌退潮</b> 第一次进入在出清；空心的 <b style=\"color:var(--violet)\">二次探底</b> 退潮以后收盘回到这一段最低的 3% 以内、恐慌比高峰低 20 分以上；"
-           "空心的 <b style=\"color:var(--watch)\">参与度先走</b> 指数离一年高点不到 3%，站上 50 日线的成分股比最近 60 天最多时少 20 个百分点以上（只是描述）；"
+           "<b style=\"color:var(--s4i)\">在出清</b>，空白是平稳），投降日价格区还铺一层浅红；副图默认是恐慌热度，四条读数各一行，越深越恐慌，最深是历史上最恐慌的 10%。"
+           "色带、阶段和转折标签、恐慌热度、图下那一行的阶段和读数都按<b>整个半导体市场</b>算，看 KOSPI、海力士等时按同一天（或之前最近一个美股交易日）对照；"
+           "抛售、涨过头、gamma 是品种自己的，\"工具\"里能单独关掉。</p>"
+           "<p><b>阶段标签</b>标在进入某一段的那天，同一段相邻 10 天只标一次。<b>转折标签</b>：<b style=\"color:var(--fear)\">恐慌高峰</b> 一段下跌里抛售、定价、仓位平均最高的那天，等退潮才标出来；"
+           "<b style=\"color:var(--s4i)\">恐慌退潮</b> 第一次进入在出清；空心的 <b style=\"color:var(--violet)\">二次探底</b> 退潮后收盘回到这一段最低的 3% 以内、恐慌比高峰低 20 分以上；"
+           "空心的 <b style=\"color:var(--watch)\">参与度先走</b> 指数离一年高点不到 3%，站上 50 日线的成分股比最近 60 天最多时少 20 个百分点以上（只是描述）。"
            "空心的 <b style=\"color:var(--alert)\">抛售</b> 量是 50 日均量 2 倍以上、跌 2% 以上、RSI 低于 40（费城半导体用 SMH 的量）；"
-           "空心的 <b style=\"color:var(--greed)\">涨过头</b> RSI 高于 75、比 50 日线高 15% 以上。<b>gamma 转负 / 转正</b>（SMH、英伟达、美光、台积电，10 月 19 日起）："
-           "按期权持仓估的做市商对冲从压住波动变成放大波动，或反过来；<b>判断</b> 是你提出判断的那天。</p>"
+           "空心的 <b style=\"color:var(--greed)\">涨过头</b> RSI 高于 75、比 50 日线高 15% 以上（只说明涨得急）。<b>gamma 转负 / 转正</b>（SMH、英伟达、美光、台积电，10 月 19 日起）："
+           "按期权持仓估的做市商对冲从压住波动变成放大，或反过来；<b>判断</b> 是你提出判断的那天。</p>"
            "<p><b>均线</b>是简单平均，默认只开 200 日线，5、10、20、50、100 日在\"工具\"里打开，也能加 2–400 日的。5 到 200 日从短到长一条比一条低叫多头排列，反过来叫空头排列；"
            "短线上穿长线叫金叉，下穿叫死叉。灰色小圈是摆动高点和低点，虚线连着最近两个高点（橙）和最近两个低点（蓝）。成交量里颜色深的柱子是 50 日均量 2 倍以上。</p>"
-           "<p id=\"s-trend\"><b>趋势状态</b>：上行 = 收盘在均线上方、均线在升；下行反过来；其他是震荡。日线用 20 日均线比 5 天前，周线 10 周比 2 周前，月线 10 个月比 2 个月前。</p>")
+           "<p id=\"s-trend\"><b>趋势状态</b>：上行 = 收盘在均线上方、均线在升；下行反过来；其他是震荡。日线用 20 日均线比 5 天前，周线 10 周比 2 周前，月线 10 个月比 2 个月前；后面的数是这样持续了多久。</p>")
 SHUO_OPT2 = ("<p>每个代码回答五个问题，只描述：<b>保险贵不贵</b>，30 天平值隐含波动 ÷ 过去 21 天实际波动，1.2 以上算贵、0.8 以下算便宜；<b>更怕跌还是更想涨</b>，下跌保护比上涨押注贵百分之几；"
-             "<b>押在哪个价位</b>，45 天内到期、现价上下 15% 以内持仓最多的行权价；<b>做市商对冲</b>，按常用的近似假设估，为正会压住波动、为负会放大，翻转价是由正变负的那个价；"
-             "<b>定价了多大的涨跌</b>，最接近 30 天那个到期日上下各一倍的幅度，和到期时涨跌超 10%、20% 的风险中性概率（是市场的定价，不是真实概率）。</p>")
+             "<b>押在哪个价位</b>，45 天内到期、现价上下 15% 以内持仓最多的行权价；<b>做市商对冲</b>，按常用近似估，为正会压住波动、为负会放大，翻转价是由正变负的那个价；"
+             "<b>定价了多大的涨跌</b>，最接近 30 天那个到期日上下一倍的幅度，和到期时涨跌超 10%、20% 的风险中性概率（是市场定价，不是真实概率）。</p>")
 SHUO_NEWS2 = ("<p>新闻只取路透、彭博、华尔街日报、金融时报、CNBC、日经亚洲、美联储、韩联社、CoinDesk 和华尔街见闻\"重要\"快讯。"
-              "日历里的期权幅度：财报是反应日的涨跌（时间未定的算当天加下一天），拆掉了别的日子平常的波动；议息会是到期以前的总幅度，偏大一点。</p>"
+              "日历里的期权幅度：财报是反应日的涨跌（时间未定算当天加下一天），拆掉了平常日子的波动；议息会是到期以前的总幅度，偏大一点。</p>"
               "<p id=\"s-src\">数据：Yahoo（行情、VIX、VXN、成分股、信用 ETF）、CBOE（认沽认购、期权链）、AAII 散户调查、FRED（信用利差、美债收益率）、CFTC 期货持仓、"
-              "纳斯达克（财报、宏观日历）、劳工统计局发布日表（补纳斯达克漏掉的非农）、美联储和日本央行日程、美国经济分析局、Polymarket、台湾证交所、美国财政部、日本财务省。</p>")
-SHUO_LABUBU = ("<p>Labubu 认投降要等收盘：VVIX 125 以上、下跌成交量占全部成交量 80%–90% 以上，而且收盘时还在高位，开盘达标、收盘回落的不算。"
-               "成分股隐含相关性（COR1M）极低时他会小心，一两周后常回调。这些阈值没检验过，只当参考，不进任何触发；这两个数页面上还没有。</p>")
+              "纳斯达克（财报、宏观日历）、劳工统计局发布日表（补纳斯达克漏掉的非农）、美联储和日本央行日程、美国经济分析局、Polymarket、台湾证交所、美国财政部（美债拍卖）、日本财务省。</p>")
+SHUO_LABUBU = ("<p>Labubu 认投降要等收盘：VVIX 125 以上、下跌成交量占全部 80%–90% 以上，收盘时还在高位才算，开盘达标、收盘回落的不算。"
+               "成分股隐含相关性（COR1M）他看过去一年的分位，到最低一头会小心，说一两周后常回调（没给具体分位）。"
+               "这些阈值没检验过，只当参考，不进任何触发；下跌成交量占比和 COR1M 页面上还没有。</p>")
 
 
 def _rep2(data):
@@ -1653,7 +1674,7 @@ def _rep2(data):
 
 def view_shuo(data):
     h = _sec("s-four", "阶段和四条读数", SHUO_STAGE + SHUO_FOUR2)
-    h += _sec("s-base", "分位和哪段历史比", SHUO_BASE)
+    h += _sec("s-base", "分位和哪段历史比", _shuo_base())
     h += _sec("s-k", "K 线怎么看", SHUO_K2)
     h += _sec("s-opt", "期权五个问题", SHUO_OPT2)
     h += _sec("s-news", "新闻、日历和数据从哪来", SHUO_NEWS2)
@@ -1704,17 +1725,21 @@ def view_zt(data):
                   + f"<small>（{_e(note)}）</small></li>")
     if cards:
         by = {}
-        for r in cards:
-            by.setdefault((r[2], r[4]), []).append(__import__("re").search(r"第 (\d+) 类", r[0]).group(1))
-        li.append("<li><b>卡的回放</b>：" + "；".join(f"第 {'、'.join(ks)} 类约 {_e(d)} 够" + (f"（{_e(left)}）" if left else "") for (d, left), ks in sorted(by.items()))
+        for r in cards:                 # 新7 复查：pending 里没写日子的（ready 是"—"）不写"约 — 够"，照写攒到哪了
+            by.setdefault((r[2], r[4] if r[2] != "—" else r[1]), []).append(__import__("re").search(r"第 (\d+) 类", r[0]).group(1))
+        li.append("<li><b>卡的回放</b>：" + "；".join((f"第 {'、'.join(ks)} 类约 {_e(d)} 够" + (f"（{_e(x)}）" if x else "")) if d != "—" else f"第 {'、'.join(ks)} 类{_e(x)}"
+                                                      for (d, x), ks in sorted(by.items()))
                   + "<small>（攒满一年才回放，以前卡上写\"还没有回放\"）</small></li>")
     h += _sec("z-accrue", "在攒什么、还差几天", f"<ul class=\"zl\">{''.join(li)}</ul>" if li else "<p>没有在攒的。</p>")
     R = data.get("radar") or {}
     li = [f"<li><b>各市场 · {_e(m['cls'])}</b>：没取到 {_e('、'.join(m['miss']))}</li>" for m in (R.get("mkts") or []) if m.get("miss")]
-    li += [f"<li><b>AI 账本 · {_e(x['name'])}</b>：{_e(_scrub(x['value']))}</li>"
+    # 新7 复查："缺："开头的去掉那个"缺"（这一节就叫"缺的"），不写成"……：缺：SEC 接口……"两个冒号
+    unmiss = lambda v: v[2:] + "，还没接" if v.startswith("缺：") else v
+    li += [f"<li><b>AI 账本 · {_e(x['name'])}</b>：{_e(unmiss(_scrub(x['value'])))}</li>"
            for x in ((R.get("fwd") or {}).get("ledger") or []) if str(x.get("value", "")).startswith(("缺", "没有免费"))]
     h += _sec("z-miss", "缺的", f"<ul class=\"zl\">{''.join(li)}</ul>" if li else "<p>这次没有缺的。</p>")
-    ok_src = [k for k in st if not any(w.startswith(k) for w in warn)]
+    # 新7 复查：按 _stale() 写出来的两种整句比，不用前缀（一个源的名字是另一个的开头时不会连带算成落后）
+    ok_src = [k for k in st if f"{k}没有数据" not in warn and not any(w.startswith(f"{k}最新只到 ") for w in warn)]
     ok_rt = [x for x in H if x.get("ok")]
     h += (f"<p class=\"zok\"><b>正常的</b>：" + (f"{_e('、'.join(ok_src))} 都没落后" if ok_src else "数据源都落后了")
           + (f"；快讯其余 {len(ok_rt)} 条路都通" if H else "") + "。</p>")
