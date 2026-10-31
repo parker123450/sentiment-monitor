@@ -846,21 +846,21 @@ def _st_emo(D, R, t):
     nxt = {0: 1, 1: 2, 2: 3, 4: 3}.get(s)
     if s == 3:
         if ok and L.get("out_date"):
-            o["next"] = f"离出清：不再亮的话，最早 {_mds(L['out_date'])} 收盘"
+            o["next"] = f"离出清：不再亮的话，最早 {_mds(L['out_date'])}（收盘算）"
             o["if"] = dict(t=f"如果到 {_mds(L['out_date'])} 收盘三段都没再亮，① 就从“投降”变成“在出清”", sec=["一"])
     elif s == 0 and not L["falling"]:
-        o["next"] = f"离在卖：回撤 ÷ 长期波动 {ddv:.2f}，先要到 −0.3 以下" if ddv is not None else None
+        o["next"] = f"离在卖：回撤 ÷ 长期波动 {ddv:.2f}，到 −0.3 以下（收盘算）" if ddv is not None else None
         o["if"] = dict(t="如果半导体回撤 ÷ 长期波动到 −0.3 以下、在卖那四项里有一项进最极端的 10%，① 就从“平稳”变成“在卖”", sec=["一"])
     elif s == 4:
         xs = now(S.S3)
-        o["next"] = f"离投降：三项最高 {top(xs):g}，要到 90（{nums(xs)}）" if top(xs) is not None else None
+        o["next"] = f"离投降：三项 {nums(xs)}，要到 90（收盘算）" if top(xs) is not None else None        # 当天收盘的分位（和规则同一个数）
         o["if"] = dict(t=f"如果半导体回撤 ÷ 长期波动回到 −0.3 以上（现在 {ddv:.2f}），① 就从“在出清”变成“平稳”" if ddv is not None else
                        "如果半导体回撤 ÷ 长期波动回到 −0.3 以上，① 就从“在出清”变成“平稳”", sec=["一"])
     else:
         cols = {1: S.S1, 2: S.S2, 3: S.S3}[nxt]
         xs = now(cols)
         lab = {1: "离在卖：四项", 2: "离在怕：四项", 3: "离投降：三项"}[nxt]
-        o["next"] = f"{lab}最高 {top(xs):g}，要到 90（{nums(xs)}）" if top(xs) is not None else None
+        o["next"] = f"{lab} {nums(xs)}，要到 90（收盘算）" if top(xs) is not None else None
         o["if"] = dict(t=f"如果收盘时{STAGE_ITEMS[nxt]}里有一项进最极端的 10%，① 就从“{STAGE_NAME[s]}”{'变成' if s == 0 else '进'}“{STAGE_NAME[nxt]}”", sec=["一"])
     if ok and s in (1, 2, 3) and L.get("out_date"):
         o["out"] = dict(date=L["out_date"], to=STAGE_NAME[L["out_to"]])
@@ -1009,46 +1009,77 @@ def _thr(ch, q):
 
 def _st_fund(D, t, rows=None):
     """⑤ 信用分档五档的 5 日走阔（口径十一，偏高 5%、少见 1%，ice() 同一个算法）：有一档到少见"在变差"，到偏高"在走阔"，都没到"没变差"。
-    离下一步：每档还差几个基点到门槛（门槛 = 这一档 5 日变化的历史里同方向更极端的不超过 5% / 1% 的那个数），取差得最少的那档。"""
+    离下一步：每档还差几个基点到门槛（门槛 = 这一档 5 日变化的历史里同方向更极端的不超过 5% / 1% 的那个数），取差得最少的那档。
+    新5 复查：口径十一"历史不满 504 天、读数旧过 7 天的不算"（smallsignal.rarity() / one() 同一个条件）——这样的档单独记在 na 里，
+    不进状态词、离下一步和"如果"那句；五档都不算，状态词就是"不算"，那句只写算得出来的条件（攒满 504 天、7 天内有新读数）。"""
     from qx import smallsignal as SS, export as EX
     if rows is None:
         rows = credit(EX.ice(D, t), None)
     if not rows:
         return None
+    t = pd.Timestamp(t)
     sid = dict((nm, s) for s, nm in EX.ICE)
     nmap = {"单 B": "B", "CCC": "CCC 及以下"}
-    th = {}
+    th, na, nlen = {}, {}, {}
     spark = None
     for x in rows:
         s, _ = SS.series(D, sid.get(nmap.get(x["name"], x["name"])), t)
         if s is None or len(s) < 22:
+            na[x["name"]] = "没取到"
             continue
         ch = SS.change(s, True, SS.N5)
-        th[x["name"]] = (_thr(ch, SS.HIGH), _thr(ch, SS.RARE))
+        nlen[x["name"]] = len(ch)
+        if len(ch) < SS.MIN_DAYS:
+            na[x["name"]] = "short"
+        elif ch.index[-1] < t - pd.Timedelta(days=7):
+            na[x["name"]] = "stale:" + ch.index[-1].strftime("%Y-%m-%d")
+        else:
+            th[x["name"]] = (_thr(ch, SS.HIGH), _thr(ch, SS.RARE))
         if x["name"] == "CCC":
             spark = [_f(v * 100, 0) for v in s.iloc[-20:].values]
-    worse = [x for x in rows if x.get("up5") and x.get("lvl5") == "少见"]
-    wide = [x for x in rows if x.get("up5") and x.get("lvl5") in ("偏高", "少见")]
-    o = dict(word="在变差" if worse else "在走阔" if wide else "没变差", lv="red" if worse else "yellow" if wide else "gray", sec=["十一"] + (["十四.2"] if wide and not worse else []),
-             chips=[], spark=spark, thr={k: v for k, v in th.items()}, wide=[x["name"] for x in wide], worse=[x["name"] for x in worse])
+    ok = [x for x in rows if x["name"] not in na]
+    worse = [x for x in ok if x.get("up5") and x.get("lvl5") == "少见"]
+    wide = [x for x in ok if x.get("up5") and x.get("lvl5") in ("偏高", "少见")]
+    short = [x["name"] for x in rows if na.get(x["name"]) == "short"]
+    stale = [x["name"] for x in rows if str(na.get(x["name"], "")).startswith("stale:")]
+    miss = [x["name"] for x in rows if na.get(x["name"]) == "没取到"]
+    why = []                                                   # 不算的原因（页面灰字、⑤ 收着那行、点开"信用利差"那行共用）
+    nm = lambda xs: "、".join(xs) + (" " if xs[-1][-1].isascii() else "")      # "BB 历史……"、"投资级历史……"
+    if short:
+        why.append(f"{'五档' if len(short) == len(rows) == 5 else nm(short)}历史不满 504 天（{'最长' if len(short) > 1 else '只有'} {max(nlen[n] for n in short)} 天）")
+    if stale:
+        why.append(nm(stale) + f"读数停在 {_mds(min(na[n][6:] for n in stale))}，旧了 7 天以上")
+    if miss:
+        why.append(nm(miss) + "没取到")
+    o = dict(word="不算" if not ok else "在变差" if worse else "在走阔" if wide else "没变差", lv="red" if worse else "yellow" if wide else "gray",
+             sec=["十一"] + (["十四.2"] if wide and not worse else []),
+             chips=[], spark=spark, thr={k: v for k, v in th.items()}, wide=[x["name"] for x in wide], worse=[x["name"] for x in worse],
+             na={x["name"]: ("历史不满 504 天" if na[x["name"]] == "short" else "旧了 7 天以上" if na[x["name"]].startswith("stale:") else na[x["name"]])
+                 for x in rows if x["name"] in na}, na_why="；".join(why) or None, n_ok=len(ok))
+    if not ok:
+        o["next"] = "；".join(why) + "，5 日走阔先不算"
+        conds = (["攒满 504 天历史"] if short else []) + (["7 天内有新读数"] if stale else []) + (["取到读数"] if miss else [])
+        o["if"] = dict(t=f"如果有一档{'、'.join(conds)}，⑤ 就从“不算”变成“没变差”“在走阔”或“在变差”", sec=["十一"])
+        return o
+    grp = "五档" if len(ok) == len(rows) == 5 else f"算得了的 {len(ok)} 档"
     gap = lambda x, j: (th[x["name"]][j] - (x.get("c5") or 0)) if x["name"] in th and th[x["name"]][j] is not None and x.get("c5") is not None else None
     if not wide:
-        g = [(gap(x, 0), x) for x in rows if gap(x, 0) is not None]
+        g = [(gap(x, 0), x) for x in ok if gap(x, 0) is not None]
         if g:
             d, x = min(g, key=lambda z: z[0])
-            o["next"] = f"离“在走阔”：{x['name']} 5 日 {_sg(x['c5'], 0)} 基点，约 +{th[x['name']][0]} 才算"
-        o["if"] = dict(t="如果五档里有一档的 5 日走阔到历史最极端的 5%，⑤ 就从“没变差”变成“在走阔”", sec=["十一"])
+            o["next"] = f"离在走阔：{x['name']} 5 日 {_sg(x['c5'], 0)}，要到 +{th[x['name']][0]} 基点（收盘算）"
+        o["if"] = dict(t=f"如果{grp}里有一档的 5 日走阔到历史最极端的 5%，⑤ 就从“没变差”变成“在走阔”", sec=["十一"])
     elif not worse:
         g = [(gap(x, 1), x) for x in wide if gap(x, 1) is not None]
         if g:
             d, x = min(g, key=lambda z: z[0])
-            o["next"] = f"离“在变差”：{x['name']} 5 日 {_sg(x['c5'], 0)} 基点，约 +{th[x['name']][1]} 才算"
-        o["if"] = dict(t="如果有一档的 5 日走阔到历史最极端的 1%，⑤ 就从“在走阔”变成“在变差”", sec=["十一"])
+            o["next"] = f"离在变差：{x['name']} 5 日 {_sg(x['c5'], 0)}，要到 +{th[x['name']][1]} 基点（收盘算）"
+        o["if"] = dict(t=f"如果{grp}里有一档的 5 日走阔到历史最极端的 1%，⑤ 就从“在走阔”变成“在变差”", sec=["十一"])
     else:
         x = max(worse, key=lambda z: z.get("c5") or 0)
         if x["name"] in th and th[x["name"]][1] is not None:
-            o["next"] = f"{x['name']} 5 日 {_sg(x['c5'], 0)} 基点，回到约 +{th[x['name']][1]} 以下就不算最极端的 1%"
-        o["if"] = dict(t="如果五档的 5 日走阔都不在历史最极端的 1% 里了，⑤ 就从“在变差”变成“在走阔”或“没变差”", sec=["十一"])
+            o["next"] = f"{x['name']} 5 日 {_sg(x['c5'], 0)}，回到 +{th[x['name']][1]} 基点以下就不是最极端的 1%（收盘算）"
+        o["if"] = dict(t=f"如果{grp}的 5 日走阔都不在历史最极端的 1% 里了，⑤ 就从“在变差”变成“在走阔”或“没变差”", sec=["十一"])
     return o
 
 
@@ -1106,8 +1137,17 @@ def page_rows(out):
     bits = []
     if C:
         w = [x for x in C if x["name"] in (Ff.get("wide") or [])]
-        bits.append("、".join(f"{x['name']} 5 日 {_sg(x['c5'], 0)} 基点" for x in w) + "，到了最极端的 " + ("1%" if Ff.get("worse") else "5%") if w
-                    else "五档利差 5 日都没走阔")                         # 照样稿；门槛（最极端的 5%）写在离下一步和"如果"那句
+        na = list((Ff.get("na") or {}).keys())
+        n_ok = Ff.get("n_ok", len(C))
+        nas = ("、".join(na) + (" " if na and na[-1][-1].isascii() else "") + "不算") if na else ""
+        # 新5 复查：历史不满 504 天、读数旧过 7 天的档不算（口径十一），单独写；"都没走阔"改成写门槛（有的档 5 日是走阔了几个基点，只是没到最极端的 5%）
+        if Ff and not n_ok:
+            bits.append("五档利差 5 日走阔都不算")
+        elif w:
+            bits.append("、".join(f"{x['name']} 5 日 {_sg(x['c5'], 0)} 基点" for x in w) + "，到了最极端的 " + ("1%" if Ff.get("worse") else "5%")
+                        + (f"（{nas}）" if na else ""))
+        else:
+            bits.append((f"算得了的 {n_ok} 档" if na else "五档") + " 5 日走阔都没到最极端的 5%" + (f"（{nas}）" if na else ""))
     if Y:
         bits.append(f"10 年利率 20 日 {_sg(Y['c20'], 0)} 基点")
     one("fund", "基本面", "；".join(bits))

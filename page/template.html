@@ -174,11 +174,12 @@ svg.sp circle { fill: var(--ink); }
 .ctx { min-width: 0; }
 .ctx b { display: block; font-weight: 600; font-size: 14px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctx small { display: none; color: var(--ink-3); font-size: 12px; line-height: 1.4; }
-.cw .xp { margin: 0 -14px; }
-.cf { margin: 2px 0 0; display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 5px 10px; font-size: 13.5px; line-height: 1.5; }
-.cf dt { color: var(--ink-3); white-space: nowrap; font-size: 13px; }
-.cf dd { margin: 0; color: var(--ink-2); }
-.cnote { font-size: 12px; color: var(--ink-3); margin: 8px 0 0; }
+.cw .xp { margin: 0 -14px; padding-top: 4px; padding-bottom: 6px; }
+/* 新5 复查：栏名放句首（不占一列），点开一张卡最多加 160 px */
+.cf { margin: 0; font-size: 13px; line-height: 1.4; color: var(--ink-2); }
+.cf p { margin: 0; }
+.cf b { color: var(--ink-3); font-weight: 500; font-size: 12px; line-height: 1; margin-right: 5px; }
+.cf .cs { margin-left: 10px; }
 
 /* 发生了什么：快讯、要闻 */
 .happen .bh { margin-bottom: 4px; }

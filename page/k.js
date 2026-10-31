@@ -221,7 +221,7 @@
       if (S.hot_last || S.lead_last) rows.push(li("热的一头", [S.hot_last ? `涨过头最近 ${dy(S.hot_last)}` : "", S.lead_last ? `参与度先走最近 ${dy(S.lead_last)}` : ""].filter(Boolean).join(" · ") +
         ((S.chips || []).some(c => c.w === "涨过头") ? "；今天涨过头" : ""), "只作描述"));
       const s2 = x => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(2);
-      if (S.out && S.stage !== 3) rows.push(li(`离${esc(S.out.to)}`, `不再亮的话，最早 ${D2(S.out.date)} 收盘`));
+      if (S.out && S.stage !== 3) rows.push(li(`离${esc(S.out.to)}`, `不再亮的话，最早 ${D2(S.out.date)}（收盘算）`));
       else if (S.ddv != null) rows.push(li("回撤 ÷ 长期波动", `${s2(S.ddv)}，到 −0.3 以下算在跌（收盘算）`));
       put("emo", rows); }
 
@@ -307,7 +307,9 @@
       const w20 = x => x.lvl20 && x.c20 > 0, w5 = x => x.lvl5 && x.up5;
       // 20 日的配对读数（口径十，w20）、到了偏高那一档"历史上百分之几的日子更极端"（w5、x.f5；收着那行已写"到了最极端的 5% / 1%"）新5 起不在这里画，记在 hidden_draft。
       // 这样带一个情景时 ⑤ 点开在 400 宽还在 260 px 以内
-      if (C.length) rows.push(li("信用利差", C.map(x => `${esc(x.name)} ${N0(x.now)}（${S0(x.c5)}）`).join(" · "), `基点，FRED ${D2(C[0].date)}，括号里是 5 日走阔`));
+      // 新5 复查：历史不满 504 天、读数旧过 7 天的档 5 日走阔不算（口径十一），括号里标"不算"，原因写在后面（qx/front.py _st_fund() 的 na、na_why）
+      const NA = (V.fund || {}).na || {}, NW = (V.fund || {}).na_why;
+      if (C.length) rows.push(li("信用利差", C.map(x => `${esc(x.name)} ${N0(x.now)}（${S0(x.c5)}${NA[x.name] ? "，不算" : ""}）`).join(" · ") + (NW ? `；${esc(NW)}，5 日走阔不算` : ""), `基点，FRED ${D2(C[0].date)}，括号里是 5 日走阔`));
       if (Y || MV) rows.push(li("利率", [Y ? `10 年 ${Number(Y.now).toFixed(2)}%，20 日 ${S0(Y.c20)} 基点${Y.date !== FR.asof ? "（" + D2(Y.date) + "）" : ""}` : "", MV ? `MOVE ${Number(MV.now).toFixed(1)}` : ""].filter(Boolean).join(" · ")));
       // 生意：台积电月营收、AI 链超预期几家。财报季已报几家、中位超多少新5 起不在这里画（④"认不认消息"写了已报几家）；
       // AI 账本那个数先不画：账本里排在前面的常是 FRED 的财政部账户、银行准备金，单位写成了"十亿美元"（实际是百万美元，qx/ledger.py），修好以前不露。都记在 hidden_draft
@@ -755,11 +757,17 @@
   (function cards4() {
     const K = RD.cards, el = $("cards"); if (!K || !el || !el.dataset.blk) return;
     const cs = K.cards || [], SHOW = 3, MORE = 5;
-    const pc = f => f == null ? "—" : f < 0.001 ? "不到 0.1%" : (f * 100).toFixed(f < 0.1 ? 1 : 0) + "%";
+    // 新5 复查：点开一张卡最多加 160 px。压字（推送读的卡字不动，只改页面上怎么露）：栏名放在句首不占一列；今年的日期写 10/27；
+    // "用什么做"去掉 3 倍杠杆每月损耗那半句，"空间"去掉重复的"还没回放"；卡底那行（类别 · 日期 · 历史上同样极端的 x% · 还没有回放）不画，
+    // "情景，不是买卖建议"块头已经写了。放回要做什么见 _impl/design/hidden_draft.md。
+    const cy = String((RAW.front || {}).asof || K.asof || "").slice(0, 4);
+    const sd = s => esc(String(s == null ? "" : s).replace(/(\d{4})-(\d{2})-(\d{2})/g, (m, y, a, b) => (y === cy ? "" : y + "/") + (+a) + "/" + (+b)));
+    const use = c => String(c.use || "").replace(/；3 倍做多每月损耗.*$/, "");
+    const spc = c => String(c.space || "—").replace(/^还没有回放（(.*)，还没回放）。$/, "还没有回放（$1）。");
     const one = (c, i) => `<div class="cw" data-k="${esc("card:" + c.key)}"${i >= SHOW + MORE ? " hidden" : i >= SHOW ? " data-mr hidden" : ""}>` +
       `<div class="cc" role="button" tabindex="0" aria-expanded="false" aria-controls="cx-${i}"><span class="ck num">${i + 1}</span><span class="ctx"><b class="kt">${esc(c.title)}</b><small>${esc(c.cls_name)} · ${esc(c.window || "")}</small></span><span class="go" aria-hidden="true">›</span></div>` +
-      `<div class="xp" id="cx-${i}" hidden><dl class="cf"><dt>为什么现在</dt><dd>${esc(c.why)}</dd><dt>哪里算错</dt><dd>${esc(c.wrong)}</dd><dt>空间</dt><dd>${esc(c.space || "—")}</dd><dt>用什么做</dt><dd>${esc(c.use)}</dd><dt>时间窗口</dt><dd>${esc(c.window)}</dd></dl>` +
-      `<p class="cnote">${esc(c.cls_name)} · ${md(c.date)} · 历史上同样极端的 ${pc(c.rank)}${c.replayed ? "" : " · 还没有回放"}${c.note ? " · " + esc(c.note) : ""}</p></div></div>`;
+      `<div class="xp" id="cx-${i}" hidden><div class="cf"><p><b>为什么现在</b>${sd(c.why)}</p><p><b>哪里算错</b>${sd(c.wrong)}</p><p><b>空间</b>${sd(spc(c))}</p>` +
+      `<p><b>用什么做</b>${sd(use(c))}<span class="cs"><b>时间窗口</b>${sd(c.window)}</span></p></div></div></div>`;
     el.innerHTML = `<div class="bh"><h2>机会和风险</h2><span class="meta">情景，不是买卖建议</span></div>` +
       (cs.length ? cs.map(one).join("") : `<p class="quiet">今天没有满足条件的卡。</p>`) +
       `<button type="button" class="more" data-more="99" data-tpl="其余 N 张 ›" hidden></button>`;

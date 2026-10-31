@@ -151,6 +151,8 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
         bad.append(("新5 五样", ["截到以前重算、如果……就……的节号、52 周新高减新低或离出清"]))
     if not page_check(log):
         bad.append(("新5 点开", ["行数或套了折叠"]))
+    if not fund_na_check(D, log):
+        bad.append(("新5 ⑤ 不算的档", ["历史不满 504 天、读数旧过 7 天的档进了状态词，或句子写了算不出的门槛"]))
     return not bad
 
 
@@ -401,6 +403,9 @@ def five_check(D, aaii, R, log=print):
         if W.highs_lows(D, t) != W.highs_lows(Dt, t):
             diff.append("52 周新高减新低")
         diff += [f"{k} {x}" for k in a if isinstance(oa.get(k), dict) for x in if_bad(oa[k], secs)]
+        # plan 第十节"收盘才算"：①②⑤ 的"离……"都写"收盘算"（③ 是每周一期的持仓、④ 是日历，不在这里）
+        diff += [f"{k} 离下一步没写收盘算" for k in ("emo", "price", "fund") if str((oa.get(k) or {}).get("next") or "").startswith("离")
+                 and "收盘算" not in oa[k]["next"]]
         ok &= not diff
         log(f"  新5 五样 {t.date()}：" + ("一致" if not diff else "不一致 " + "、".join(diff[:6])))
     # ④ 的句子：构造的两天清单（和"接下来 5 个交易日"同一份的样子），答案已知
@@ -432,6 +437,76 @@ def five_check(D, aaii, R, log=print):
     return ok
 
 
+FUND_IDS = (("BAMLC0A0CM", "投资级"), ("BAMLC0A4CBBB", "BBB"), ("BAMLH0A1HYBB", "BB"), ("BAMLH0A2HYB", "单 B"), ("BAMLH0A3HYC", "CCC"))
+
+
+def _fund_expect(D, t):
+    """⑤ 独立重算（不用 qx/front.py、qx/export.py 的算法，只借 smallsignal.series() 截到 t 能看到的那段）：口径十一——
+    5 日变化（基点）的历史不满 504 天、最后一个读数比 t 早 7 天以上的档不算；算得了的档，5 日走阔在自己历史里同方向更极端（含相等）的
+    ≤ 1% "在变差"、≤ 5% "在走阔"，都没到"没变差"；一档都算不了是"不算"。→ (不算的档, 状态词)"""
+    from qx import smallsignal as SS
+    na, lv = set(), []
+    for sid, nm in FUND_IDS:
+        if sid not in D:
+            continue
+        s, _ = SS.series(D, sid, t)
+        if s is None or len(s) < 22:
+            continue
+        ch = ((s - s.shift(5)) * 100).dropna()
+        if len(ch) < 504 or ch.index[-1] < t - pd.Timedelta(days=7):
+            na.add(nm)
+            continue
+        x, h = float(ch.iloc[-1]), ch.iloc[:-1]
+        f = float((h >= x).mean()) if x > 0 else None
+        lv.append("少见" if f is not None and f <= 0.01 else "偏高" if f is not None and f <= 0.05 else None)
+    n_ok = sum(1 for sid, nm in FUND_IDS if sid in D) - len(na)
+    return na, ("不算" if not lv else "在变差" if "少见" in lv else "在走阔" if "偏高" in lv else "没变差"), n_ok
+
+
+def fund_na_check(D, log=print):
+    """新5 复查 ⑤：不算的档（历史不满 504 天、读数旧过 7 天，口径十一）不进状态词、离下一步、"如果"那句。FIVE_DAYS 五天（2025-04-08 五档都只有
+    370 多天历史，要是"不算"）+ 构造的一天（10-23 把投资级截到 12 天前、BB 只留最近 450 个读数）：
+    不算的档和状态词 = 独立重算；句子和收着那行里没有 None、不提不算的档的门槛；全都不算时状态词是"不算"、句子不写 5% / 1% 门槛、收着那行不写"没到 / 没走阔"；
+    离下一步写"收盘算"。"""
+    from qx import front as FR, export as EX
+    t0 = pd.Timestamp("2026-10-23")
+    D2 = dict(D)
+    for sid, f in (("BAMLC0A0CM", lambda x: x[x.index <= t0 - pd.Timedelta(days=12)]), ("BAMLH0A1HYBB", lambda x: x.iloc[-450:])):
+        if sid in D2:
+            D2[sid] = f(D2[sid])
+    ok, seen_all = True, False
+    for nm_, DD, d in [(d, D, d) for d in FIVE_DAYS] + [("构造 10-23", D2, "2026-10-23")]:
+        idx = DD["^SOX"]["c"].dropna().index
+        t = idx[idx <= pd.Timestamp(d)][-1]
+        na, word, n_ok = _fund_expect(DD, t)
+        o = FR._st_fund(DD, t) or {}
+        line = next((r["line"] for r in FR.page_rows(dict(credit=FR.credit(EX.ice(DD, t), None), five=dict(fund=o))) if r["k"] == "fund"), "")
+        txt = (o.get("next") or "") + "|" + ((o.get("if") or {}).get("t") or "") + "|" + line
+        bad = []
+        if set(o.get("na") or {}) != na:
+            bad.append(f"不算的档 {sorted(o.get('na') or {})}，应该 {sorted(na)}")
+        if o.get("word") != word:
+            bad.append(f"状态词 {o.get('word')}，应该 {word}")
+        if "None" in txt or "nan" in txt:
+            bad.append("句子里有 None")
+        if not n_ok:
+            seen_all = True
+            if re.search(r"\d%", (o.get("if") or {}).get("t") or "") or re.search(r"没到|没走阔", line) or o.get("lv") != "gray":
+                bad.append("全都不算还写了门槛或颜色")
+        elif na and "不算" not in line:
+            bad.append("收着那行没写不算的档")
+        if o.get("next") and o["next"].startswith("离") and "收盘算" not in o["next"]:
+            bad.append("离下一步没写收盘算")
+        if any(re.search(r"(^|：)" + re.escape(n) + r" 5 日", o.get("next") or "") for n in na):      # "BB" 也在 "BBB" 里，按"名字 5 日"找
+            bad.append("离下一步用了不算的档")
+        ok &= not bad
+        log(f"  新5 ⑤ 不算的档 {nm_}（{len(na)} 档不算，{word}）：" + ("一致" if not bad else "不一致 " + "、".join(bad)))
+    ok &= seen_all
+    if not seen_all:
+        log("  新5 ⑤ 不算的档：没有一天五档都不算（FIVE_DAYS 里 2025-04-08 应该是）")
+    return ok
+
+
 def page_check(log=print):
     """新5 点开（page/template.html、page/k.js）：①②③⑤ 的点开里只有一个列表、不套折叠；k.js 往列表里最多放 5 行（put() 的 slice(0, 5)），
     后面接 1 句"如果……就……"——合起来 ≤ 6（④ 在 plan 第八节第 7 件点头以前照旧放期权和预测市场，不查）。"""
@@ -445,6 +520,7 @@ def page_check(log=print):
         good.append(bool(m) and m.group(1).count("<ol") == 1 and "<details" not in m.group(1))
     m = re.search(r"const put = \(k, rows(?:, more)?\) => \{(.*?)\};\n", kj, re.S)      # more：带 hidden 的不画的行（⑤ 第 3 个以后的情景），不占 5 行
     good.append(bool(m) and ".slice(0, 5)" in m.group(1) and m.group(1).count("insertAdjacentHTML") == 1 and "querySelectorAll(\":scope > .ift\")" in m.group(1))
+    good.append(bool(re.search(r"rows\.push\(li\(`离\$\{esc\(S\.out\.to\)\}`, `[^`]*（收盘算）`", kj)))     # ① 点开"离出清 / 离平稳"写收盘算
     ok = all(good)
     log("  新5 点开（≤ 5 行 + 1 句，不套折叠）：" + ("一致" if ok else "不一致 第 " + "、".join(str(i + 1) for i, x in enumerate(good) if not x) + " 条"))
     return ok
