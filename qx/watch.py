@@ -270,6 +270,34 @@ def trends(D, t):
     return rows
 
 
+def highs_lows(D, t):
+    """52 周新高减新低（口径十四.13，新3 登记，新5 在 ② 点开显示；只作描述：不进规则、不设阈值、不推送、不进 today 和 radar）。
+    28 只成分股（registry.SEMIS，和阶段规则、抛售读数同一个股票池）按收盘算：某天收盘是最近 252 个交易日（含这天，日子按费城半导体的交易日）
+    里最高的算一个新高、最低的算一个新低；只算这 252 天都有收盘的股票，写出算了几只。只用 t 以前（含 t）的收盘，日线是已经读进来的那份，不另抓。"""
+    from qx.registry import SEMIS
+    t = pd.Timestamp(t)
+    if "^SOX" not in D:
+        return None
+    days = D["^SOX"]["c"].dropna()
+    days = days.index[days.index <= t][-252:]
+    if len(days) < 252:
+        return None
+    hi = lo = n = 0
+    for k in SEMIS:
+        if k not in D:
+            continue
+        c = D[k]["c"]
+        c = c[~c.index.duplicated(keep="last")]
+        c = c[c.index <= t].reindex(days)
+        if c.isna().any() or (c <= 0).any():
+            continue
+        n += 1
+        x = float(c.iloc[-1])
+        hi += int(x >= float(c.max()))
+        lo += int(x <= float(c.min()))
+    return dict(date=days[-1].strftime("%Y-%m-%d"), n=n, of=len(SEMIS), hi=hi, lo=lo, net=hi - lo) if n else None
+
+
 def trend_items(D, t):
     out = []
     for k in TREND_ROWS:

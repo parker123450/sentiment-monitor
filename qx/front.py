@@ -752,58 +752,365 @@ def _sg(x, dp=1):
     return ("+" if x > 0 else "−" if x < 0 else "") + (f"{abs(x):.{dp}f}" if dp else f"{abs(round(x)):,}")
 
 
+# ================================================================ 新5：五样的状态词、颜色、离下一步、"如果……就……"（只给页面用；口径十四.12 的表）
+# 门槛全是已登记的：阶段（口径一）、涨过头（二.2）、日线趋势（三.4）、200 日线（十四.2）、挤在哪边 10%（十一）、两个交易日的清单（三.8）、
+# 信用分档 5 日走阔 5% / 1%（十一）。颜色：red 极端档、yellow、gray（十四.12）；每个颜色旁边都有字。sec 是用的口径节号（页面不显示，自测查得到）。
+STAGE_ITEMS = {1: "在卖那四项", 2: "在怕那四项", 3: "投降那三项"}
+
+
+def _pc(p):
+    """位置（0–1）写成百分数；取整正好是 90 / 10 的多写一位（0.904 写 90.4%），免得"90%，回到 90% 以下"看着对不上。"""
+    x = float(p) * 100
+    s = f"{x:.0f}"
+    return (f"{x:.1f}" if s in ("90", "10") else s) + "%"
+
+
+def _tdays_after(d, n):
+    """d 以后第 n 个美股交易日（n ≤ 0 就是 d 自己）。"""
+    d = pd.Timestamp(d).date()
+    while n > 0:
+        d += timedelta(days=1)
+        if clock.is_trading_day(d):
+            n -= 1
+    return d.isoformat()
+
+
+def lights(R, t):
+    """照 qx/sentiment.py stage() 的顺序重走一遍到 t（只用 t 以前的读数）：走到了哪一段、各段最近一次亮在哪天、t 那天显示哪一段。
+    "离出清"按代码的 10 天窗口推（口径一：某一段 10 天没再亮就退回去）：已经走到的各段里最近一次亮的那天 + 10 个交易日，
+    那天收盘起都不亮了——走到过"在怕"的是"在出清"，只到过"在卖"的回"平稳"。前提是这期间没有新的亮、价格没回到 −0.3 以上。
+    显示的那一段要和 R["stage"] 一样才用（不一样页面就不写这个日子；自测也查）。"""
+    from qx import sentiment as S
+    t = pd.Timestamp(t)
+    idx = R["P"].index[R["P"].index <= t]
+    F = R["F"].reindex(idx)
+    on = {k: pd.DataFrame({c: F[c] >= 90 for c in cols}).any(axis=1).values for k, cols in ((1, S.S1), (2, S.S2), (3, S.S3))}
+    falling = (R["ddv"].reindex(idx) <= -0.3).values
+    reached, last, show = 0, {}, 0
+    for i in range(len(idx)):
+        if not falling[i]:
+            reached, last, show = 0, {}, 0
+            continue
+        if on[1][i] and reached < 1:
+            reached = 1
+        if on[2][i] and 1 <= reached < 2:
+            reached = 2
+        if on[3][i] and reached >= 2:
+            reached = 3
+        for k in (1, 2, 3):
+            if on[k][i]:
+                last[k] = i
+        show = next((k for k in (3, 2, 1) if k <= reached and i - last.get(k, -999) < 10), 0)
+        if show == 0 and reached >= 2:
+            show = 4
+    n = len(idx)
+    out = dict(reached=reached, show=show, falling=bool(n and falling[-1]), last={k: idx[i].strftime("%Y-%m-%d") for k, i in last.items()})
+    if show in (1, 2, 3):
+        j = max(i for k, i in last.items() if k <= reached) + 10
+        out["out_date"], out["out_to"] = _tdays_after(idx[-1], j - (n - 1)), (4 if reached >= 2 else 0)
+    return out
+
+
+def _st_emo(D, R, t):
+    """① 阶段名（口径一）；半导体那天涨过头（二.2）另加一个黄色的"涨过头"。离下一步按现在在哪一段写下一段的门槛（都是最极端的 10%，收盘算）。"""
+    from qx import sentiment as S, export as EX
+    st = R["stage"]
+    st = st[st.index <= t].dropna()
+    s = int(st.iloc[-1])
+    k = len(st) - 1
+    while k > 0 and int(st.iloc[k - 1]) == s:
+        k -= 1
+    nd, changed = len(st) - k, bool(len(st) > 1 and int(st.iloc[-2]) != s)
+    L = lights(R, t)
+    ok = L["show"] == s
+    F = R["F"]
+    now = lambda cols: [_f(F[c].loc[:t].iloc[-1], 0) if c in F and len(F[c].loc[:t]) else None for c in cols]
+    nums = lambda xs: " / ".join("—" if x is None else f"{x:g}" for x in xs)
+    top = lambda xs: max([x for x in xs if x is not None], default=None)
+    ddv = _f(R["ddv"].loc[:t].iloc[-1], 2)
+    o = dict(word=STAGE_NAME.get(s, "") + (f" 第 {nd} 天" if s else ""), lv="red" if s in (1, 2, 3) else "yellow" if s == 4 or changed else "gray",
+             sec=["一"] + (["三.2"] if changed else []), stage=s, ndays=nd, changed=changed, chips=[], ddv=ddv)
+    c = D["^SOX"]["c"].dropna() if "^SOX" in D else None
+    if c is not None:
+        c = c[c.index <= t]
+        rs, m50 = EX.rsi(c), c.rolling(50).mean()
+        hot = (rs >= 75) & (c >= 1.15 * m50)
+        if len(c) and bool(hot.iloc[-1]):
+            o["chips"].append(dict(w="涨过头", lv="yellow", sec=["二.2"]))
+        hd = hot[hot].index
+        o["hot_last"] = hd[-1].strftime("%Y-%m-%d") if len(hd) else None
+    ld = [x[0] for x in R.get("turns") or [] if x[1] == "lead" and x[2] <= t]
+    o["lead_last"] = max(ld).strftime("%Y-%m-%d") if ld else None
+    m = [R["m_" + k_].loc[:t].iloc[-1] if ("m_" + k_) in R and len(R["m_" + k_].loc[:t]) else np.nan for k_ in ("sell", "price", "pos", "credit")]
+    o["ebb"] = int(sum(1 for x in m if x == 3))                     # 四条里几条"在回落"（口径二.1：5 日变化 ≤ −10）；四条的 20 日小线页面从 RAW.daily 取
+    nxt = {0: 1, 1: 2, 2: 3, 4: 3}.get(s)
+    if s == 3:
+        if ok and L.get("out_date"):
+            o["next"] = f"离出清：不再亮的话，最早 {_mds(L['out_date'])} 收盘"
+            o["if"] = dict(t=f"如果到 {_mds(L['out_date'])} 收盘三段都没再亮，① 就从“投降”变成“在出清”", sec=["一"])
+    elif s == 0 and not L["falling"]:
+        o["next"] = f"离在卖：回撤 ÷ 长期波动 {ddv:.2f}，先要到 −0.3 以下" if ddv is not None else None
+        o["if"] = dict(t="如果半导体回撤 ÷ 长期波动到 −0.3 以下、在卖那四项里有一项进最极端的 10%，① 就从“平稳”变成“在卖”", sec=["一"])
+    elif s == 4:
+        xs = now(S.S3)
+        o["next"] = f"离投降：三项最高 {top(xs):g}，要到 90（{nums(xs)}）" if top(xs) is not None else None
+        o["if"] = dict(t=f"如果半导体回撤 ÷ 长期波动回到 −0.3 以上（现在 {ddv:.2f}），① 就从“在出清”变成“平稳”" if ddv is not None else
+                       "如果半导体回撤 ÷ 长期波动回到 −0.3 以上，① 就从“在出清”变成“平稳”", sec=["一"])
+    else:
+        cols = {1: S.S1, 2: S.S2, 3: S.S3}[nxt]
+        xs = now(cols)
+        lab = {1: "离在卖：四项", 2: "离在怕：四项", 3: "离投降：三项"}[nxt]
+        o["next"] = f"{lab}最高 {top(xs):g}，要到 90（{nums(xs)}）" if top(xs) is not None else None
+        o["if"] = dict(t=f"如果收盘时{STAGE_ITEMS[nxt]}里有一项进最极端的 10%，① 就从“{STAGE_NAME[s]}”{'变成' if s == 0 else '进'}“{STAGE_NAME[nxt]}”", sec=["一"])
+    if ok and s in (1, 2, 3) and L.get("out_date"):
+        o["out"] = dict(date=L["out_date"], to=STAGE_NAME[L["out_to"]])
+    o["ok"] = ok
+    return o
+
+
+def _st_price(D, t):
+    """② 费城半导体：日线趋势（三.4：收盘和 20 日简单均线比、20 日线和 5 天前比）；收盘在 200 日线下写"200 日线下第 N 天"（十四.2）。"""
+    from qx import watch as W
+    c = D["^SOX"]["c"].dropna()
+    c = c[c.index <= t]
+    m20, ma = c.rolling(20).mean(), c.rolling(200).mean()
+    v, n = W._run(W._state(c, 20, 5))
+    trend = W.WORD.get(v) if v is not None else None
+    below = c < ma
+    o = dict(trend=trend, trend_n=n, close=_f(c.iloc[-1], 2), m20=_f(m20.iloc[-1], 2), m20_5=_f(m20.iloc[-6], 2) if len(m20) > 5 else None,
+             ma200=_f(ma.iloc[-1], 2), d200=_f((c.iloc[-1] / ma.iloc[-1] - 1) * 100), chips=[])          # 20 日小线页面从 RAW.chart 的 SOX 取
+    if bool(below.iloc[-1]):
+        j = len(below) - 1
+        while j > 0 and bool(below.iloc[j - 1]):
+            j -= 1
+        o.update(word=f"200 日线下第 {len(below) - j} 天", lv="red", sec=["十四.2"], below=len(below) - j)
+        o["next"] = f"站回 200 日线 {ma.iloc[-1]:,.0f} 要 {_sg((ma.iloc[-1] / c.iloc[-1] - 1) * 100)}%（收盘算）"
+        o["if"] = dict(t=f"如果半导体收盘站回 {ma.iloc[-1]:,.0f}（200 日线）以上，② 就不再是“200 日线下”，换回日线趋势", sec=["十四.2", "三.4"])
+    else:
+        o.update(word="日线" + trend if trend else "—", lv="yellow" if trend == "下行" else "gray", sec=["三.4"], below=0)          # 照样稿写"日线下行"
+        o["next"] = f"离 200 日线 {ma.iloc[-1]:,.0f} 还有 {_sg((ma.iloc[-1] / c.iloc[-1] - 1) * 100)}%（收盘算）"
+        o["if"] = dict(t=f"如果半导体收盘跌破 {ma.iloc[-1]:,.0f}（200 日线），② 就变成“200 日线下第 1 天”", sec=["十四.2"])
+    return o
+
+
+def _crowd_edge(r):
+    """一个读数离"不在 10% 以外"还差多少：位置在 90% 以上的看离 90%，10% 以下的看离 10%（口径十一）。"""
+    p = r["pos"]
+    return (p - 0.9, "回到 90% 以下") if p >= 0.9 else (0.1 - p, "回到 10% 以上")
+
+
+def _rlab(r):
+    if r.get("tff") and r.get("code") in TFF_SHORT:
+        return TFF_SHORT[r["code"]] + r.get("who", "")
+    return r.get("market") or r.get("name")
+
+
+def _st_flow(D, t, pos, F=None, since=None):
+    """③ 挤在哪边（口径十一）：挤着的市场和连挤几期。红只在新一期 CFTC 刚看到的那个交易日、有市场新挤进或不再挤（和"今天变了什么"那一行同一个条件）；
+    还挤着的黄；不挤、方向不一致灰。离不挤 = 挤着的市场里离 90% / 10% 最近的那个读数（同一个市场的读数要全在同一侧 10% 以外才算挤，一个回来就不算）。"""
+    if F is None:
+        F = flows(D, t, pos)
+    if not F:
+        return None
+    hot = list(dict.fromkeys([x["market"] for x in F.get("still") or []] + [x["market"] for x in F.get("changed") or [] if not x.get("runs")]))
+    word = "挤：" + "、".join(hot) if hot else "不挤"
+    if since is None:
+        idx = D["^SOX"]["c"].dropna().index
+        p = _prev_day(idx, pd.Timestamp(t))
+        since = p.strftime("%Y-%m-%d") if p is not None else None
+    asof = pd.Timestamp(t).strftime("%Y-%m-%d")
+    new = bool(F.get("changed") and since and F.get("pub") and since < F["pub"] <= asof)
+    o = dict(word=word, lv="red" if new else "yellow" if hot else "gray", sec=["十一"] + (["十四.2"] if new else []), hot=hot, new=new, chips=[])
+    rs = [r for r in (pos or {}).get("readings") or [] if r.get("crowd", True) and r.get("pos") is not None]
+    if hot:
+        cand = [(r, *_crowd_edge(r)) for r in rs if r["market"] in hot and r.get("side") in ("多头", "空头")]
+        if cand:
+            r, d, how = min(cand, key=lambda x: x[1])
+            rest = [m for m in hot if m != r["market"]]
+            per = "下一期" if r.get("src") in ("CFTC",) or r.get("tff") else ""
+            o["next"] = f"离不挤：{_rlab(r)}位置 {_pc(r['pos'])}，{how}就不挤"
+            o["if"] = dict(t=f"如果{per}{_rlab(r)}的位置{how}（现在 {_pc(r['pos'])}），③ 就从“{word}”变成“{'挤：' + '、'.join(rest) if rest else '不挤'}”", sec=["十一"])
+    else:
+        best = None
+        for mk in dict.fromkeys(r["market"] for r in rs if r.get("src") == "CFTC" or r.get("tff")):
+            xs = [r for r in rs if r["market"] == mk]
+            for side in (True, False):                   # True：往"读数高 = 多头挤"那边（long_is_crowded 反过来的读数取另一头）
+                need = []
+                for r in xs:
+                    hi = side == bool(r.get("long_is_crowded", True))
+                    need.append((max(0.0, 0.9 - r["pos"]) if hi else max(0.0, r["pos"] - 0.1), r, hi))
+                d, r, hi = max(need, key=lambda x: x[0])
+                if best is None or d < best[0]:
+                    best = (d, r, hi, mk, len(xs))
+        if best:
+            d, r, hi, mk, nx = best
+            how = "到 90% 以上" if hi else "到 10% 以下"
+            o["next"] = f"离挤：{_rlab(r)}位置 {_pc(r['pos'])}，{how}才算" + ("" if nx == 1 else f"（{mk}几个读数要都过）")
+            o["if"] = dict(t=f"如果下一期{_rlab(r)}的位置{how}（现在 {_pc(r['pos'])}）" + ("" if nx == 1 else f"、{mk}别的读数也在同一边") + f"，③ 就变成“挤：{mk}”", sec=["十一"])
+    return o
+
+
+EV_SHORT = {"日本央行利率决议": "日本央行", "韩国央行利率决议": "韩国央行", "议息会决议": "议息会", "月度期权到期": "期权到期"}   # ④ 状态词里的事件名写短
+
+
+def _cat(a, b):
+    """中文接在英文名后面空一格（"Celestica 财报"），中文名不空（"亚马逊财报"）。"""
+    return f"{a} {b}" if a and a[-1].isascii() and a[-1].isalnum() else f"{a}{b}"
+
+
+def _evword(rows):
+    """几天的事合成状态词里的一串（照样稿"明后天：日本央行、ISM"，手机一行放得下）：有宏观和央行写短名，最多两件，后面还有事（别的宏观或财报）就加"等"；
+    只有财报时写财报（一家写"X 财报"，几家写最大的那家"X 等 N 家财报"）。全部的事在"接下来 5 个交易日"里。"""
+    ev = list(dict.fromkeys(e for r in rows for e in r.get("ev") or []))
+    er = list(dict.fromkeys(e for r in rows for e in r.get("er") or []))
+    if ev:
+        return "、".join(ev[:2]) + ("等" if len(ev) > 2 or er else "")
+    if er:
+        return _cat(er[0], "财报") if len(er) == 1 else _cat(er[0], f"等 {len(er)} 家财报")
+    return ""
+
+
+def _st_expect(next5, later_ev):
+    """④ 两个交易日的清单（三.8，估的日子不算；和"接下来 5 个交易日"那一块同一份）：有事写"明后天：事件名"，没有写"下一件：日期 事件"。
+    "如果……就……"只写日历不变时下一个收盘后状态词变成什么（十四.12："就"后面只写状态怎么变）。"""
+    if not next5:
+        return None
+    has = lambda r: bool(r.get("ev") or r.get("er"))
+
+    def word(rows, rest, later):
+        w = _evword(rows)
+        if w:
+            return "明后天：" + w, "yellow"
+        nx = next((r for r in rest if has(r)), None)
+        if nx:
+            return f"下一件：{nx['md']} {_evword([nx])}", "gray"
+        return (f"下一件：{later[0]} {later[1]}", "gray") if later else ("两个交易日内没事", "gray")
+    w, lv = word(next5[:2], next5[2:], later_ev)
+    o = dict(word=w, lv=lv, sec=["三.8"], chips=[])
+    nx = next(((i, r) for i, r in enumerate(next5) if i >= 2 and has(r)), None)
+    if lv == "yellow":
+        o["next"] = f"再下一件：{nx[1]['md']} {_evword([nx[1]])}（北京时间）" if nx else (f"再下一件：{later_ev[0]} {later_ev[1]}（北京时间）" if later_ev else None)
+    elif nx:
+        o["next"] = f"离 {nx[1]['md']} 还有 {nx[0] + 1} 个交易日（北京时间）"
+    if len(next5) > 1:
+        w2, _ = word(next5[1:3], next5[3:], later_ev)
+        o["if"] = dict(t=f"如果日历不变，到 {next5[0]['md']} 收盘 ④ 就{'变成' if w2 != w else '还是'}“{w2}”", sec=["三.8"])
+    return o
+
+
+def _thr(ch, q):
+    """5 日走阔要到多少基点，历史上同方向至少一样极端的才不超过 q（口径十一的算法：rarity() 反过来求）。按基点取整往上一格。"""
+    h = np.sort(ch.values)[::-1]
+    m = int(math.floor(q * len(h)))
+    if m >= len(h) or len(h) < 504:
+        return None
+    return int(math.floor(h[m] + 1e-9)) + 1
+
+
+def _st_fund(D, t, rows=None):
+    """⑤ 信用分档五档的 5 日走阔（口径十一，偏高 5%、少见 1%，ice() 同一个算法）：有一档到少见"在变差"，到偏高"在走阔"，都没到"没变差"。
+    离下一步：每档还差几个基点到门槛（门槛 = 这一档 5 日变化的历史里同方向更极端的不超过 5% / 1% 的那个数），取差得最少的那档。"""
+    from qx import smallsignal as SS, export as EX
+    if rows is None:
+        rows = credit(EX.ice(D, t), None)
+    if not rows:
+        return None
+    sid = dict((nm, s) for s, nm in EX.ICE)
+    nmap = {"单 B": "B", "CCC": "CCC 及以下"}
+    th = {}
+    spark = None
+    for x in rows:
+        s, _ = SS.series(D, sid.get(nmap.get(x["name"], x["name"])), t)
+        if s is None or len(s) < 22:
+            continue
+        ch = SS.change(s, True, SS.N5)
+        th[x["name"]] = (_thr(ch, SS.HIGH), _thr(ch, SS.RARE))
+        if x["name"] == "CCC":
+            spark = [_f(v * 100, 0) for v in s.iloc[-20:].values]
+    worse = [x for x in rows if x.get("up5") and x.get("lvl5") == "少见"]
+    wide = [x for x in rows if x.get("up5") and x.get("lvl5") in ("偏高", "少见")]
+    o = dict(word="在变差" if worse else "在走阔" if wide else "没变差", lv="red" if worse else "yellow" if wide else "gray", sec=["十一"] + (["十四.2"] if wide and not worse else []),
+             chips=[], spark=spark, thr={k: v for k, v in th.items()}, wide=[x["name"] for x in wide], worse=[x["name"] for x in worse])
+    gap = lambda x, j: (th[x["name"]][j] - (x.get("c5") or 0)) if x["name"] in th and th[x["name"]][j] is not None and x.get("c5") is not None else None
+    if not wide:
+        g = [(gap(x, 0), x) for x in rows if gap(x, 0) is not None]
+        if g:
+            d, x = min(g, key=lambda z: z[0])
+            o["next"] = f"离“在走阔”：{x['name']} 5 日 {_sg(x['c5'], 0)} 基点，约 +{th[x['name']][0]} 才算"
+        o["if"] = dict(t="如果五档里有一档的 5 日走阔到历史最极端的 5%，⑤ 就从“没变差”变成“在走阔”", sec=["十一"])
+    elif not worse:
+        g = [(gap(x, 1), x) for x in wide if gap(x, 1) is not None]
+        if g:
+            d, x = min(g, key=lambda z: z[0])
+            o["next"] = f"离“在变差”：{x['name']} 5 日 {_sg(x['c5'], 0)} 基点，约 +{th[x['name']][1]} 才算"
+        o["if"] = dict(t="如果有一档的 5 日走阔到历史最极端的 1%，⑤ 就从“在走阔”变成“在变差”", sec=["十一"])
+    else:
+        x = max(worse, key=lambda z: z.get("c5") or 0)
+        if x["name"] in th and th[x["name"]][1] is not None:
+            o["next"] = f"{x['name']} 5 日 {_sg(x['c5'], 0)} 基点，回到约 +{th[x['name']][1]} 以下就不算最极端的 1%"
+        o["if"] = dict(t="如果五档的 5 日走阔都不在历史最极端的 1% 里了，⑤ 就从“在变差”变成“在走阔”或“没变差”", sec=["十一"])
+    return o
+
+
+def five_state(D, R, t, pos=None, flow=None, credit_rows=None, next5=None, later_ev=None, since=None):
+    """五样的状态词、颜色、离下一步、"如果……就……"（新5，只给页面用）。①②③⑤ 只用 t 以前的数据，截到以前重算和当天一样（自测查）；
+    ④ 用日历那一份（日历没存历史，不在自测里）。"""
+    t = pd.Timestamp(t)
+    out = {}
+    for k, f in (("emo", lambda: _st_emo(D, R, t)), ("price", lambda: _st_price(D, t)), ("flow", lambda: _st_flow(D, t, pos, flow, since)),
+                 ("expect", lambda: _st_expect(next5, later_ev)), ("fund", lambda: _st_fund(D, t, credit_rows))):
+        try:
+            out[k] = f()
+        except Exception as e:
+            out[k], out[k + "_err"] = None, type(e).__name__
+    return out
+
+
 def page_rows(out):
-    """五样各一行（只给页面用）。状态词、一句话都是现有结论的短写，不跨样合成、不打分。"""
+    """五样各一行（只给页面用）：状态词和颜色、一句话、离下一步，从 out["five"]（five_state）来；一句话都是现有结论的短写，不跨样合成、不打分。
+    新5：一件事一个家——VIX 只在 ① 点开、CFTC 那期的数只在 ③ 点开、议息会只在 ④ 点开、信用分档只在 ⑤，前台这一行不再重复写。"""
+    V = out.get("five") or {}
     rows = []
-    E = out.get("emo") or {}
-    if E:
-        vm = f"{E['vixmax']:g}" if E.get("vixmax") is not None else "—"
-        word = f"{E['name']} 第 {E['ndays']} 天" if E.get("stage") else "平稳"
-        line = (f"板块自己跌：这一段 VIX 最高 {vm}，没到 30" if E.get("regime") == 2 else f"宏观冲击：这一段 VIX 最高到过 {vm}" if E.get("regime") == 1
-                else "费城半导体没在跌" if not E.get("stage") else "")
-    else:
-        word, line = "—", ""
-    rows.append(dict(k="emo", no="①", name="情绪", word=word, line=line, next=""))
+
+    def one(k, name, line):
+        o = V.get(k) or {}
+        rows.append(dict(k=k, no="①②③④⑤"[NO[k] - 1], name=name, word=o.get("word") or "—", lv=o.get("lv") or "gray", sec=o.get("sec") or [],
+                         chips=o.get("chips") or [], line=line or "", next=o.get("next") or "", **({"if": o["if"]} if o.get("if") else {})))
+    E = V.get("emo") or {}
+    one("emo", "情绪", f"四条里 {E['ebb']} 条在回落" if E.get("ebb") is not None else "")
     S = next((x for x in out.get("pos") or [] if x["k"] == "^SOX"), None)
-    if S:
-        word = f"200 日线下第 {S['below_days']} 天" if S.get("below_since") else f"离一年高点 {_sg(S['dd'])}%"
-        line = f"半导体收盘 {S['close']:,.0f}，离一年高点 {_sg(S['dd'])}%，在 200 日线{'上方' if S['d200'] >= 0 else '下方'} {abs(S['d200']):.1f}%"
-    else:
-        word, line = "—", ""
-    rows.append(dict(k="price", no="②", name="价格位置", word=word, line=line, next=""))
+    one("price", "价格位置", f"半导体离高 {_sg(S['dd'])}%，200 日线{'上' if S['d200'] >= 0 else '下'} {abs(S['d200']):.1f}%" if S else "")   # 照样稿；"离一年高点"写在点开第 1 行
     F = out.get("flow") or {}
+    line = ""
     if F:
-        hot = [x["market"] for x in F.get("still") or []] + [x["market"] for x in F.get("changed") or [] if not x.get("runs")]
-        word = "挤：" + "、".join(dict.fromkeys(hot)) if hot else "不挤"
         by = {}
         for x in F.get("still") or []:
             by.setdefault(x["word"], []).append(x)
         runs = lambda xs: "、".join(x["market"] + f"第 {x['runs']} 期" for x in xs)
         same = lambda xs: xs[0].get("dir") and all(x.get("dir") == xs[0]["dir"] for x in xs)
-        parts = [f"{runs(xs)}还{w}" + (f"，这一期都在{xs[0]['dir']}" if same(xs) else "") for w, xs in by.items()]
-        parts += [f"{x['market']}{x['word']}（之前连挤 {x['runs']} 期）" if x.get("runs") else f"{x['market']}新{x['word']}" for x in F.get("changed") or []]
-        line = f"CFTC {_mds(F.get('asof'))} 那期：" + ("；".join(parts) if parts else "没有挤在一边的市场")
-    else:
-        word, line = "—", ""
-    rows.append(dict(k="flow", no="③", name="买卖方", word=word, line=line, next=""))
+        st = [runs(xs) + (f"还{w}" if len(by) > 1 else "") + (f"，这一期{'都' if len(xs) > 1 else ''}在{xs[0]['dir']}" if same(xs) else "") for w, xs in by.items()]   # 照样稿"黄金第 12 期、加密第 7 期，这一期都在减"
+        ch = [f"{x['market']}{x['word']}（之前连挤 {x['runs']} 期）" if x.get("runs") else f"{x['market']}新{x['word']}" for x in F.get("changed") or []]
+        parts = ch + st if (V.get("flow") or {}).get("new") else st + ch          # 红（新一期刚看到、有变化）那天先写变了的
+        line = "；".join(parts) if parts else "没有挤在一边的市场"
+    one("flow", "买卖方", line)
     M = next((x for x in out.get("m1") or [] if x["name"] == "费城半导体"), None)
-    Rc, Fm = out.get("react") or {}, (out.get("fomc") or [None])[0]
-    word = f"半导体一个月 ±{M['m']:g}%" if M else "—"
+    Rc = out.get("react") or {}
     bits = []
+    if M:
+        bits.append(f"期权给半导体一个月 ±{M['m']:g}%")
     if Rc:
-        bits.append(f"好消息不涨占 {Rc['share']:g}%" + (f"（以往 {Rc['past_lo']:g}–{Rc['past_hi']:g}%）" if Rc.get("past_n") else ""))
-    if Fm:
-        bits.append(f"下次议息会 {_mds(Fm['bj'])}")
-    rows.append(dict(k="expect", no="④", name="预期", word=word, line="；".join(bits), next=""))
-    C, Y, W = out.get("credit") or [], out.get("y10"), out.get("tw")
-    hot = [x for x in C if (x.get("lvl20") and (x.get("c20") or 0) > 0) or (x.get("lvl5") and x.get("up5"))]
-    word = "利差在走阔" if hot else "利差没走阔" if C else "—"
+        bits.append(f"好消息不涨占 {Rc['share']:g}%")                  # 以往几季的范围写在 ④ 点开"认不认消息"
+    one("expect", "预期", "；".join(bits))
+    C, Y = out.get("credit") or [], out.get("y10")
+    Ff = V.get("fund") or {}
     bits = []
+    if C:
+        w = [x for x in C if x["name"] in (Ff.get("wide") or [])]
+        bits.append("、".join(f"{x['name']} 5 日 {_sg(x['c5'], 0)} 基点" for x in w) + "，到了最极端的 " + ("1%" if Ff.get("worse") else "5%") if w
+                    else "五档利差 5 日都没走阔")                         # 照样稿；门槛（最极端的 5%）写在离下一步和"如果"那句
     if Y:
-        bits.append(f"10 年美债 {Y['now']:.2f}%（20 日 {_sg(Y['c20'], 0)} 基点）")
-    if W:
-        bits.append(f"台积电 {int(W['ym'][5:])} 月营收同比 {_sg(W['yoy'])}%")
-    rows.append(dict(k="fund", no="⑤", name="基本面", word=word, line="；".join(bits), next=""))
+        bits.append(f"10 年利率 20 日 {_sg(Y['c20'], 0)} 基点")
+    one("fund", "基本面", "；".join(bits))
     return rows
 
 
@@ -937,16 +1244,18 @@ def page_next5(out, hap_p, cal, radar, t):
         timed = sorted([x for x in xs if x["cls"] != "E" and not x["untimed"] and x["cls"] != "opex"], key=lambda x: x["bj"])
         txt = [f"{x['pre']}{x['bj'].strftime('%H:%M')} {x['lab']}" for x in timed]
         txt += [f"{x['lab']}（{'收盘时' if x['cls'] == 'opex' else '时间未定'}）" for x in xs if x["cls"] != "E" and (x["untimed"] or x["cls"] == "opex")]
+        ev = [EV_SHORT.get(x["lab"], x["lab"]) for x in timed] + [EV_SHORT.get(x["lab"], x["lab"]) for x in xs if x["cls"] != "E" and (x["untimed"] or x["cls"] == "opex")]
         for pre in dict.fromkeys(x["pre"] for x in xs if x["cls"] == "E"):
             er = sorted([x for x in xs if x["cls"] == "E" and x["pre"] == pre], key=lambda x: -(x.get("cap") or 0))
             top = er[0]
             nm = top["name"] + (f"（±{top['implied'] * 100:.1f}%）" if top.get("implied") else "")
             txt.append(f"{pre}{nm} 等 {len(er)} 家财报" if len(er) > 1 else f"{pre}{nm} 财报")
+        er = [x["name"] for x in sorted([x for x in xs if x["cls"] == "E"], key=lambda x: -(x.get("cap") or 0))]
         dd = date.fromisoformat(d)
-        out5.append(dict(d=d, md=_mds(d), wd=WEEK[dd.weekday()], text=" · ".join(txt) or "—"))
+        out5.append(dict(d=d, md=_mds(d), wd=WEEK[dd.weekday()], text=" · ".join(txt) or "—", ev=list(dict.fromkeys(ev)), er=er))   # ev / er：④ 状态词用的短名、财报公司（新5）
     # 再往后：每样取 last 以后（45 天内）的第一件；非农表管不到的月份写"约 M/D 非农（估的）"
     end = (date.fromisoformat(last) + timedelta(days=45)).isoformat()
-    later, got = [], set()
+    later, got, later_ev = [], set(), []                  # later_ev：④ "下一件"用的（日子、M/D、短名），估的日子不进（十四.12）
     for x in sorted(evs, key=lambda x: x["us"]):
         if not (last < x["us"] <= end):
             continue
@@ -956,10 +1265,12 @@ def page_next5(out, hap_p, cal, radar, t):
             got.add("E")
             dd = x["us"] if x["bj"] is None else x["bj"].strftime("%Y-%m-%d")          # 北京日子（盘后的财报是第二天早上），和上面 5 天同一个口径
             later.append((dd, f"{_mds(dd)} {x['name']} 财报"))
+            later_ev.append((dd, _mds(dd), _cat(x["name"], "财报")))
         elif x["cls"] in ("nfp", "cpi", "opex", "fomc") and x["cls"] not in got:
             got.add(x["cls"])
             dd = x["us"] if x["cls"] == "opex" or x["bj"] is None else x["bj"].strftime("%Y-%m-%d")
             later.append((dd, f"{_mds(dd)} {x['lab']}"))
+            later_ev.append((dd, _mds(dd), EV_SHORT.get(x["lab"], x["lab"])))
     if "nfp" not in got:
         for e in out.get("nfp_later") or []:
             if last < e["date"] <= end:
@@ -967,6 +1278,7 @@ def page_next5(out, hap_p, cal, radar, t):
                 later.append((dd, f"约 {_mds(dd)} 非农（估的）" if e.get("est") else f"{_mds(dd)} 非农"))
                 break
     later = " · ".join(s for _, s in sorted(later))
+    out["later_ev"] = [list(x[1:]) for x in sorted(later_ev)[:1]]
     return out5, later
 
 
@@ -980,8 +1292,17 @@ def page_mk(radar):
     return sorted(out, key=lambda x: -abs(x["z"]) if x["z"] is not None else 1)
 
 
-def page_keys(out, today, hap_p, cal, radar, t):
-    for k, f in (("rows", lambda: page_rows(out)), ("changes", lambda: page_changes(out, today)), ("next5", lambda: page_next5(out, hap_p, cal, radar, t)),
+def today_lv(five, changes):
+    """十四.12："今天有 ②–⑤ 的变化"（"今天变了什么"里归到这一样、没收起来的）也算黄；本来是灰的才升成黄，红不动。"""
+    for k in ("price", "flow", "expect", "fund"):
+        o = (five or {}).get(k)
+        if o and o.get("lv") == "gray" and any(x.get("p") == NO[k] and not x.get("hide") for x in changes or []):
+            o["lv"], o["sec"] = "yellow", list(o.get("sec") or []) + ["十四.3"]
+            o["today"] = True
+
+
+def page_keys(out, today, hap_p, cal, radar, t, D=None, R=None):
+    for k, f in (("changes", lambda: page_changes(out, today)), ("next5", lambda: page_next5(out, hap_p, cal, radar, t)),
                  ("mk", lambda: page_mk(radar)),
                  ("cards", lambda: dict(show=3, more=8, keys=[c["key"] for c in ((radar or {}).get("cards") or {}).get("cards") or []]))):
         try:
@@ -990,6 +1311,17 @@ def page_keys(out, today, hap_p, cal, radar, t):
             out[k], out[k + "_err"] = None, type(e).__name__
     if isinstance(out.get("next5"), tuple):
         out["next5"], out["later"] = out["next5"]
+    if D is not None and R is not None:                   # 新5：五样的状态词、颜色、离下一步、"如果……就……"
+        try:
+            out["five"] = five_state(D, R, t, pos=radar.get("pos"), flow=out.get("flow"), credit_rows=out.get("credit"), next5=out.get("next5"),
+                                     later_ev=(out.get("later_ev") or [None])[0], since=out.get("since"))
+            today_lv(out["five"], out.get("changes"))
+        except Exception as e:
+            out["five"], out["five_err"] = None, type(e).__name__
+    try:
+        out["rows"] = page_rows(out)
+    except Exception as e:
+        out["rows"], out["rows_err"] = None, type(e).__name__
 
 
 # ================================================================ 合起来
@@ -1035,7 +1367,13 @@ def build(D, R, radar, today, hap, ice, cal, opt=None):
         out["old_err"] = type(e).__name__
     for c in out.get("cross200") or []:                   # 跌破 200 日线（旧终端 risk below200，能衡量风险）那天出一行
         out["trig"]["price"].append(dict(src="ma200", key="ma200:" + c["k"], title=f"{c['name']}收盘跌破 200 日线（{c['ma200']}）；在线下时，60 天内再跌一大段的比例历来高 7–8 个百分点（只说风险，不说方向）"))
-    page_keys(out, today, hap_p, cal, radar, t)                 # 新4：页面骨架用的新键（只给页面用）
+    for k, f in (("hl", lambda: W.highs_lows(D, t)),                                  # 新5：② 点开"52 周新高减新低"（口径十四.13，只作描述）
+                 ("move", lambda: (lambda s: dict(now=_f(s.iloc[-1], 1), date=s.index[-1].strftime("%Y-%m-%d")))(D["^MOVE"]["c"].dropna().loc[:t]) if "^MOVE" in D else None)):
+        try:
+            out[k] = f()
+        except Exception as e:
+            out[k], out[k + "_err"] = None, type(e).__name__
+    page_keys(out, today, hap_p, cal, radar, t, D, R)           # 新4：页面骨架用的新键（只给页面用）；新5 加五样的状态
     return out
 
 

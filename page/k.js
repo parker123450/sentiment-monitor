@@ -167,66 +167,91 @@
 
   (function front() {
     if (FR.err) return;
-    const RR = RAW.radar || {}, R = new Map((FR.rows || []).map(r => [r.k, r]));
+    const RR = RAW.radar || {}, R = new Map((FR.rows || []).map(r => [r.k, r])), V = FR.five || {};
     const E = FR.emo || {}, K = row(LASTK), K5 = row(Math.max(0, LASTK - 5));
-    const li = (lb, t, sm) => t ? `<li>${lb ? `<b>${lb}</b> ` : ""}${t}${sm ? `<small class="knote"> ${sm}</small>` : ""}</li>` : "";
-    const put = (k, rows) => { const el = $("xl-" + k); if (el) el.innerHTML = rows.filter(Boolean).slice(0, 5).join(""); };
-    // 每样那一行：名字、状态词、一句话（qx/front.py page_rows()）
+    const li = (lb, t, sm) => t ? `<li>${lb ? `<b>${lb}：</b>` : ""}${sm ? `（${sm}）` : ""}${t}</li>` : "";
+    // 点开：最多 5 行 + 1 句"如果……就……"（口径十四.12）；句子从 qx/front.py five_state() 来，节号只在数据里（自测查），页面不写
+    const ift = o => { const t = o && o.if && o.if.t, i = t ? t.indexOf("就") : -1;
+      return t && t.startsWith("如果") && i > 2 ? `<p class="ift"><b>如果</b>${esc(t.slice(2, i))}<b>就</b>${esc(t.slice(i + 1))}</p>` : ""; };
+    // more：不画的行（带 hidden，推送点进来 reveal() 才露），不占 5 行
+    const put = (k, rows, more) => { const el = $("xl-" + k); if (!el) return; el.innerHTML = rows.filter(Boolean).slice(0, 5).join("") + (more || []).join("");
+      const x = $("x-" + k); if (!x) return; for (const p of x.querySelectorAll(":scope > .ift")) p.remove(); el.insertAdjacentHTML("afterend", ift(V[k])); };
+    // 状态词：颜色点 + 字（颜色旁边一定有字）；20 日小线（① 四个数从 RAW.daily，② 半导体收盘从 RAW.chart，⑤ CCC 利差从 five_state）
+    const chip = (w, lv) => w ? `<span class="chip ${lv === "red" || lv === "yellow" ? lv : "gray"}" title="${esc(w)}"><i></i><span class="chw">${esc(w)}</span></span>` : "";
+    const spark = (vs, w, h, lo, hi) => {
+      const xs = (vs || []).map(v => v == null || !isFinite(v) ? null : +v), ok = xs.filter(v => v != null); if (ok.length < 2) return "";
+      const a = lo != null ? lo : Math.min(...ok), b = hi != null ? hi : Math.max(...ok), n = xs.length, pts = [];
+      xs.forEach((v, i) => { if (v != null) pts.push([1.5 + (w - 3) * i / (n - 1), b === a ? h / 2 : 1.5 + (h - 3) * (b - v) / (b - a)]); });
+      const L = pts[pts.length - 1];
+      return `<svg class="sp" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><polyline points="${pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join(" ")}"/><circle cx="${L[0].toFixed(1)}" cy="${L[1].toFixed(1)}" r="2"/></svg>`; };
+    const SOXC = ((RAW.chart || []).find(s => s.k === "SOX") || {}).rows || [];
+    const SPK = { price: SOXC.slice(-20).map(r => r[4]), fund: (V.fund || {}).spark };
+    // 每样那一行：名字、状态词、一句话、离下一步（qx/front.py page_rows()）；一句话和离下一步在 400 宽各截成 1 行
     for (const k of ["emo", "price", "flow", "expect", "fund"]) {
       const r = R.get(k), t = $("r-" + k); if (!t) continue;
       if (!r) { t.innerHTML = `<div class="rh"><span class="nm">${NOS[["", "emo", "price", "flow", "expect", "fund"].indexOf(k)]} —</span></div><div class="rl"><span class="l1 clip">这次没算出来</span><span class="go" aria-hidden="true">›</span></div>`; continue; }
-      let h = `<div class="rh"><span class="nm"><b>${esc(r.no)}</b> ${esc(r.name)}</span>${r.word ? `<span class="chip">${esc(r.word)}</span>` : ""}</div>`;
+      let h = `<div class="rh"><span class="nm"><b>${esc(r.no)}</b> ${esc(r.name)}</span><span class="chips">${chip(r.word, r.lv)}${(r.chips || []).map(c => chip(c.w, c.lv)).join("")}</span></div>`;
+      const go = `<span class="go" aria-hidden="true">›</span>`;
       if (k === "emo") {
         const rd = E.read || {};
-        h += `<div class="tiles">${LN.map(([key, nm]) => `<div class="tile"><span class="tlb">${nm}</span><span class="tv num">${LVS(rd[key])}</span></div>`).join("")}</div>` +
-          `<p class="scale">0 没人怕 · 100 历史上最怕 · 只量怕，不量热</p>`;
+        h += `<div class="tiles">${LN.map(([key, nm]) => `<div class="tile"><span class="tlb">${nm}</span><span class="tvr"><span class="tv num">${LVS(rd[key])}</span>${spark(D[key].slice(-20), 40, 18, 0, 100)}</span></div>`).join("")}</div>` +
+          `<p class="scale">0 = 没人怕，100 = 历史上最怕（只量怕，不量热）</p>`;
       }
-      if (r.line) h += `<div class="rl"><span class="l1 clip">${esc(rwd(r.line))}</span><span class="go" aria-hidden="true">›</span></div>`;
+      const sp = SPK[k] ? spark(SPK[k], 52, 18) : "";
+      if (r.line) h += `<div class="rl"><span class="l1 clip">${esc(rwd(r.line))}</span>${sp}${r.next ? "" : go}</div>`;
+      if (r.next) h += `<div class="rl"><span class="l2 clip">${esc(r.next)}</span>${go}</div>`;
       t.innerHTML = h;
     }
     // 顶上判断条（只在错的条件第一次出现、要人看的事两个交易日内）：点了开"我的判断"
     const dk = x => x.key && x.date ? ` data-ks="${esc(x.key + "|" + x.date)}"` : "";
     const tl = $("tline"), J = FR.judge || [];
     if (tl && J.length) { tl.hidden = false; tl.innerHTML = J.map(x => `<a class="tg2" href="#v-pd" data-view="pd" data-k="${esc(x.key)}"${dk(x)}>${esc(x.title)} → 我的判断 ›</a>`).join(""); }
+    const dy = s => s ? (s.slice(0, 4) === String(FR.asof || "").slice(0, 4) ? D2(s) : `${s.slice(0, 4)} 年 ${D2(s)}`) : "";
 
-    // ① 情绪
-    { const rows = [];
+    // ① 情绪：四个数一周前到今天（全部历史分位）、保险（近 10 年分位，VIX 只在这里出）、这一段、热的一头、离出清 / 离平稳
+    { const rows = [], S = V.emo || {};
       rows.push(li("一周前 → 今天", LN.map(([key, nm]) => `${nm} ${LVS(K5[key])} → ${LVS(K[key])}`).join(" · "), "全部历史分位"));
-      // 分位写清基数：opt_market() 是近 10 年（2,520 天）；它没算出来时退回 emotion() 的 VIX，那个分位是全部历史，注也跟着写全部历史
+      // 分位写清基数：opt_market() 是近 10 年（2,520 天）；它没算出来时退回 emotion() 的 VIX，那个分位是全部历史，括号里跟着写全部历史
       const M = FR.optmkt, m10 = !!(M && M.vix);
       rows.push(li("保险", (m10 ? [`VIX ${Number(M.vix.now).toFixed(1)}（${M.vix.p}）`, M.skew ? `SKEW ${M.skew.now}（${M.skew.p}）` : "", M.vvix ? `VVIX ${M.vvix.now}（${M.vvix.p}）` : ""].filter(Boolean).join(" · ")
-        : E.vix != null ? `VIX ${E.vix}${E.vix_pct != null ? `（${E.vix_pct}）` : ""}` : "") + (E.t3 != null ? ` · 1 个月 ÷ 3 个月 ${E.t3}${E.t3 >= 1 ? "（倒挂：近的比远的贵）" : ""}` : ""),
-        m10 ? "括号里是近 10 年分位" : E.vix_pct != null ? "括号里是全部历史分位（近 10 年的没算出来）" : ""));
-      if (E.asof) rows.push(li("这一段", E.stage ? `${esc(E.name)}：${D2(E.since)} 起第 ${E.ndays} 个交易日` +
-        (E.regime === 2 ? `；板块自己跌，这一段 VIX 最高 ${E.vixmax}` : E.regime === 1 ? `；宏观冲击，这一段 VIX 最高到过 ${E.vixmax}` : "") : "平稳：费城半导体没在跌", "阶段没有前瞻检验"));
-      rows.push(`<li class="vlink">四条读数、三段怎么算：<a href="#v-shuo" data-view="shuo" data-sec="s-four">说明 ›</a></li>`);
+        : E.vix != null ? `VIX ${E.vix}${E.vix_pct != null ? `（${E.vix_pct}）` : ""}` : "") + (E.t3 != null ? ` · 1 个月 ÷ 3 个月 ${E.t3}${E.t3 >= 1 ? "（倒挂）" : ""}` : ""),
+        m10 ? "近 10 年分位" : E.vix_pct != null ? "全部历史分位" : ""));
+      if (E.asof) rows.push(li("这一段", E.stage ? `${esc(E.name)}，${D2(E.since)} 起第 ${E.ndays} 个交易日` +
+        (E.regime === 2 ? `；板块自己跌，VIX 最高 ${E.vixmax}，没到 30` : E.regime === 1 ? `；宏观冲击，VIX 最高到过 ${E.vixmax}` : "") : "平稳：费城半导体没在跌"));
+      if (S.hot_last || S.lead_last) rows.push(li("热的一头", [S.hot_last ? `涨过头最近 ${dy(S.hot_last)}` : "", S.lead_last ? `参与度先走最近 ${dy(S.lead_last)}` : ""].filter(Boolean).join(" · ") +
+        ((S.chips || []).some(c => c.w === "涨过头") ? "；今天涨过头" : ""), "只作描述"));
+      const s2 = x => (x > 0 ? "+" : x < 0 ? "−" : "") + Math.abs(x).toFixed(2);
+      if (S.out && S.stage !== 3) rows.push(li(`离${esc(S.out.to)}`, `不再亮的话，最早 ${D2(S.out.date)} 收盘`));
+      else if (S.ddv != null) rows.push(li("回撤 ÷ 长期波动", `${s2(S.ddv)}，到 −0.3 以下算在跌（收盘算）`));
       put("emo", rows); }
 
     // ② 价格位置
-    { const rows = [], P = FR.pos || [], S = P.find(x => x.k === "^SOX");
-      if (P.length) rows.push(li("离一年高点", P.map(x => `${esc(x.name)} ${S1(x.dd)}%${x.k === "^SOX" && x.hi_date ? `（${D2(x.hi_date)} 高点 ${N0(x.hi)}）` : ""}${x.below_since ? `（200 日线下第 ${x.below_days} 天）` : ""}`).join(" · ")));
-      if (S) rows.push(li("200 日线", `费城半导体收盘 ${N0(S.close)}，在 200 日线（${N0(S.ma200)}）${S.d200 >= 0 ? "上方" : "下方"} ${Math.abs(S.d200).toFixed(1)}%` +
-        (FR.ddv_pct != null ? `；按长期波动折算，历史上约 ${Math.round(FR.ddv_pct)}% 的日子比现在跌得更深` : "") +
-        (S.d200 < 0 ? "；在线下时，60 天内再跌一大段的比例历来高 7–8 个百分点（只说风险，不说方向）" : "")));
+    { const rows = [], P = FR.pos || [], S = V.price || {};
+      const SN = { "^SOX": "半导体", "^NDX": "纳指", "^GSPC": "标普" };
+      if (P.length) rows.push(li("离一年高点", P.map(x => `${esc(SN[x.k] || x.name)} ${S1(x.dd)}%${x.below_since ? `（200 日线下第 ${x.below_days} 天）` : ""}`).join(" · ")));
+      if (S.m20 != null) rows.push(li("均线", `收盘 ${N0(S.close)} 在 20 日线 ${N0(S.m20)} ${S.close >= S.m20 ? "上" : "下"}，20 日线比 5 天前（${N0(S.m20_5)}）${S.m20 > S.m20_5 ? "高" : S.m20 < S.m20_5 ? "低" : "持平"}` +
+        (S.trend ? `；${esc(S.trend)}第 ${S.trend_n} 天` : "")));
       const O = RAW.options, OD = FR.optdate || {}, bet = [];
       for (const sym of ["SMH", "QQQ", "SPY"]) {
         const r = O && (O.rows || []).find(x => x.sym === sym), a = r && (r.ans || []).find(x => /押在哪个价位/.test(x.q));
         const up = a && /上方最大押注 ([\d,.]+)/.exec(a.a), dn = a && /下方最大押注 ([\d,.]+)/.exec(a.a);
-        if (up || dn) bet.push(`${sym} 下 ${dn ? dn[1] : "—"} / 上 ${up ? up[1] : "—"}`);
+        if (up || dn) bet.push(`${sym} ${dn ? dn[1] : "—"}–${up ? up[1] : "—"}`);
       }
       const od = OD.SMH || OD.SPY;
-      if (bet.length) rows.push(li("期权押得最多的价位", bet.join(" · "), od ? `${D2(od.date)} 的期权链${od.lag ? `，晚 ${od.lag} 天` : ""}；只算 45 天内到期的` : ""));
-      if (K.n20) rows.push(li("成分股", `${K.nb20} / ${K.n20} 只跌破 20 日线${K.pct50 != null ? ` · ${Math.round(K.pct50)}% 在 50 日线上方` : ""}${K.nlow != null ? ` · 最近 5 天平均每天 ${fmt(K.nlow, 1)} 只创 20 天新低` : ""}`));
+      if (bet.length) rows.push(li("支撑压力", bet.join(" · "), `期权最大押注，45 天内${od ? `，${D2(od.date)} 的链` : ""}`));
+      const HL = FR.hl;
+      if (K.n20 || HL) rows.push(li("内部", [K.n20 ? `${K.nb20} / ${K.n20} 只在 20 日线下` : "", K.pct50 != null ? `${Math.round(K.pct50)}% 站上 50 日线` : "",
+        HL ? `52 周新高减新低 ${HL.net > 0 ? "+" : HL.net < 0 ? "−" : ""}${Math.abs(HL.net)}（${HL.hi} − ${HL.lo}，算了 ${HL.n} 只）` : ""].filter(Boolean).join(" · ")));
       const N = FR.ends;
-      if (N) rows.push(li("在交易什么", `${N.main ? `主线 ${esc(N.main.name)}（领跌）· ` : ""}最弱 ${esc(N.lo.name)}（${S1(N.lo.z)}）· 最强 ${esc(N.hi.name)}（${S1(N.hi.z)}）`, "20 日涨跌 ÷ 平常 20 日波动"));
+      if (N) rows.push(li("在交易什么", `${N.main ? `主线 ${esc(N.main.name)}（领跌）· ` : ""}最弱 ${esc(N.lo.name)} · 最强 ${esc(N.hi.name)}`));
       put("price", rows); }
 
-    // ③ 买卖方：照 plan 第三节第 3 小节的五行——趋势基金、做市商、期货持仓（CFTC 和美股期指 TFF 并成一行）、保险和散户、杠杆 ETF
+    // ③ 买卖方：趋势基金、做市商、期货持仓（CFTC 和美股期指 TFF 并成一行；CFTC 那期的数只在这里）、保险和散户、杠杆 ETF
     { const rows = [], F = FR.flow, pc = p => `${Math.round(p * 100)}%`;
-      const TR = (RR.pos && RR.pos.trend) || [], tsel = ["^SOX", "^NDX", "^GSPC"].map(s => TR.find(x => x.sym === s)).filter(Boolean);
-      if (tsel.length) { const so = tsel.find(x => x.sym === "^SOX");
-        rows.push(li("趋势基金（估）", tsel.map(x => `${esc(x.name)} ${x.score > 0 ? "+" : x.score < 0 ? "−" : ""}${Math.abs(x.score)}`).join(" · ") +
-          (so ? `；费城半导体翻转价 20 日 ${N0(so.flip[20])} · 60 日 ${N0(so.flip[60])} · 120 日 ${N0(so.flip[120])}` : ""), "简化模型，不是真实持仓")); }
+      const TR = (RR.pos && RR.pos.trend) || [];
+      // 趋势基金翻转价（估，简化模型，不进任何规则）：只写半导体一行；纳指、标普的翻转价和三个打分新5 起不画，记在 hidden_draft
+      const so = TR.find(x => x.sym === "^SOX");
+      if (so && so.flip) rows.push(li("趋势基金翻转价", `半导体 ${N0(so.flip[20])} / ${N0(so.flip[60])} / ${N0(so.flip[120])}`, "估，20 / 60 / 120 日"));
       // 做市商：SPY、QQQ 的 gamma 和翻转价，数取期权块那一句（qx/options.py），写明是哪天的期权链（qx/front.py opt_dates()）
       const O = RAW.options, OD = FR.optdate || {}, gm = [];
       for (const sym of ["SPY", "QQQ"]) {
@@ -239,7 +264,7 @@
         const g0 = gm[0], one = g => `${g.sym} ${g.s} gamma${g.f ? (g.s === "负" ? `，${g.f} 以上才翻正` : `，跌破 ${g.f} 翻负`) : ""}`;
         const ds = [...new Set(gm.filter(g => g.od).map(g => `${D2(g.od.date)} 的期权链${g.od.lag ? `，晚 ${g.od.lag} 天` : ""}`))];
         rows.push(li("做市商（估）", gm.map((g, i) => i && g.f && g0.f && g.s === g0.s ? `${g.sym} 要 ${g.f}` : one(g)).join("；"),
-          (ds.length > 1 ? gm.filter(g => g.od).map(g => `${g.sym} ${D2(g.od.date)}`).join("、") + " 的期权链" : ds[0] || "") + (ds.length ? "；" : "") + "简化模型"));
+          (ds.length > 1 ? gm.filter(g => g.od).map(g => `${g.sym} ${D2(g.od.date)}`).join("、") + " 的期权链" : ds[0] || "").replace("的期权链，晚", "的链晚")));
       }
       // 期货持仓：挤着的、这一期变了的（CFTC 那几个读数的历史位置），美股"方向不一致"时写资管、杠杆基金各在哪（TFF，只写有读数在 10% 以外的合约）
       if (F) {
@@ -248,24 +273,23 @@
         const parts = [], by = {};
         for (const x of F.still || []) (by[x.word] = by[x.word] || []).push(x);
         for (const [w, xs] of Object.entries(by)) { const same = xs[0].dir && xs.every(x => x.dir === xs[0].dir);
-          parts.push(xs.map(x => at(x.market) + (!same && x.dir ? `（${dw(x.dir)}）` : "")).join("、") + ` ${esc(w)}` + (same ? `，${xs.length > 1 ? "都" : ""}${dw(xs[0].dir)}` : "")); }
+          parts.push(xs.map(x => at(x.market) + (!same && x.dir ? `（${dw(x.dir)}）` : "")).join("、") + ` ${esc(w.replace("挤在", "挤"))}` + (same ? `，${xs.length > 1 ? "都" : ""}${dw(xs[0].dir)}` : "")); }
         for (const x of F.changed || []) { const p = ns.filter(n => n.market === x.market && n.pos != null);
-          parts.push(`${esc(x.market)}${x.runs ? "" : "新"}${esc(x.word)}${p.length ? `（${p.map(n => pc(n.pos)).join("、")}）` : ""}`); }
+          parts.push(`${esc(x.market)}${p.length ? " " + p.map(n => pc(n.pos)).join("、") : ""} ${x.runs ? "不再挤" : "新" + esc(x.word)}`); }
         const us = (F.calm || []).find(x => x.market === "美股" && x.word === "方向不一致");
         if (us) { const TF = F.tff || [], cs = [...new Set(TF.map(x => x.code))].map(c => TF.filter(x => x.code === c)).filter(xs => xs.some(x => x.side === "多头" || x.side === "空头"));
           parts.push((cs.length ? cs.map(xs => xs.map((x, j) => `${j ? "" : esc(x.name)}${esc(x.who)} ${x.pos == null ? "—" : pc(x.pos)}`).join("、")).join("；") + "，" : "美股") + "方向不一致"); }
-        rows.push(li(`期货持仓（CFTC ${D2(F.asof)} 那期）`, parts.join("；") || "没有挤在一边的市场", "百分数是历史位置"));
+        rows.push(li("期货持仓", parts.join("；") || "没有挤在一边的市场", `CFTC ${D2(F.asof)}，历史位置`));
       }
-      if (K.pc != null || K.aaii != null) rows.push(li("保险和散户", [K.pc != null ? `股票期权买跌 ÷ 买涨 ${fmt(K.pc, 2)}（平时 ${fmt(K.pcm, 2)}）` : "", K.aaii != null ? `散户看多减看空 ${sgn(K.aaii, 1)}%（一周前 ${sgn(K.aaiip, 1)}%）` : ""].filter(Boolean).join(" · ")));
+      if (K.pc != null || K.aaii != null) rows.push(li("保险和散户", [K.pc != null ? `买跌 ÷ 买涨 ${fmt(K.pc, 2)}（平时 ${fmt(K.pcm, 2)}）` : "", K.aaii != null ? `散户多减空 ${sgn(K.aaii, 1)}%（一周前 ${sgn(K.aaiip, 1)}%）` : ""].filter(Boolean).join(" · ")));
       // 杠杆 ETF：SOXL 股数占比（qx/positioning.py letf_readings() 的份额比，口径十四.7 只作对照）；最近一天的净申赎（letf_flow()）连着两个交易日都有份额才算
       const LR = ((RR.pos && RR.pos.readings) || []).find(x => x.src === "Direxion" && /^SOXL 份额/.test(x.name || "")), L = F && F.letf;
       if (LR || L) rows.push(li("杠杆 ETF", [LR ? `SOXL 股数占比 ${LR.value}%（${D2(LR.asof)}${LR.pos == null ? "" : `，历史位置 ${pc(LR.pos)}`}）` : "",
         L ? `${D2(L.day)} 净申赎 ${["soxl", "soxs"].map(k => `${k.toUpperCase()} ${L[k] == null ? "不算" : S1(L[k]) + " 亿美元"}`).join("、")}` +
-          (L.net == null ? "" : `，合起来钱往${L.net >= 0 ? "做多" : "做空"}那边 ${Math.abs(L.net).toFixed(1)} 亿${L.pos == null ? "" : `（历史位置 ${pc(L.pos)}）`}`) : "净申赎攒够了才写"].filter(Boolean).join("；"),
-        "股数占比 = SOXL ÷（SOXL + SOXS）；净申赎 = 份额差 × 收盘价"));
+          (L.net == null ? "" : `，合起来钱往${L.net >= 0 ? "做多" : "做空"}那边 ${Math.abs(L.net).toFixed(1)} 亿${L.pos == null ? "" : `（历史位置 ${pc(L.pos)}）`}`) : ""].filter(Boolean).join("；")));
       put("flow", rows); }
 
-    // ④ 预期（期权五个问题、预测市场照旧放在点开里，第 7 件）
+    // ④ 预期（期权五个问题、预测市场照旧放在点开里，第 7 件）；议息会只在这里出
     { const rows = [], M = FR.m1 || [];
       if (M.length) rows.push(li("期权定价接下来一个月", M.map(x => `${esc(x.name)} ±${x.m}%${x.lo != null && x.name === "费城半导体" ? `（${N0(x.lo)}–${N0(x.hi)}）` : ""}`).join(" · "), "只说幅度，不说方向"));
       const F = FR.fomc || [];
@@ -278,21 +302,20 @@
         (Rr.beat_med != null ? `；超预期的 ${Rr.beat_n} 家反应中位数 ${s2(Rr.beat_med)} 个日度波动` : "")));
       put("expect", rows); }
 
-    // ⑤ 基本面
-    { const rows = [], C = FR.credit || [], Y = FR.y10, SE = FR.season, W = FR.tw;
+    // ⑤ 基本面：信用分档只在这里（⑤ 的状态词照 5 日走阔，口径十一）；利率和美债波动；生意；三种走向（每个情景一行，最多露 2 行）
+    { const rows = [], C = FR.credit || [], Y = FR.y10, SE = FR.season, W = FR.tw, MV = FR.move;
       const w20 = x => x.lvl20 && x.c20 > 0, w5 = x => x.lvl5 && x.up5;
-      const hot = C.filter(x => w20(x) || w5(x)).map(x => ({ x, f: Math.min(w20(x) ? x.f20 : 1, w5(x) ? x.f5 : 1) })).sort((a, b) => a.f - b.f).slice(0, 2).map(o => o.x);
-      const cw = hot.length ? `在走阔：${hot.map(x => w20(x) ? `${esc(x.name)} 20 日 ${S0(x.c20)}（历史上 ${fr(x.f20)} 的日子更极端）` : `${esc(x.name)} 5 日 ${S0(x.c5)}（历史上 ${fr(x.f5)} 的日子更极端）`).join("、")}` : "五档都没走阔到历史最极端的 5%";
-      if (C.length) rows.push(li("信用利差", `${C.map(x => `${esc(x.name)} ${N0(x.now)}`).join(" · ")}；${cw}`, `基点，FRED ${D2(C[0].date)}`));
-      if (Y) rows.push(li("利率", `10 年美债 ${Number(Y.now).toFixed(2)}%（20 日 ${S0(Y.c20)} 基点）`, `${esc(Y.src || "")}${Y.date !== FR.asof ? " " + D2(Y.date) : ""}`));
-      const biz = [SE ? `${esc(SE.word)}已报 ${SE.n} 家（市值 ≥200 亿美元），${SE.beat} 家超预期${SE.med != null ? `，中位超 ${S1(SE.med)}%` : ""}${SE.ai_n ? `；AI 链 ${SE.ai_n} 家里 ${SE.ai_beat} 家超预期` : ""}` : "",
-        W ? `台积电 ${+W.ym.slice(5)} 月营收同比 ${S1(W.yoy)}%` : ""].filter(Boolean).join("；");
-      const LG = ((RR.fwd && RR.fwd.ledger) || []).filter(r => !/^(缺|没有免费)/.test(String(r.value || "")) && !/利差/.test(r.name) && !(W && /台积电月营收/.test(r.name)));   // AI 账本并进这一行（利差第 1 行写了，台积电上面写了）
-      const lg = LG.length ? `AI 账本 ${esc(plain(LG[0].name))} ${esc(LG[0].value)}${LG.length > 1 ? ` 等 ${LG.length} 个数` : ""}` : "";
-      if (biz || lg) rows.push(li("生意", [biz, lg].filter(Boolean).join("；")));
+      // 20 日的配对读数（口径十，w20）、到了偏高那一档"历史上百分之几的日子更极端"（w5、x.f5；收着那行已写"到了最极端的 5% / 1%"）新5 起不在这里画，记在 hidden_draft。
+      // 这样带一个情景时 ⑤ 点开在 400 宽还在 260 px 以内
+      if (C.length) rows.push(li("信用利差", C.map(x => `${esc(x.name)} ${N0(x.now)}（${S0(x.c5)}）`).join(" · "), `基点，FRED ${D2(C[0].date)}，括号里是 5 日走阔`));
+      if (Y || MV) rows.push(li("利率", [Y ? `10 年 ${Number(Y.now).toFixed(2)}%，20 日 ${S0(Y.c20)} 基点${Y.date !== FR.asof ? "（" + D2(Y.date) + "）" : ""}` : "", MV ? `MOVE ${Number(MV.now).toFixed(1)}` : ""].filter(Boolean).join(" · ")));
+      // 生意：台积电月营收、AI 链超预期几家。财报季已报几家、中位超多少新5 起不在这里画（④"认不认消息"写了已报几家）；
+      // AI 账本那个数先不画：账本里排在前面的常是 FRED 的财政部账户、银行准备金，单位写成了"十亿美元"（实际是百万美元，qx/ledger.py），修好以前不露。都记在 hidden_draft
+      const biz = [W ? `台积电 ${+W.ym.slice(5)} 月营收同比 ${S1(W.yoy)}%` : "", SE && SE.ai_n ? `AI 链 ${SE.ai_n} 家里 ${SE.ai_beat} 家超预期` : ""].filter(Boolean).join("；");
+      if (biz) rows.push(li("生意", biz));
       const SC = (RR.fwd && RR.fwd.scenarios) || [];
-      if (SC.length) rows.push(`<li><b>三种走向</b> ${SC.map((S, i) => `<span data-k="scen:${esc(S.id || S.name)}"${i >= 2 ? " hidden" : ""}>${esc(S.name)}：${(S.ways || []).map(w => `<span data-k="scen:${esc((S.id || S.name) + ":" + (w.id || w.name))}">${esc(w.name)} 亮了 ${w.lit} 个</span>`).join(" · ")}</span>`).join("；")}<small class="knote"> 情景，不是买卖建议</small></li>`);
-      put("fund", rows); }
+      const scl = (S, i) => `<li data-k="scen:${esc(S.id || S.name)}"${i >= 2 ? " hidden" : ""}><b>三种走向：</b>（情景，不是买卖建议）${esc(S.name)}：${(S.ways || []).map(w => `<span data-k="scen:${esc((S.id || S.name) + ":" + (w.id || w.name))}">${esc(w.name)} 亮了 ${w.lit} 个</span>`).join(" · ")}</li>`;
+      put("fund", rows.filter(Boolean).concat(SC.slice(0, 2).map(scl)), SC.slice(2).map((S, i) => scl(S, i + 2))); }
   })();
   // 全部（后台）：点"全部 ›"或最下面的按钮打开，跳到那一组
   function openBack(id) {
@@ -396,16 +419,17 @@
     // 大盘那一行：数从 qx/front.py opt_market() 来（和 options.py 同一个 10 年分位），写"10 年分位 N"，不写"偏高 / 少见"
     // 数在后台已经按要写的位数取过整（只取一次），这里不再取整；VIX 补齐一位小数（20 写成 20.0，和 market() 那句一样，不改数）
     // 拿不到时用 options.py market() 那句，但把没登记的 95 / 70 / 30 那几个词（少见地高 / 偏高 / 偏低 / 平常）换成"10 年分位没算出来"，和正常那条同一个位置
+    // （新5 起 p10、nowd 这两个不再画，代码照"不删代码"留着；放回见 _impl 的不再显示清单）
     const M = RAW.front && RAW.front.optmkt, p10 = x => `10 年分位 ${x.p}`;
     const nowd = String(O.market || "").replace(/（(?:10 年里少见地高|偏高|偏低|平常)）/g, "（10 年分位没算出来）").replace(/，(?:10 年里少见地高|偏高|偏低|平常)）/g, "，10 年分位没算出来）");
     // 做市商 gamma、最大押注写明用的是哪天的期权链、比数据日晚几个交易日（qx/front.py opt_dates()，新3）
     const OD = (RAW.front && RAW.front.optdate) || {}, d2 = s => s ? `${+s.slice(5, 7)}/${+s.slice(8, 10)}` : "";
     const chainOf = x => x ? `（${d2(x.date)} 的期权链${x.lag ? `，晚 ${x.lag} 天` : ""}）` : "", CQ = /做市商|押在哪个价位/;
     const ods = ["SPY", "SMH"].map(k => OD[k]).filter(Boolean), sumc = ods.length && ods.every(x => x.date === ods[0].date && x.lag === ods[0].lag) ? chainOf(ods[0]) : "";
-    const mk = M && M.vix ? [`VIX ${Number(M.vix.now).toFixed(1)}（${p10(M.vix)}）`, M.r9 != null ? `9 天保险是 30 天的 ${M.r9}%${M.r9_ge1 ? "：眼前几天有事" : ""}` : "",
-      M.skew ? `SKEW ${M.skew.now}（买极端下跌保护的程度，${p10(M.skew)}）` : "", M.vvix ? `VVIX ${M.vvix.now}（保险本身的波动，${p10(M.vvix)}）` : ""].filter(Boolean).join("；") + "。" : nowd;
+    // 新5 一件事一个家：VIX、SKEW、VVIX 只在 ① 点开"保险"那一行（近 10 年分位），这里只留 9 天比 30 天；opt_market() 没算出来时这一行不出（market() 那句也带 VIX）
+    const mk = M && M.r9 != null ? `9 天保险是 30 天的 ${M.r9}%${M.r9_ge1 ? "：眼前几天有事" : ""}。` : "";
     el.innerHTML = `<summary>期权：五个问题<small>${esc((O.summary || "").replace(/、一个月定价 ±\d+%/g, ""))}${O.summary ? sumc : ""}</small></summary>
-      <p>大盘：${esc(mk)}</p>
+      ${mk ? `<p>大盘：${esc(mk)}</p>` : ""}
       <div class="oq">${O.rows.map(r => `<div class="oc"><h4>${esc(r.name)}<small>${r.live ? "盘中 · 延迟 15 分钟" : md(r.date || RAW.asof) + " 收盘"}</small></h4>${r.ans.map(a => `<div class="oa${a.warn ? " w" : ""}"><b>${esc(a.q)}</b>：${esc(a.a)}${CQ.test(a.q) ? chainOf(OD[r.sym]) : ""}</div>`).join("")}</div>`).join("")}</div>
       <p class="vlink">这五个问题是什么意思：<a href="#v-shuo" data-view="shuo" data-sec="s-opt">说明 ›</a></p>
       <p class="knote">期权链是 CBOE 延迟 15 分钟的报价，从 2026-10-19 起每天攒，现在 ${O.days} 天；攒满 250 个交易日以后才和历史比。K 线上 SMH、英伟达、美光、台积电标了做市商 gamma 转负 / 转正的日子。</p>`;

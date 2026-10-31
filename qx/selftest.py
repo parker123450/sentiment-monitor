@@ -6,7 +6,7 @@ t 那天的每个读数都要和全量计算完全一致（相对误差 1e-9）�
 
 用法：python -m qx.selftest [--n 5]
 """
-import argparse, contextlib, sys
+import argparse, contextlib, re, sys
 import numpy as np
 import pandas as pd
 
@@ -147,6 +147,10 @@ def run(D, aaii, R=None, n=5, seed=None, log=print):
         bad.append(("前台期权大盘", ["只取整一次"]))
     if not views_check(log):
         bad.append(("状态页", ["哪天够、断了几条路或没更新"]))
+    if not five_check(D, aaii, R, log):
+        bad.append(("新5 五样", ["截到以前重算、如果……就……的节号、52 周新高减新低或离出清"]))
+    if not page_check(log):
+        bad.append(("新5 点开", ["行数或套了折叠"]))
     return not bad
 
 
@@ -326,6 +330,124 @@ def views_check(log=print):
     good = all(ok)
     log("  状态页（构造的数）：" + ("一致" if good else "不一致 第 " + "、".join(str(i + 1) for i, x in enumerate(ok) if not x) + " 条"))
     return good
+
+
+# ================================================================ 新5：五样和点开
+FIVE_DAYS = ("2026-10-23", "2026-10-16", "2026-09-28", "2026-07-30", "2025-04-08")   # 含 ③ 新一期 CFTC 刚看到那天（10-23）、阶段在怕和在出清的日子、2025-04 那次大跌
+NO_TRADE = re.compile(r"买入|卖出|加仓|减仓|建仓|清仓|止损|止盈|抄底|逃顶|做多|做空|该买|该卖")
+
+
+def _kj_secs():
+    """口径.md 的节号："## 十四、" 是 十四，它下面的 "### 12." 是 十四.12。"""
+    import os
+    p = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "口径.md")
+    out, top = set(), None
+    for line in open(p, encoding="utf-8"):
+        m = re.match(r"## ([一二三四五六七八九十]+)、", line)
+        if m:
+            top = m.group(1)
+            out.add(top)
+            continue
+        m = re.match(r"### (\d+)\.", line)
+        if m and top:
+            out.add(f"{top}.{m.group(1)}")
+    return out
+
+
+def five_vals(D, R, t):
+    """①②③⑤ 的状态词、颜色、节号、旁边的黄字、离下一步、"如果……就……"、离出清（qx/front.py five_state()；④ 用日历那一份，这里不算）。"""
+    from qx import front as FR, positioning as PS
+    o = FR.five_state(D, R, t, pos=PS.compute(D, t))
+    keep = ("word", "lv", "sec", "chips", "next", "if", "out")
+    return {k: o.get(k + "_err") or (None if o.get(k) is None else {a: o[k].get(a) for a in keep}) for k in ("emo", "price", "flow", "fund")}, o
+
+
+def if_bad(o, secs):
+    """一样合不合口径十四.12：颜色只有红 / 黄 / 灰三档、旁边有字；"如果……就……"以"如果"开头、有"就"、"就"后面只写状态怎么变（不写买卖），
+    带节号；状态词、黄字、句子的节号都在口径.md 里找得到。"""
+    if not o:
+        return []
+    bad = [] if o.get("lv") in ("red", "yellow", "gray") and o.get("word") else ["颜色或状态词"]
+    ss = list(o.get("sec") or []) + [s for c in o.get("chips") or [] for s in c.get("sec") or []]
+    if not o.get("sec"):
+        bad.append("状态词没有节号")
+    x = o.get("if")
+    if x:
+        t, i = x.get("t") or "", (x.get("t") or "").find("就")
+        ss += list(x.get("sec") or [])
+        if not x.get("sec"):
+            bad.append("句子没有节号")
+        if not t.startswith("如果") or i < 3 or not re.search(r"变成|进“|还是|不再", t[i:]) or NO_TRADE.search(t):
+            bad.append("句子 " + t[:24])
+    return bad + ["节号 " + s for s in ss if s not in secs]
+
+
+def five_check(D, aaii, R, log=print):
+    """新5 五样（qx/front.py five_state()）：
+    ①②③⑤ 的状态词、颜色、离下一步、"如果……就……"截到以前重算和当天一样（FIVE_DAYS 五个日子；④ 用日历那一份，日历没存历史，句子用构造的清单查）；
+    每句"如果……就……"都有节号、节号在口径.md 里找得到、"就"后面只写状态怎么变；
+    52 周新高减新低（口径十四.13，qx/watch.py highs_lows()）截到以前 = 全量；
+    "离出清"的日子（lights()，代码的 10 天窗口）和 qx/sentiment.py 真走出来的一样：最近 5 次超时退出，从最后一次亮到退出前一天逐日对账。"""
+    from qx import front as FR
+    secs, ok, idx = _kj_secs(), True, R["P"].index
+    for d in FIVE_DAYS:
+        t = idx[idx <= pd.Timestamp(d)][-1]
+        Dt, at = cut(D, aaii, t)
+        Rt = S.compute_all(Dt, at)
+        a, oa = five_vals(D, R, t)
+        with extras_cut(t):
+            b, _ = five_vals(Dt, Rt, t)
+        diff = [k for k in a if a[k] != b[k] or isinstance(a[k], str)]
+        if W.highs_lows(D, t) != W.highs_lows(Dt, t):
+            diff.append("52 周新高减新低")
+        diff += [f"{k} {x}" for k in a if isinstance(oa.get(k), dict) for x in if_bad(oa[k], secs)]
+        ok &= not diff
+        log(f"  新5 五样 {t.date()}：" + ("一致" if not diff else "不一致 " + "、".join(diff[:6])))
+    # ④ 的句子：构造的两天清单（和"接下来 5 个交易日"同一份的样子），答案已知
+    n5 = [dict(md="10/30", ev=["ISM 制造业"], er=[]), dict(md="11/2", ev=[], er=["苹果", "亚马逊"]), dict(md="11/3"), dict(md="11/4", ev=["CPI"])]
+    e1, e2 = FR._st_expect(n5, [["11/9", "非农"]]), FR._st_expect([dict(md="10/30"), dict(md="11/2"), dict(md="11/3", ev=["CPI"])], None)
+    good = [e1["word"] == "明后天：ISM 制造业等" and e1["lv"] == "yellow" and e1["next"] == "再下一件：11/4 CPI（北京时间）"
+            and e1["if"]["t"] == "如果日历不变，到 10/30 收盘 ④ 就变成“明后天：苹果等 2 家财报”",
+            e2["word"] == "下一件：11/3 CPI" and e2["lv"] == "gray" and e2["next"] == "离 11/3 还有 3 个交易日（北京时间）"
+            and e2["if"]["t"] == "如果日历不变，到 10/30 收盘 ④ 就变成“明后天：CPI”",
+            not if_bad(e1, secs) and not if_bad(e2, secs)]
+    ok &= all(good)
+    log("  新5 ④ 两天清单（构造的）：" + ("一致" if all(good) else "不一致 第 " + "、".join(str(i + 1) for i, x in enumerate(good) if not x) + " 条"))
+    # 离出清：代码里"在卖 / 在怕 / 投降"10 天没再亮、价格还在跌（回撤 ÷ 长期波动 ≤ −0.3）就退到"平稳 / 在出清"
+    st, ddv = R["stage"].dropna(), R["ddv"]
+    ex = [i for i in range(1, len(st)) if int(st.iloc[i - 1]) in (1, 2, 3) and int(st.iloc[i]) in (0, 4) and ddv.get(st.index[i], 0) <= -0.3][-5:]
+    n_all, wrong = 0, []
+    for i in ex:
+        e = st.index[i]
+        L0 = FR.lights(R, st.index[i - 1])
+        last = idx[max(idx.get_loc(pd.Timestamp(v)) for k, v in L0["last"].items() if k <= L0["reached"])]
+        for t in st.index[(st.index >= last) & (st.index < e)]:
+            L = FR.lights(R, t)
+            n_all += 1
+            if not (L["show"] == int(st.loc[t]) and L.get("out_date") == e.strftime("%Y-%m-%d") and L.get("out_to") == int(st.loc[e])):
+                wrong.append(f"{t.date()} 推 {L.get('out_date')} 真 {e.date()}")
+    good = bool(ex) and not wrong
+    ok &= good
+    log(f"  新5 离出清（最近 {len(ex)} 次退出，逐日 {n_all} 天）：" + ("一致" if good else "不一致 " + "、".join(wrong[:4])))
+    return ok
+
+
+def page_check(log=print):
+    """新5 点开（page/template.html、page/k.js）：①②③⑤ 的点开里只有一个列表、不套折叠；k.js 往列表里最多放 5 行（put() 的 slice(0, 5)），
+    后面接 1 句"如果……就……"——合起来 ≤ 6（④ 在 plan 第八节第 7 件点头以前照旧放期权和预测市场，不查）。"""
+    import os
+    base = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "page")
+    tp = open(os.path.join(base, "template.html"), encoding="utf-8").read()
+    kj = open(os.path.join(base, "k.js"), encoding="utf-8").read()
+    good = []
+    for k in ("emo", "price", "flow", "fund"):
+        m = re.search(r'<div class="xp" id="x-%s"[^>]*>(.*?)</div>' % k, tp, re.S)
+        good.append(bool(m) and m.group(1).count("<ol") == 1 and "<details" not in m.group(1))
+    m = re.search(r"const put = \(k, rows(?:, more)?\) => \{(.*?)\};\n", kj, re.S)      # more：带 hidden 的不画的行（⑤ 第 3 个以后的情景），不占 5 行
+    good.append(bool(m) and ".slice(0, 5)" in m.group(1) and m.group(1).count("insertAdjacentHTML") == 1 and "querySelectorAll(\":scope > .ift\")" in m.group(1))
+    ok = all(good)
+    log("  新5 点开（≤ 5 行 + 1 句，不套折叠）：" + ("一致" if ok else "不一致 第 " + "、".join(str(i + 1) for i, x in enumerate(good) if not x) + " 条"))
+    return ok
 
 
 def flash_check(rng, log=print, n=3):
